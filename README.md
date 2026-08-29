@@ -107,6 +107,8 @@ workflows, go ahead and enable them."**
 | `RESEND_API_KEY` | a key from [resend.com/api-keys](https://resend.com/api-keys) (free tier) — you'll also need to verify a sending domain at [resend.com/domains](https://resend.com/domains) |
 | `MAIL_ACCOUNTS` | comma-separated Gmail addresses, e.g. `alice@gmail.com,alice.work@gmail.com` |
 | one `MAIL_PW_*` per address | the app password for that address (see step 4) |
+| `EMAIL_TO` *(optional)* | where the digest is delivered. For `delivery: gmail`, defaults to your first `MAIL_ACCOUNTS` address if unset |
+| `EMAIL_FROM` *(optional)* | who it's sent from. Same default as above for `delivery: gmail`; required for `delivery: email` (Resend) |
 
 **AI auth — set exactly one of these two secrets:**
 
@@ -153,11 +155,12 @@ Full walkthrough: [docs/SETUP.md](docs/SETUP.md).
 
 #### 5. Edit `config.yaml` and commit
 
-Open `config.yaml` in GitHub's web editor (or clone and edit locally) and set
-at least `email_to` and `email_from`. `interests`, `avoid`, and
-`window_hours` ship with sane defaults but are worth tuning to your own
-inbox. Commit the change — `config.yaml` holds no secrets and is meant to be
-committed.
+Open `config.yaml` in GitHub's web editor (or clone and edit locally). Leave
+`email_to` and `email_from` as `""` — those addresses go in the `EMAIL_TO` /
+`EMAIL_FROM` secrets from step 3 instead, since this file is committed and a
+fork can be public. `interests`, `avoid`, and `window_hours` ship with sane
+defaults but are worth tuning to your own inbox. Commit the change —
+`config.yaml` holds no secrets and is meant to be committed.
 
 #### 6. Trigger a first run
 
@@ -171,16 +174,19 @@ run. Check the log if nothing arrives — see Troubleshooting below.
 `delivery` in `config.yaml` picks one of two backends:
 
 - **`email`** (default) — sends via [Resend](https://resend.com). Needs the
-  `RESEND_API_KEY` secret and `email_from` on a domain you've verified at
+  `RESEND_API_KEY` secret and `EMAIL_FROM` on a domain you've verified at
   [resend.com/domains](https://resend.com/domains) (or Resend's shared
   `onboarding@resend.dev` sender, which can only deliver to your own
-  Resend-account address). Can deliver to any address.
+  Resend-account address). Can deliver to any address. No fallback — a
+  verified sender can't be guessed, so `EMAIL_TO` and `EMAIL_FROM` are both
+  required.
 - **`gmail`** — sends through your own Gmail via SMTP, authenticating with
   the same app password you already set up for `imap_pull` to read that
-  inbox. No Resend account, no domain verification. `email_from` must be one
+  inbox. No Resend account, no domain verification. `EMAIL_FROM` must be one
   of your `MAIL_ACCOUNTS` Gmail addresses with its `MAIL_PW_*` secret set;
-  mail from your Gmail to your Gmail lands straight in the inbox. Best when
-  `email_to` is the same address (or another of your own accounts).
+  mail from your Gmail to your Gmail lands straight in the inbox. Leave
+  `EMAIL_TO` / `EMAIL_FROM` unset entirely to self-mail: both default to the
+  first `MAIL_ACCOUNTS` address.
 
 ---
 
@@ -251,8 +257,8 @@ failed.
 | `MAIL_ACCOUNTS is empty` | The secret isn't set, or is blank | Set it to a comma-separated list of Gmail addresses |
 | `<addr>: no app password found in $MAIL_PW_...` | That account's `MAIL_PW_*` secret is missing or misnamed | Re-check the name against the transform in step 3 above; this account is skipped, the run continues for the rest |
 | `RESEND_API_KEY is not set.` | The secret is missing | Add it from resend.com/api-keys |
-| `email_to is empty in config.yaml.` | You haven't set a destination address | Edit `config.yaml` |
-| `email_from is empty in config.yaml.` | Same, for the sender address | Edit `config.yaml` — must be on a domain verified with Resend |
+| `email_to is empty in config.yaml.` | No `EMAIL_TO` secret and none set in `config.yaml` (Resend delivery has no fallback) | Add the `EMAIL_TO` secret |
+| `email_from is empty...` | Same, for the sender address (gmail delivery falls back to your first `MAIL_ACCOUNTS` address instead of failing) | Add the `EMAIL_FROM` secret — for Resend it must be on a domain verified with Resend |
 | `Resend refused the email (HTTP 403)...` | Almost always an unverified sending domain, **not** a bad API key | Verify the domain at resend.com/domains |
 | `could not reach api.resend.com` / `could not reach api.anthropic.com` | The runner had no network, or the API was briefly down | Re-run the workflow by hand |
 | `the model's reply was cut off (stop_reason=max_tokens)` | Too much input for the reply budget | Lower `reading_count` in `config.yaml`, or shorten `interests` |
@@ -271,11 +277,12 @@ failed.
 - IMAP access is **read-only**: mailtriage selects `INBOX` with
   `readonly=True` and fetches with `BODY.PEEK[]`, so it can never mark a
   message as read or change anything in your mailbox.
-- Secrets (API keys, app passwords) live only in your fork's GitHub Actions
-  secrets — encrypted at rest by GitHub, not readable back by anyone
-  including you, once saved.
-- `config.yaml` is committed to your repo, but it holds no secrets — only
-  your triage preferences and delivery addresses.
+- Secrets (API keys, app passwords, and your `EMAIL_TO`/`EMAIL_FROM`
+  addresses) live only in your fork's GitHub Actions secrets — encrypted at
+  rest by GitHub, not readable back by anyone including you, once saved.
+- `config.yaml` is committed to your repo — and this repo may be public, if
+  your fork is — so it holds only your triage preferences, never an address
+  or a secret. `email_to`/`email_from` ship blank on purpose.
 
 ---
 

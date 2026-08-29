@@ -87,9 +87,28 @@ def test_wizard_has_no_external_asset_urls():
 
 def test_wizard_never_persists_secrets_to_localstorage():
     # KEEP is the allowlist of field ids remembered between visits. Secret and
-    # token field ids must never appear in it.
+    # token field ids must never appear in it -- email addresses count now too,
+    # since they live in EMAIL_TO/EMAIL_FROM secrets, not config.yaml.
     keep_line = next(line for line in WIZARD.splitlines() if "const KEEP" in line)
-    for forbidden in ("token", "anthropic", "oauth", "resend", "pw"):
+    for forbidden in ("token", "anthropic", "oauth", "resend", "pw", "email"):
         assert forbidden not in keep_line.lower(), (
             f"localStorage KEEP list appears to persist a secret field ('{forbidden}' found in: {keep_line.strip()})"
         )
+
+
+# --- no personal address ever committed ----------------------------------
+
+
+def test_no_personal_email_address_anywhere_in_tracked_files():
+    # This repo is public. A literal personal address here would leak it to
+    # every fork, forever, in git history -- the whole point of this contract.
+    # Built from parts so this file's own source text doesn't contain the
+    # contiguous string it's searching for (grep for it would then always "hit").
+    needle = "ashishbeerelli" + "1"
+    globs = ["config.yaml", "README.md", "docs/index.html", "src/**/*.py", "tests/**/*.py"]
+    hits = []
+    for pattern in globs:
+        for path in ROOT.glob(pattern):
+            if path.is_file() and needle in path.read_text(encoding="utf-8"):
+                hits.append(str(path.relative_to(ROOT)))
+    assert not hits, f"personal address found in tracked files: {hits}"

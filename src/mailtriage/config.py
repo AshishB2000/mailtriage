@@ -9,7 +9,9 @@ field names on :class:`Config` are now that contract, and
 
 from __future__ import annotations
 
+import os
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -67,7 +69,7 @@ class Config:
         return cfg
 
 
-def load_config(path: str | Path) -> Config:
+def load_config(path: str | Path, environ: Mapping[str, str] | None = None) -> Config:
     path = Path(path)
     if not path.exists():
         raise MailError(f"{path} not found. Run the setup wizard, or copy config.yaml from the repo root.")
@@ -77,4 +79,14 @@ def load_config(path: str | Path) -> Config:
         raise MailError(f"{path} is not valid YAML: {e}") from e
     if not isinstance(data, dict):
         raise MailError(f"{path} must be a YAML mapping of settings, not {type(data).__name__}.")
-    return Config.from_mapping(data, origin=str(path))
+    cfg = Config.from_mapping(data, origin=str(path))
+
+    # Addresses are private even though config.yaml is public (the repo it
+    # ships in is a fork someone else can read). EMAIL_TO/EMAIL_FROM secrets
+    # win over whatever config.yaml says, blank or not.
+    environ = os.environ if environ is None else environ
+    if environ.get("EMAIL_TO"):
+        cfg.email_to = environ["EMAIL_TO"]
+    if environ.get("EMAIL_FROM"):
+        cfg.email_from = environ["EMAIL_FROM"]
+    return cfg

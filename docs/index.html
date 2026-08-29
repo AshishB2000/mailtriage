@@ -499,6 +499,10 @@ footer a{color:var(--muted)}
         <span class="ic">◆</span>
         <span><strong>The from-address must be on a domain you've verified in Resend</strong> at <a href="https://resend.com/domains" target="_blank" rel="noopener">resend.com/domains</a> — an unverified domain is the single most common reason the first digest never arrives, and returns a 403 that looks like a bad API key but isn't.</span>
       </div>
+      <div class="note safe">
+        <span class="ic">◆</span>
+        <span>These addresses are stored as encrypted <strong>EMAIL_TO</strong> / <strong>EMAIL_FROM</strong> secrets, the same way as your API keys — never written into the committed <code>config.yaml</code>, which stays readable by anyone if your fork is public.</span>
+      </div>
     </div>
 
     <div class="sect">
@@ -701,10 +705,12 @@ function buildYaml(v) {
     '# Only "email" is supported.',
     "delivery: email",
     "",
-    "# Requires the RESEND_API_KEY secret. email_from must be on a domain",
-    "# you have verified with Resend.",
-    "email_to: " + yq(v.email_to),
-    "email_from: " + yq(v.email_from),
+    "# Addresses go in the EMAIL_TO / EMAIL_FROM repo secrets, not here --",
+    "# this file is committed and this repo may be public. Requires the",
+    "# RESEND_API_KEY secret; email_from must be on a domain you have",
+    "# verified with Resend.",
+    "email_to: " + yq(""),
+    "email_from: " + yq(""),
     "",
     "subject_prefix: " + yq("mailtriage"),
     ""
@@ -732,7 +738,7 @@ function parseConfig(text) {
       out[key] = body.join("\n");
       continue;
     }
-    m = lines[i].match(/^(email_to|email_from|subject_prefix):\s*"((?:[^"\\]|\\.)*)"\s*$/);
+    m = lines[i].match(/^(subject_prefix):\s*"((?:[^"\\]|\\.)*)"\s*$/);
     if (m) {
       try { out[m[1]] = JSON.parse('"' + m[2] + '"'); } catch (e) { out[m[1]] = m[2]; }
       continue;
@@ -852,8 +858,9 @@ async function prefillFromConfig(fullName) {
     const cfg = parseConfig(b64decode(cur.content));
     if (cfg.interests != null) $("#interests").value = cfg.interests;
     if (cfg.avoid != null) $("#avoid").value = cfg.avoid;
-    if (cfg.email_to != null) $("#emailTo").value = cfg.email_to;
-    if (cfg.email_from != null) $("#emailFrom").value = cfg.email_from;
+    // email_to/email_from are never prefilled -- they live in secrets now,
+    // config.yaml only ever has "" for them, and GitHub never returns a
+    // secret's value anyway.
     if (cfg.window_hours != null) $("#win").value = cfg.window_hours;
     if (cfg.reading_count != null) { $("#count").value = cfg.reading_count; $("#countOut").textContent = cfg.reading_count; }
     updateWindowNote();
@@ -1029,6 +1036,9 @@ $("#go3").addEventListener("click", () => {
   if (authMode() === "apikey") S.secrets.ANTHROPIC_API_KEY = $("#anthropic").value.trim();
   else S.secrets.CLAUDE_CODE_OAUTH_TOKEN = $("#oauth").value.trim();
   S.secrets.RESEND_API_KEY = $("#resend").value.trim();
+  // Addresses are sensitive on a public fork -- secrets, not config.yaml.
+  S.secrets.EMAIL_TO = v.email_to;
+  S.secrets.EMAIL_FROM = v.email_from;
   const accounts = collectAccounts();
   S.secrets.MAIL_ACCOUNTS = accounts.map((a) => a.email).join(",");
   accounts.forEach((a) => {
@@ -1205,7 +1215,7 @@ function succeed(run) {
 $("#fire").addEventListener("click", launch);
 
 /* ------------------------------------------------------------ remember prefs (never secrets/token/accounts) */
-const KEEP = ["interests", "avoid", "emailTo", "emailFrom", "win"];
+const KEEP = ["interests", "avoid", "win"];
 try {
   const saved = JSON.parse(localStorage.getItem("mailtriage.prefs") || "{}");
   KEEP.forEach((k) => { if (saved[k] != null && $("#" + k)) $("#" + k).value = saved[k]; });
