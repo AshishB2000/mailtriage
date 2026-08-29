@@ -1,12 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "mailtriage"
 version = "1.0.0"
 description = "Twice-daily private triage dashboard for several Gmail inboxes."
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []   # stdlib only — this is deliberate
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+
+[project.scripts]
+mailtriage = "mailtriage.imap_pull:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mailtriage"]
 
 [tool.ruff]
 line-length = 120
@@ -19,5 +30,6 @@ line-length = 120
 ignore = ["BLE001"]
 
 [tool.pytest.ini_options]
-testpaths = ["."]
+testpaths = ["tests"]
+pythonpath = ["src"]
 addopts = "-q --strict-markers"
