@@ -1,48 +1,36 @@
-# mailtriage config. This file is COMMITTED to your repo on purpose --
+# mailtriage config. Written by the setup wizard, committed on purpose --
 # GitHub Actions checks it out and reads it. It holds no secrets.
-# Edit it by hand, or re-run the setup wizard to overwrite it.
-#
-# Accounts are NOT listed here -- they live in Actions secrets (MAIL_ACCOUNTS
-# and MAIL_PW_* per account), never in this committed file.
+# Edit it by hand any time, or re-run the wizard to overwrite it.
 
-# What actually matters -- what counts as needing your action. Be specific:
-# this text is handed to the model verbatim, so vague input produces a vague
-# triage. Say what kinds of mail you'd drop everything for, and what "needs a
-# reply" looks like for you.
+# What actually matters -- what counts as needing your action. Handed to
+# the model verbatim.
 interests: |
   Mail that needs a decision or a reply from me: direct questions from
   people I work with, meeting requests, anything with a deadline, invoices
   or bills that need action, and account/security alerts about my own
   accounts. If a human is waiting on me, it belongs in the digest.
 
-# What's noise -- what to drop on the floor. The model reads this as a hard
-# filter. Receipts, automated notifications, and newsletters you only skim
-# do not need a slot in a twice-daily triage.
+# What's noise -- what to drop on the floor. Read as a hard filter.
 avoid: |
   Purchase receipts and shipping notifications, automated "your build
   passed/failed" or monitoring alerts, marketing and promotional email,
   newsletters and digests you only skim, and social-media notifications.
 
-# MAX number of items in a digest. Fewer is fine -- if the window was quiet,
-# a 2-item digest is the correct output, not a failure.
+# MAX number of items in a digest. Fewer is fine -- a quiet window
+# should be short, not padded.
 reading_count: 8
 
-# How far back to look, in hours.
-#
-# READ THIS -- it is the one setting people get wrong:
-# window_hours MUST be >= the LARGEST gap between two consecutive cron runs
-# in the workflow that runs this, or mail arriving inside the gap is
-# silently skipped forever. There is no state file and nothing catches this
-# -- the time window IS the only dedupe.
+# How far back to look, in hours. Must be >= the largest gap between two
+# consecutive runs in .github/workflows/digest.yml, or mail published inside
+# the gap is skipped forever. Overlap is harmless; a gap is not.
 window_hours: 13
 
-# Only "email" is supported in v1.
+# Only "email" is supported.
 delivery: email
 
-# Requires the RESEND_API_KEY secret. email_from must be an address on a
-# domain you verified with Resend -- an unverified domain returns a 403
-# that looks like a bad API key but isn't.
-email_to: ""
-email_from: ""
+# Requires the RESEND_API_KEY secret. email_from must be on a domain
+# you have verified with Resend.
+email_to: "ashishbeerelli1@gmail.com"
+email_from: "ashishbeerelli1@gmail.com"
 
 subject_prefix: "mailtriage"
