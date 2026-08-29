@@ -25,14 +25,22 @@ reading_count: 8
 # the gap is skipped forever. Overlap is harmless; a gap is not.
 window_hours: 13
 
-# Only "email" is supported.
-delivery: email
+# "email" (via Resend) or "gmail" (via your own Gmail's SMTP).
+#
+# email  — requires the RESEND_API_KEY secret. email_from must be on a domain
+#          you have verified with Resend (https://resend.com/domains). Until
+#          you verify one, use Resend's shared sender "onboarding@resend.dev"
+#          — it needs no domain setup, but can only deliver to your own
+#          Resend-account email (set that as email_to). Can send to anyone.
+# gmail  — no Resend account needed. Sends through your own Gmail via SMTP,
+#          using the app password you already set for reading that inbox
+#          (MAIL_PW_* — see MAIL_ACCOUNTS). email_from must be one of your
+#          Gmail addresses and its MAIL_PW_* secret must be set. Best when
+#          emailing yourself: mail from your Gmail to your Gmail lands in
+#          the inbox, no domain to verify, no spam flag.
+delivery: gmail
 
-# Requires the RESEND_API_KEY secret. email_from must be on a domain you have
-# verified with Resend (https://resend.com/domains). Until you verify one, use
-# Resend's shared sender "onboarding@resend.dev" — it needs no domain setup, but
-# can only deliver to your own Resend-account email (set that as email_to).
 email_to: "ashishbeerelli1@gmail.com"
-email_from: "onboarding@resend.dev"
+email_from: "ashishbeerelli1@gmail.com"
 
 subject_prefix: "mailtriage"
