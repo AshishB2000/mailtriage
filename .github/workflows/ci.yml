@@ -12,6 +12,18 @@ permissions:
   contents: read
 
 jobs:
+  # Plain YAML parsing does not validate Actions expressions — a `secrets`
+  # reference in a step-level `if:` parses fine locally and is rejected by
+  # GitHub at dispatch time (this happened; see CLAUDE.md landmines).
+  # actionlint catches that whole class before merge.
+  workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        uses: raven-actions/actionlint@v2
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
