@@ -29,6 +29,11 @@ jobs:
   digest:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The `secrets` context is not allowed in a step-level `if:`, but it IS
+    # allowed in a job-level `env:`. Hoist the test here, then the steps below
+    # gate on `env.HAS_SUBSCRIPTION` instead.
+    env:
+      HAS_SUBSCRIPTION: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -51,12 +56,12 @@ jobs:
       # Subscription mode needs the claude CLI on the runner -- installed
       # below, only when that secret is set.
       - name: Install Claude Code CLI (subscription mode only)
-        if: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        if: env.HAS_SUBSCRIPTION == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
       - name: Install claude
-        if: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        if: env.HAS_SUBSCRIPTION == 'true'
         run: npm install -g @anthropic-ai/claude-code
 
       # Secrets a forker sets: EITHER ANTHROPIC_API_KEY OR
