@@ -28,9 +28,11 @@ window_hours: 13
 # Only "email" is supported.
 delivery: email
 
-# Requires the RESEND_API_KEY secret. email_from must be on a domain
-# you have verified with Resend.
+# Requires the RESEND_API_KEY secret. email_from must be on a domain you have
+# verified with Resend (https://resend.com/domains). Until you verify one, use
+# Resend's shared sender "onboarding@resend.dev" — it needs no domain setup, but
+# can only deliver to your own Resend-account email (set that as email_to).
 email_to: "ashishbeerelli1@gmail.com"
-email_from: "ashishbeerelli1@gmail.com"
+email_from: "onboarding@resend.dev"
 
 subject_prefix: "mailtriage"
