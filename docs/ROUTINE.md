@@ -2,7 +2,8 @@
 
 Each fire, do exactly this:
 
-1. Run: `python mailtriage/imap_pull.py --window-hours 13`
+1. Run: `python src/mailtriage/imap_pull.py --window-hours 13`
+   (or `mailtriage --window-hours 13` if installed with `pip install -e .`)
    Read the JSON on stdout: `{"messages": [...], "warnings": [...]}`.
 
 2. Triage EVERY message into one bucket by reading its `from`, `subject`,

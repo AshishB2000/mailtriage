@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from imap_pull import (
+from mailtriage.imap_pull import (
     MailError,
     accounts_from_env,
     gmail_link,
@@ -207,7 +207,7 @@ def test_self_check_passes(capsys):
 
 def test_main_reports_mailerror_to_stderr(capsys):
     # empty env => MAIL_ACCOUNTS unset => MailError caught, exit 1
-    import imap_pull as m
+    import mailtriage.imap_pull as m
 
     saved = dict(m.os.environ)
     m.os.environ.clear()
