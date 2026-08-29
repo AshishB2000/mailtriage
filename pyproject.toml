@@ -32,6 +32,8 @@ ignore = ["BLE001"]
 [tool.ruff.lint.per-file-ignores]
 # The triage prompt is the product — long, unbroken sentences on purpose.
 "src/mailtriage/triage.py" = ["E501"]
+# Inline-styled HTML table rows — long lines on purpose.
+"src/mailtriage/delivery/mail.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

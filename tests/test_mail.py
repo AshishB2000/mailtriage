@@ -1,0 +1,79 @@
+"""mail.py renders the digest HTML and posts it to Resend."""
+
+from __future__ import annotations
+
+import pytest
+
+from mailtriage.config import Config
+from mailtriage.delivery import mail
+from mailtriage.errors import MailError
+from mailtriage.models import Triaged
+
+
+def _item(bucket: str, subject: str = "hi", **overrides) -> Triaged:
+    base: Triaged = {
+        "bucket": bucket,
+        "note": "worth a look",
+        "account": "work@example.com",
+        "sender": "Alice <alice@example.com>",
+        "subject": subject,
+        "link": "https://mail.example.com/msg/1",
+        "date": "2026-08-28T00:00:00Z",
+        "unread": False,
+    }
+    base.update(overrides)
+    return base
+
+
+def _cfg(**overrides) -> Config:
+    cfg = Config.from_mapping({"delivery": "email", "email_to": "me@example.com", "email_from": "bot@example.com"})
+    for k, v in overrides.items():
+        setattr(cfg, k, v)
+    return cfg
+
+
+def test_email_html_escapes_subject():
+    html = mail.email_html(_cfg(), [_item("needs_action", subject="<script>alert(1)</script>")])
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+
+def test_email_html_shows_both_sections_when_both_present():
+    html = mail.email_html(_cfg(), [_item("needs_action"), _item("worth_reading")])
+    assert "Needs action" in html
+    assert "Worth reading" in html
+
+
+def test_email_html_omits_needs_action_when_empty():
+    html = mail.email_html(_cfg(), [_item("worth_reading")])
+    assert "Needs action" not in html
+    assert "Worth reading" in html
+
+
+def test_send_posts_list_recipient_and_bucket_counts(monkeypatch):
+    captured = {}
+
+    def fake_post_json(url, payload, headers=None):
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["headers"] = headers
+        return 200, "{}"
+
+    monkeypatch.setattr(mail, "post_json", fake_post_json)
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
+
+    cfg = _cfg(subject_prefix="mailtriage")
+    triaged = [_item("needs_action"), _item("needs_action"), _item("worth_reading")]
+    mail.send(cfg, triaged)
+
+    assert captured["payload"]["to"] == ["me@example.com"]
+    assert isinstance(captured["payload"]["to"], list)
+    assert captured["payload"]["subject"] == "mailtriage · 2 to act · 1 to read"
+
+
+def test_send_raises_mail_error_on_403(monkeypatch):
+    monkeypatch.setattr(mail, "post_json", lambda *a, **k: (403, "domain not verified"))
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
+
+    with pytest.raises(MailError):
+        mail.send(_cfg(), [_item("worth_reading")])
