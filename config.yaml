@@ -40,7 +40,14 @@ window_hours: 13
 #          the inbox, no domain to verify, no spam flag.
 delivery: gmail
 
-email_to: "ashishbeerelli1@gmail.com"
-email_from: "ashishbeerelli1@gmail.com"
+# Addresses go in the EMAIL_TO / EMAIL_FROM repo secrets, not here -- this
+# file is committed and this repo is public. The secrets override whatever
+# is written below; leave both blank here. For `delivery: gmail`, leaving
+# both EMAIL_TO and EMAIL_FROM unset too auto-sends from (and to) the first
+# MAIL_ACCOUNTS address, so setting up gmail delivery needs no address at
+# all. `delivery: email` (Resend) has no such fallback -- a verified sender
+# can't be guessed, so both secrets are required.
+email_to: ""
+email_from: ""
 
 subject_prefix: "mailtriage"

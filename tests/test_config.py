@@ -80,3 +80,24 @@ def test_malformed_yaml_is_reported_as_yaml(tmp_path):
     p.write_text("delivery: [unclosed", encoding="utf-8")
     with pytest.raises(MailError, match="not valid YAML"):
         load_config(p)
+
+
+def test_env_overlay_wins_over_yaml(tmp_path):
+    """Addresses are private even on a public fork -- EMAIL_TO/EMAIL_FROM secrets
+    must override whatever config.yaml says, so a public config.yaml never has to
+    carry a real address."""
+    p = tmp_path / "config.yaml"
+    p.write_text(
+        'delivery: email\nemail_to: "yaml@example.com"\nemail_from: "yaml-from@example.com"\n', encoding="utf-8"
+    )
+    cfg = load_config(p, environ={"EMAIL_TO": "env@example.com", "EMAIL_FROM": "env-from@example.com"})
+    assert cfg.email_to == "env@example.com"
+    assert cfg.email_from == "env-from@example.com"
+
+
+def test_env_overlay_leaves_blank_when_unset(tmp_path):
+    p = tmp_path / "config.yaml"
+    p.write_text("delivery: gmail\n", encoding="utf-8")
+    cfg = load_config(p, environ={})
+    assert cfg.email_to == ""
+    assert cfg.email_from == ""

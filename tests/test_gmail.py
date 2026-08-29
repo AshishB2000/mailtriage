@@ -126,3 +126,34 @@ def test_send_raises_when_email_to_empty(monkeypatch):
     monkeypatch.setenv(PW_VAR, "app password value")
     with pytest.raises(MailError):
         gmail.send(_cfg(email_to=""), [_item("worth_reading")])
+
+
+def test_send_falls_back_to_first_mail_account_when_email_from_blank(monkeypatch):
+    monkeypatch.setenv(PW_VAR, "app password value")
+    monkeypatch.setenv("MAIL_ACCOUNTS", SENDER + ",bob@gmail.com")
+    monkeypatch.setenv("MAIL_PW_BOB_GMAIL_COM", "bob's app password")
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+
+    gmail.send(_cfg(email_from="", email_to="someone@example.com"), [_item("worth_reading")])
+
+    smtp = _FakeSMTP.instances[0]
+    assert smtp.login_args == (SENDER, "app password value")
+    assert smtp.sent_msg is not None
+    assert smtp.sent_msg["From"] == SENDER
+
+
+def test_send_falls_back_to_sender_when_email_to_blank(monkeypatch):
+    monkeypatch.setenv(PW_VAR, "app password value")
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+
+    gmail.send(_cfg(email_to=""), [_item("worth_reading")])
+
+    smtp = _FakeSMTP.instances[0]
+    assert smtp.sent_msg is not None
+    assert smtp.sent_msg["To"] == SENDER
+
+
+def test_send_raises_when_email_from_blank_and_mail_accounts_unset(monkeypatch):
+    monkeypatch.delenv("MAIL_ACCOUNTS", raising=False)
+    with pytest.raises(MailError, match="MAIL_ACCOUNTS"):
+        gmail.send(_cfg(email_from=""), [_item("worth_reading")])

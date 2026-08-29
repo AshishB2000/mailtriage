@@ -14,18 +14,22 @@ from email.message import EmailMessage
 from mailtriage.config import Config
 from mailtriage.delivery.mail import email_html
 from mailtriage.errors import MailError
-from mailtriage.imap_pull import pw_env_var
+from mailtriage.imap_pull import accounts_from_env, pw_env_var
 from mailtriage.models import Triaged
 
 
 def send(cfg: Config, triaged: list[Triaged]) -> None:
     to, sender = cfg.email_to.strip(), cfg.email_from.strip()
     if not sender:
-        raise MailError(
-            "email_from is empty in config.yaml. For gmail delivery it must be one of your Gmail addresses."
-        )
+        try:
+            sender = accounts_from_env(os.environ)[0][0]
+        except MailError as e:
+            raise MailError(
+                "email_from is empty. Set the EMAIL_FROM secret, email_from in config.yaml, or fall back to "
+                f"the first MAIL_ACCOUNTS address ({e})"
+            ) from e
     if not to:
-        raise MailError("email_to is empty in config.yaml. Put the address you want the digest delivered to there.")
+        to = sender
 
     var = pw_env_var(sender)
     pw = os.environ.get(var)
