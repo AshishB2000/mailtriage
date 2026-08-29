@@ -256,3 +256,28 @@ def test_call_via_cli_not_installed_raises(monkeypatch):
     monkeypatch.setattr("mailtriage.triage.subprocess.run", raise_not_found)
     with pytest.raises(MailError, match="not installed"):
         triage._call_via_cli(CFG, [make_email(0)], datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
+
+
+def test_call_via_cli_surfaces_is_error_from_stdout(monkeypatch):
+    # `claude -p` reports failures as an is_error envelope on STDOUT with an
+    # empty stderr and a nonzero exit — the real reason must reach the user.
+    fake = _StubCompletedProcess(
+        1,
+        stdout=json.dumps({"is_error": True, "result": "Failed to authenticate: OAuth session expired"}),
+        stderr="",
+    )
+    monkeypatch.setattr("mailtriage.triage.subprocess.run", lambda *a, **k: fake)
+    with pytest.raises(MailError, match="Failed to authenticate"):
+        triage._call_via_cli(CFG, [make_email(0)], datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
+
+
+def test_call_via_cli_result_json_fallback(monkeypatch):
+    # Some CLI versions omit structured_output and put the JSON object as a
+    # string in `result`.
+    fake = _StubCompletedProcess(
+        0,
+        stdout=json.dumps({"result": json.dumps({"items": [{"id": 0, "bucket": "worth_reading", "note": "fyi"}]})}),
+    )
+    monkeypatch.setattr("mailtriage.triage.subprocess.run", lambda *a, **k: fake)
+    reply = triage._call_via_cli(CFG, [make_email(0)], datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
+    assert reply == {"items": [{"id": 0, "bucket": "worth_reading", "note": "fyi"}]}

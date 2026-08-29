@@ -190,19 +190,39 @@ def _call_via_cli(cfg: Config, emails: list[Email], now: datetime) -> dict[str, 
             "https://docs.claude.com/en/docs/claude-code) or set ANTHROPIC_API_KEY instead."
         ) from e
 
-    if proc.returncode != 0:
-        raise MailError(
-            f"`claude` CLI exited with status {proc.returncode}: {proc.stderr.strip()} — check that `claude` "
-            "is installed and CLAUDE_CODE_OAUTH_TOKEN is set to a valid token. If it has expired, regenerate "
-            "one with `claude setup-token`."
-        )
-
+    # `claude -p --output-format json` prints a JSON envelope to STDOUT for both
+    # success and failure (failures carry `is_error: true` and a human-readable
+    # `result`), and typically leaves stderr empty. Parse stdout first so the
+    # real reason — usually an auth failure — is surfaced instead of a blank.
     try:
         parsed = json.loads(proc.stdout)
     except json.JSONDecodeError as e:
-        raise MailError(f"could not parse `claude` CLI output as JSON: {e}") from e
+        detail = (proc.stderr or proc.stdout or "").strip()
+        raise MailError(
+            f"`claude` CLI exited with status {proc.returncode} and unparseable output: {detail} — "
+            "check that CLAUDE_CODE_OAUTH_TOKEN is a valid token (regenerate with `claude setup-token`)."
+        ) from e
+
+    if parsed.get("is_error") or proc.returncode != 0:
+        reason = parsed.get("result") or proc.stderr.strip() or "unknown error"
+        raise MailError(
+            f"`claude` CLI could not triage: {reason} — if this is an authentication error, your "
+            "CLAUDE_CODE_OAUTH_TOKEN is invalid or expired; regenerate it with `claude setup-token` and "
+            "update the repo secret, or switch to ANTHROPIC_API_KEY instead."
+        )
 
     structured = parsed.get("structured_output")
+    if not isinstance(structured, dict):
+        # Some CLI versions return the schema-constrained object as a JSON string
+        # in `result` rather than a `structured_output` field.
+        result = parsed.get("result")
+        if isinstance(result, str):
+            try:
+                maybe = json.loads(result)
+            except json.JSONDecodeError:
+                maybe = None
+            if isinstance(maybe, dict):
+                structured = maybe
     if not isinstance(structured, dict):
         raise MailError("claude CLI returned no structured output — the run may have failed silently.")
     return structured
