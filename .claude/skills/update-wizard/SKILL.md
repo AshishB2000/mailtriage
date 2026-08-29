@@ -1,0 +1,47 @@
+---
+name: update-wizard
+description: Use before editing docs/index.html (the setup wizard) — adding fields, changing secrets handling, touching the launch flow, or restyling the page.
+---
+
+# Updating the setup wizard
+
+## Overview
+
+`docs/index.html` is one self-contained page that writes secrets and config
+into a stranger's fork. Its bugs don't error — they break forks *silently*.
+Know the invariants before editing; verify all of them after.
+
+## Invariants — violating any one breaks forks
+
+| Invariant | Why |
+|---|---|
+| `mailPwSlug` (JS) === `pw_env_var` (Python, imap_pull.py) character-for-character: `"MAIL_PW_" +` upper-cased address, every `[^A-Z0-9]` → `_` | Wizard writes the secret, engine reads it — a divergent name means that account is silently skipped |
+| `buildYaml()` emits EXACTLY the `Config` dataclass field names (config.py) | Unknown keys only warn; a typo'd key is settings the engine ignores, no error |
+| Secrets/token live ONLY in memory (`S.token`, `S.secrets`); the localStorage `KEEP` list never contains token, keys, or passwords | The page's trust story: plaintext never persists, never leaves the tab unencrypted |
+| Every secret is sealed with libsodium `crypto_box_seal` against the repo public key before PUT | GitHub only ever receives ciphertext |
+| Works from `file://`: no CDN, no external asset, `sodium.js` vendored and unmodified | Users may run it locally; a network asset also breaks the "everything in this tab" claim |
+| `WORKFLOW = "digest.yml"` literal; every ref/branch uses `S.repo.default_branch`, never hardcoded `main` | Dispatch is by filename; forks may use any default branch |
+| Exactly ONE AI secret written — `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, per the user's toggle | Engine prefers the token when present; writing both lets a stale one shadow a good key |
+| `sk-ant-…` strings appear only as input `placeholder` attributes | Never a real value in the page |
+| Async prefill must not clobber user input (`S.step !== 1` guard) | Race fixed once already — don't reintroduce |
+
+## After ANY edit, run all of this
+
+```bash
+.venv/bin/python -c "from html.parser import HTMLParser; HTMLParser().feed(open('docs/index.html').read()); print('html ok')"
+.venv/bin/python -m pytest tests/test_contracts.py -q   # machine-checks the mirrors
+grep -c 'sk-ant' docs/index.html                        # only placeholder lines
+grep -n 'KEEP' docs/index.html                          # eyeball: no secret ids in the list
+grep -n 'src="http' docs/index.html                     # must be empty (no CDN)
+```
+
+Then open the page from `file://` and click through step 1 rendering.
+
+## Common mistakes
+
+- Adding a config field in the wizard but not `config.py` (or vice versa) —
+  the contract test catches it only if both sides changed names, so update
+  `Config` first, wizard second.
+- Testing only via GitHub Pages — `file://` is the contract; Pages hides
+  missing-asset bugs.
+- "Improving" `sodium.js` or swapping it for a CDN build.
