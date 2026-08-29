@@ -78,10 +78,29 @@ workflows, go ahead and enable them."**
 
 | Secret | Value |
 |---|---|
-| `ANTHROPIC_API_KEY` | a key from [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| `ANTHROPIC_API_KEY` **or** `CLAUDE_CODE_OAUTH_TOKEN` | AI auth — pick one, see below |
 | `RESEND_API_KEY` | a key from [resend.com/api-keys](https://resend.com/api-keys) (free tier) — you'll also need to verify a sending domain at [resend.com/domains](https://resend.com/domains) |
 | `MAIL_ACCOUNTS` | comma-separated Gmail addresses, e.g. `alice@gmail.com,alice.work@gmail.com` |
 | one `MAIL_PW_*` per address | the app password for that address (see step 4) |
+
+**AI auth — set exactly one of these two secrets:**
+
+- **`ANTHROPIC_API_KEY`** (recommended for most forkers) — a key from
+  [console.anthropic.com](https://console.anthropic.com/settings/keys).
+  Pay-per-use, a few cents a month; works for anyone with an Anthropic
+  account.
+- **`CLAUDE_CODE_OAUTH_TOKEN`** (if you have a Claude Pro/Max subscription) —
+  run `claude setup-token` locally once and paste the printed token as the
+  secret value. Triage then runs against your subscription instead of the
+  API, so there's no per-run API bill. The token lasts about a year;
+  regenerate it with `claude setup-token` when it expires. Requires an
+  active Claude subscription and the [Claude Code
+  CLI](https://docs.claude.com/en/docs/claude-code) installed locally to run
+  `setup-token` — the workflow installs the CLI on the runner automatically,
+  only when this secret is set.
+
+If neither secret is set, the run fails fast with `No Claude auth
+configured`.
 
 **The `MAIL_PW_*` names are the most error-prone step.** Each is
 `MAIL_PW_` + the address, upper-cased, with every non-alphanumeric character
@@ -181,8 +200,10 @@ failed.
 
 | Log message | What it means | Fix |
 |---|---|---|
+| `No Claude auth configured` | Neither `ANTHROPIC_API_KEY` nor `CLAUDE_CODE_OAUTH_TOKEN` is set | Set one of the two — see step 3 above |
 | `ANTHROPIC_API_KEY is not set.` | The secret is missing | Add it under Settings → Secrets and variables → Actions |
 | `Anthropic rejected ANTHROPIC_API_KEY.` | The secret exists but the key is wrong, revoked, or has a stray space | Generate a fresh key and update the secret |
+| `` `claude` CLI exited with status ... `` (subscription mode) | Usually an expired or invalid `CLAUDE_CODE_OAUTH_TOKEN` | Regenerate the token locally with `claude setup-token` and update the secret |
 | `Anthropic rate-limited this run, or the account is out of credit.` | Billing/rate limit on the Anthropic side, not a bug | Check your balance; the next scheduled run picks things up |
 | `MAIL_ACCOUNTS is empty` | The secret isn't set, or is blank | Set it to a comma-separated list of Gmail addresses |
 | `<addr>: no app password found in $MAIL_PW_...` | That account's `MAIL_PW_*` secret is missing or misnamed | Re-check the name against the transform in step 3 above; this account is skipped, the run continues for the rest |
