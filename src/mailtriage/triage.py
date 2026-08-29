@@ -11,7 +11,9 @@ uninstalled — so the import (and its exception classes) lives inside `_call`.
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -67,6 +69,11 @@ TOOL: ToolParam = {
 
 # Forced, not suggested: the whole reply shape depends on this tool being called.
 TOOL_CHOICE: ToolChoiceToolParam = {"type": "tool", "name": "emit_triage"}
+
+# Same shape as TOOL's input_schema, reused for the CLI's --json-schema — the
+# subscription backend has no forced-tool equivalent, so this is what
+# constrains its output instead.
+TRIAGE_SCHEMA = TOOL["input_schema"]
 
 
 def build_system(cfg: Config) -> str:
@@ -159,6 +166,48 @@ def _call(cfg: Config, emails: list[Email], now: datetime) -> Any:
         ) from e
 
 
+def _call_via_cli(cfg: Config, emails: list[Email], now: datetime) -> dict[str, Any]:
+    """Subscription backend: shell out to the `claude` CLI instead of the API.
+
+    The SDK is API-key only and cannot use a subscription token, so this is
+    the only way to triage against CLAUDE_CODE_OAUTH_TOKEN. `--json-schema`
+    is the CLI's only output-shaping knob — there's no forced-tool
+    equivalent — but `pick()` already treats the reply as hostile input, so
+    that's fine.
+    """
+    prompt = build_system(cfg) + "\n\n" + build_user(emails, now)
+    try:
+        proc = subprocess.run(
+            ["claude", "-p", prompt, "--output-format", "json", "--json-schema", json.dumps(TRIAGE_SCHEMA)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except FileNotFoundError as e:
+        raise MailError(
+            "the `claude` CLI is not installed or not on PATH. Install it (see "
+            "https://docs.claude.com/en/docs/claude-code) or set ANTHROPIC_API_KEY instead."
+        ) from e
+
+    if proc.returncode != 0:
+        raise MailError(
+            f"`claude` CLI exited with status {proc.returncode}: {proc.stderr.strip()} — check that `claude` "
+            "is installed and CLAUDE_CODE_OAUTH_TOKEN is set to a valid token. If it has expired, regenerate "
+            "one with `claude setup-token`."
+        )
+
+    try:
+        parsed = json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        raise MailError(f"could not parse `claude` CLI output as JSON: {e}") from e
+
+    structured = parsed.get("structured_output")
+    if not isinstance(structured, dict):
+        raise MailError("claude CLI returned no structured output — the run may have failed silently.")
+    return structured
+
+
 def pick(cfg: Config, emails: list[Email], reply: dict[str, Any]) -> list[Triaged]:
     """Map the model's bucketed ids back onto the real emails.
 
@@ -197,17 +246,25 @@ def pick(cfg: Config, emails: list[Email], reply: dict[str, Any]) -> list[Triage
 
 
 def triage(cfg: Config, emails: list[Email], now: datetime) -> list[Triaged]:
-    resp = _call(cfg, emails, now)
-
-    if resp.stop_reason == "max_tokens":
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        reply = _call_via_cli(cfg, emails, now)  # subscription
+    elif os.environ.get("ANTHROPIC_API_KEY"):
+        resp = _call(cfg, emails, now)  # API
+        if resp.stop_reason == "max_tokens":
+            raise MailError(
+                "the model's reply was cut off before it finished (stop_reason=max_tokens). Lower "
+                "'reading_count' in config.yaml, or shorten the 'interests' text."
+            )
+        block = next((b for b in resp.content if b.type == "tool_use"), None)
+        if block is None:
+            raise MailError(
+                "the model returned no triage at all, which usually means it declined the request. Check "
+                "the 'interests' and 'avoid' text in config.yaml for anything it might refuse to act on."
+            )
+        reply = block.input
+    else:
         raise MailError(
-            "the model's reply was cut off before it finished (stop_reason=max_tokens). Lower 'reading_count' "
-            "in config.yaml, or shorten the 'interests' text."
+            "No Claude auth configured — set CLAUDE_CODE_OAUTH_TOKEN (subscription, via `claude "
+            "setup-token`) or ANTHROPIC_API_KEY (API). Add one as a repo secret."
         )
-    block = next((b for b in resp.content if b.type == "tool_use"), None)
-    if block is None:
-        raise MailError(
-            "the model returned no triage at all, which usually means it declined the request. Check the "
-            "'interests' and 'avoid' text in config.yaml for anything it might refuse to act on."
-        )
-    return pick(cfg, emails, block.input)
+    return pick(cfg, emails, reply)

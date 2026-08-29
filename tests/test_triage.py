@@ -5,6 +5,7 @@ message object so the tool-use/max_tokens plumbing is covered without a call.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -131,6 +132,8 @@ class _StubMessage:
 
 
 def test_triage_happy_path(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     emails = [make_email(0), make_email(1)]
     stub = _StubMessage(
         "end_turn",
@@ -144,7 +147,112 @@ def test_triage_happy_path(monkeypatch):
 
 
 def test_triage_raises_on_max_tokens(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     stub = _StubMessage("max_tokens", [])
     monkeypatch.setattr(triage, "_call", lambda cfg, emails, now: stub)
     with pytest.raises(MailError, match="max_tokens"):
         triage.triage(CFG, [make_email(0)], datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
+
+
+# --- backend selection -------------------------------------------------
+
+
+def test_triage_uses_cli_backend_when_oauth_token_set(monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    sentinel = {"items": [{"id": 0, "bucket": "needs_action", "note": "via cli"}]}
+    monkeypatch.setattr(triage, "_call_via_cli", lambda cfg, emails, now: sentinel)
+    monkeypatch.setattr(
+        triage, "_call", lambda cfg, emails, now: (_ for _ in ()).throw(AssertionError("API path used"))
+    )
+    result = triage.triage(CFG, [make_email(0)], datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
+    assert result[0]["note"] == "via cli"
+
+
+def test_triage_uses_api_backend_when_only_api_key_set(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    stub = _StubMessage(
+        "end_turn", [_StubToolUseBlock({"items": [{"id": 0, "bucket": "needs_action", "note": "via api"}]})]
+    )
+    monkeypatch.setattr(triage, "_call", lambda cfg, emails, now: stub)
+    monkeypatch.setattr(
+        triage, "_call_via_cli", lambda cfg, emails, now: (_ for _ in ()).throw(AssertionError("CLI path used"))
+    )
+    result = triage.triage(CFG, [make_email(0)], datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
+    assert result[0]["note"] == "via api"
+
+
+def test_triage_raises_when_no_auth_configured(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(MailError, match="No Claude auth configured"):
+        triage.triage(CFG, [make_email(0)], datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
+
+
+# --- _call_via_cli parsing ----------------------------------------------
+
+
+class _StubCompletedProcess:
+    def __init__(self, returncode: int, stdout: str = "", stderr: str = ""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def test_call_via_cli_parses_structured_output(monkeypatch):
+    fake = _StubCompletedProcess(
+        0,
+        stdout=json.dumps(
+            {
+                "result": "ok",
+                "structured_output": {"items": [{"id": 0, "bucket": "needs_action", "note": "x"}]},
+            }
+        ),
+    )
+    monkeypatch.setattr("mailtriage.triage.subprocess.run", lambda *a, **k: fake)
+    reply = triage._call_via_cli(CFG, [make_email(0)], datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
+    assert reply == {"items": [{"id": 0, "bucket": "needs_action", "note": "x"}]}
+
+
+def test_call_via_cli_full_triage_run(monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    fake = _StubCompletedProcess(
+        0,
+        stdout=json.dumps(
+            {
+                "result": "ok",
+                "structured_output": {"items": [{"id": 0, "bucket": "needs_action", "note": "reply by Friday"}]},
+            }
+        ),
+    )
+    monkeypatch.setattr("mailtriage.triage.subprocess.run", lambda *a, **k: fake)
+    emails = [make_email(0)]
+    result = triage.triage(CFG, emails, datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
+    assert len(result) == 1
+    assert result[0]["bucket"] == "needs_action"
+    assert result[0]["note"] == "reply by Friday"
+
+
+def test_call_via_cli_nonzero_exit_raises(monkeypatch):
+    fake = _StubCompletedProcess(1, stderr="not authenticated")
+    monkeypatch.setattr("mailtriage.triage.subprocess.run", lambda *a, **k: fake)
+    with pytest.raises(MailError, match="not authenticated"):
+        triage._call_via_cli(CFG, [make_email(0)], datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
+
+
+def test_call_via_cli_missing_structured_output_raises(monkeypatch):
+    fake = _StubCompletedProcess(0, stdout=json.dumps({"result": "ok"}))
+    monkeypatch.setattr("mailtriage.triage.subprocess.run", lambda *a, **k: fake)
+    with pytest.raises(MailError, match="structured output"):
+        triage._call_via_cli(CFG, [make_email(0)], datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
+
+
+def test_call_via_cli_not_installed_raises(monkeypatch):
+    def raise_not_found(*a, **k):
+        raise FileNotFoundError("no such file: claude")
+
+    monkeypatch.setattr("mailtriage.triage.subprocess.run", raise_not_found)
+    with pytest.raises(MailError, match="not installed"):
+        triage._call_via_cli(CFG, [make_email(0)], datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc))
