@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "Twice-daily private triage dashboard for several Gmail inboxes."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []   # stdlib only — this is deliberate
+dependencies = ["PyYAML"]   # config.yaml parsing; matches newsprint's contract
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
