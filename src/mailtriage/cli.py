@@ -16,7 +16,8 @@ from mailtriage.models import Triaged
 
 def _build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
-        prog="mailtriage", description="mailtriage — twice-daily private triage dashboard for your inboxes."
+        prog="mailtriage",
+        description="Twice-daily private AI triage of your Gmail inboxes, delivered as an HTML email.",
     )
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument(
