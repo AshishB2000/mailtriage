@@ -29,7 +29,8 @@ def test_defaults_match_shipped_config():
 def test_shipped_config_yaml_loads():
     """The committed config.yaml must parse — the wizard writes this shape."""
     cfg = load_config("config.yaml")
-    assert cfg.delivery == "email"
+    # Don't pin the shipped delivery choice — it's user-editable; just require a valid one.
+    assert cfg.delivery in ("email", "gmail")
     assert cfg.window_hours == 13
 
 
