@@ -6,17 +6,19 @@ message object so the tool-use/max_tokens plumbing is covered without a call.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 import pytest
 
 from mailtriage import triage
 from mailtriage.config import Config
 from mailtriage.errors import MailError
+from mailtriage.models import Email
 
 CFG = Config(delivery="email", interests="rockets and clocks", reading_count=8)
 
 
-def make_email(i: int) -> dict:
+def make_email(i: int) -> Email:
     return {
         "account": f"acct{i}",
         "from": f"sender{i}@example.com",
@@ -118,12 +120,12 @@ def test_build_user_has_bracketed_index():
 class _StubToolUseBlock:
     type = "tool_use"
 
-    def __init__(self, input_: dict):
+    def __init__(self, input_: dict[str, Any]):
         self.input = input_
 
 
 class _StubMessage:
-    def __init__(self, stop_reason: str, content: list):
+    def __init__(self, stop_reason: str, content: list[Any]):
         self.stop_reason = stop_reason
         self.content = content
 

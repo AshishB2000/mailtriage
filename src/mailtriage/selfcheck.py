@@ -17,10 +17,11 @@ from datetime import datetime, timedelta, timezone
 
 from mailtriage.config import Config
 from mailtriage.imap_pull import parse_message, within_window
+from mailtriage.models import Email
 from mailtriage.triage import pick
 
 
-def _email(i: int) -> dict:
+def _email(i: int) -> Email:
     return {
         "account": "acct",
         "from": f"sender{i}@example.com",

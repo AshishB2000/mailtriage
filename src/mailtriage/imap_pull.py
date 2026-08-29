@@ -1,14 +1,19 @@
 """Pull recent INBOX mail from several Gmail accounts as JSON. Stdlib only."""
 
+from __future__ import annotations
+
 import contextlib
 import imaplib
 import re
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes, policy
+from email.message import EmailMessage
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
-from mailtriage.errors import MailError
+# Re-exported: tests import MailError from this module too.
+from mailtriage.errors import MailError as MailError
 from mailtriage.models import Email, PullResult
 
 
@@ -16,7 +21,7 @@ def pw_env_var(addr: str) -> str:
     return "MAIL_PW_" + re.sub(r"[^A-Z0-9]", "_", addr.upper())
 
 
-def accounts_from_env(environ) -> list[tuple[str, str]]:
+def accounts_from_env(environ: Mapping[str, str]) -> list[tuple[str, str]]:
     raw = (environ.get("MAIL_ACCOUNTS") or "").strip()
     if not raw:
         raise MailError("MAIL_ACCOUNTS is empty — set it to a comma-separated list of Gmail addresses.")
@@ -32,7 +37,7 @@ def accounts_from_env(environ) -> list[tuple[str, str]]:
     return out
 
 
-def msg_datetime(date_header: str):
+def msg_datetime(date_header: str) -> datetime | None:
     try:
         dt = parsedate_to_datetime(date_header)
     except (TypeError, ValueError):
@@ -42,7 +47,7 @@ def msg_datetime(date_header: str):
     return dt
 
 
-def within_window(dt, now, hours) -> bool:
+def within_window(dt: datetime | None, now: datetime, hours: int) -> bool:
     if dt is None:
         return False
     if dt > now + timedelta(minutes=5):  # future-stamped feeds/senders clamp out
@@ -57,8 +62,8 @@ def gmail_link(addr: str, message_id: str) -> str:
     return f"https://mail.google.com/mail/u/{addr}/#search/rfc822msgid:{quote(mid)}"
 
 
-def snippet_of(msg, limit: int = 200) -> str:
-    part = msg
+def snippet_of(msg: EmailMessage, limit: int = 200) -> str:
+    part: EmailMessage | None = msg
     if msg.is_multipart():
         part = next(
             (
@@ -73,15 +78,17 @@ def snippet_of(msg, limit: int = 200) -> str:
     try:
         text = part.get_content()
     except Exception:
-        payload = part.get_payload(decode=True) or b""
+        payload = part.get_payload(decode=True)
+        if not isinstance(payload, bytes):  # get_payload(decode=True) is typed loosely; guard the real shape
+            payload = b""
         text = payload.decode(part.get_content_charset() or "utf-8", "replace")
     return " ".join(text.split())[:limit]
 
 
-def parse_message(raw: bytes, addr: str, flags: str, now, hours: int) -> Email | None:
+def parse_message(raw: bytes, addr: str, flags: str, now: datetime, hours: int) -> Email | None:
     msg = message_from_bytes(raw, policy=policy.default)
     dt = msg_datetime(str(msg.get("Date", "")))
-    if not within_window(dt, now, hours):
+    if dt is None or not within_window(dt, now, hours):
         return None
     return {
         "account": addr,
@@ -94,10 +101,10 @@ def parse_message(raw: bytes, addr: str, flags: str, now, hours: int) -> Email |
     }
 
 
-def fetch_account(addr, pw, now, hours, host="imap.gmail.com"):
+def fetch_account(addr: str, pw: str, now: datetime, hours: int, host: str = "imap.gmail.com") -> list[Email]:
     # SINCE is date-granular; go back an extra day, then filter exactly in Python.
     since = (now - timedelta(hours=hours) - timedelta(days=1)).strftime("%d-%b-%Y")
-    out = []
+    out: list[Email] = []
     M = imaplib.IMAP4_SSL(host, 993)
     try:
         M.login(addr, pw)
@@ -119,8 +126,12 @@ def fetch_account(addr, pw, now, hours, host="imap.gmail.com"):
     return out
 
 
-def pull(environ, now, hours, fetch=fetch_account) -> PullResult:
-    messages, warnings = [], []
+FetchFn = Callable[[str, str, datetime, int], list[Email]]
+
+
+def pull(environ: Mapping[str, str], now: datetime, hours: int, fetch: FetchFn = fetch_account) -> PullResult:
+    messages: list[Email] = []
+    warnings: list[dict[str, str]] = []
     for addr, pw in accounts_from_env(environ):
         try:
             messages.extend(fetch(addr, pw, now, hours))

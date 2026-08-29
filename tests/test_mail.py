@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from mailtriage.config import Config
@@ -10,7 +12,7 @@ from mailtriage.errors import MailError
 from mailtriage.models import Triaged
 
 
-def _item(bucket: str, subject: str = "hi", **overrides) -> Triaged:
+def _item(bucket: str, subject: str = "hi", **overrides: object) -> Triaged:
     base: Triaged = {
         "bucket": bucket,
         "note": "worth a look",
@@ -21,11 +23,10 @@ def _item(bucket: str, subject: str = "hi", **overrides) -> Triaged:
         "date": "2026-08-28T00:00:00Z",
         "unread": False,
     }
-    base.update(overrides)
-    return base
+    return cast(Triaged, {**base, **overrides})
 
 
-def _cfg(**overrides) -> Config:
+def _cfg(**overrides: object) -> Config:
     cfg = Config.from_mapping({"delivery": "email", "email_to": "me@example.com", "email_from": "bot@example.com"})
     for k, v in overrides.items():
         setattr(cfg, k, v)

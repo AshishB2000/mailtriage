@@ -8,13 +8,13 @@ version = "1.0.0"
 description = "Twice-daily private triage dashboard for several Gmail inboxes."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["PyYAML"]   # config.yaml parsing; matches newsprint's contract
+dependencies = ["anthropic==0.120.2", "PyYAML==6.0.3"]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.11", "types-PyYAML"]
 
 [project.scripts]
-mailtriage = "mailtriage.imap_pull:main"
+mailtriage = "mailtriage.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mailtriage"]
@@ -34,8 +34,20 @@ ignore = ["BLE001"]
 "src/mailtriage/triage.py" = ["E501"]
 # Inline-styled HTML table rows — long lines on purpose.
 "src/mailtriage/delivery/mail.py" = ["E501"]
+# `as MailError` is a required explicit re-export under mypy's strict
+# no-implicit-reexport, not a redundant alias.
+"src/mailtriage/imap_pull.py" = ["PLC0414"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q --strict-markers"
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src", "tests"]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false

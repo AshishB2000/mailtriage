@@ -84,6 +84,7 @@ def test_gmail_link_uses_rfc822msgid():
 
 def test_parse_message_builds_record():
     rec = parse_message(RAW, "me@gmail.com", "1 (FLAGS () BODY[] {123}", NOW, 13)
+    assert rec is not None
     assert rec["from"] == "Alice <alice@work.com>"
     assert rec["subject"] == "Lunch tomorrow?"
     assert rec["snippet"] == "Are you free around noon? Let me know."
@@ -95,6 +96,7 @@ def test_parse_message_builds_record():
 
 def test_parse_message_seen_flag_marks_read():
     rec = parse_message(RAW, "me@gmail.com", "1 (FLAGS (\\Seen) BODY[] {123}", NOW, 13)
+    assert rec is not None
     assert rec["unread"] is False
 
 

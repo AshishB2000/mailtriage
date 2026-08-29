@@ -13,11 +13,16 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mailtriage.config import Config
 from mailtriage.errors import MailError
 from mailtriage.models import Email, Triaged
+
+if TYPE_CHECKING:  # anthropic's own types, for annotations only — never imported at runtime
+    from anthropic.types.message_param import MessageParam
+    from anthropic.types.tool_choice_tool_param import ToolChoiceToolParam
+    from anthropic.types.tool_param import ToolParam
 
 # Headline triage running on the *user's* bill. Do not upgrade to Opus
 # without a reason.
@@ -25,7 +30,7 @@ MODEL = "claude-sonnet-5"
 MAX_TOKENS = 16000
 BUCKETS = ("needs_action", "worth_reading")
 
-TOOL: dict[str, Any] = {
+TOOL: ToolParam = {
     "name": "emit_triage",
     "description": "Return the bucketed, annotated emails worth this reader's attention.",
     "input_schema": {
@@ -61,7 +66,7 @@ TOOL: dict[str, Any] = {
 }
 
 # Forced, not suggested: the whole reply shape depends on this tool being called.
-TOOL_CHOICE = {"type": "tool", "name": "emit_triage"}
+TOOL_CHOICE: ToolChoiceToolParam = {"type": "tool", "name": "emit_triage"}
 
 
 def build_system(cfg: Config) -> str:
@@ -120,12 +125,13 @@ def _call(cfg: Config, emails: list[Email], now: datetime) -> Any:
         )
     import anthropic
 
+    messages: list[MessageParam] = [{"role": "user", "content": build_user(emails, now)}]
     try:
         return anthropic.Anthropic().messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
             system=build_system(cfg),
-            messages=[{"role": "user", "content": build_user(emails, now)}],
+            messages=messages,
             tools=[TOOL],
             tool_choice=TOOL_CHOICE,
         )
