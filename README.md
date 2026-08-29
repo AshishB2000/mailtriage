@@ -60,11 +60,36 @@ how you train yourself to stop opening it.
 
 ## Setup — about 5 minutes
 
-### 1. Fork this repo
+### The easy way: the setup wizard
+
+1. Click **Fork** (top right of this page).
+2. Open [`docs/index.html`](docs/index.html) from your fork — either locally
+   (clone and open the file, or download it and double-click it, no server
+   needed) or via GitHub Pages if you've enabled it on your fork.
+3. Paste a [GitHub personal access token](https://github.com/settings/tokens/new?scopes=repo&description=mailtriage+setup),
+   fill in your triage brief, AI auth, Resend key, and Gmail accounts, and
+   click through.
+
+The page finds your fork, encrypts every secret **in your browser** with
+libsodium against your repository's own public key, writes them to your
+fork's Actions secrets, commits `config.yaml`, and triggers the first run —
+all directly against the GitHub API from that one tab. There's no server
+behind it and nothing to install; open the page's source and read it if you
+want to verify that yourself. Reopening the page later turns it into a
+settings editor: pick your repo again and it loads your existing
+`interests`, `avoid`, and delivery settings from `config.yaml` (secrets and
+accounts still need re-entering — GitHub never returns a secret's value).
+
+If you'd rather do it by hand — or the wizard hits something your setup
+doesn't like — the manual steps below do exactly the same thing.
+
+### The manual way
+
+#### 1. Fork this repo
 
 Click **Fork**. Everything below happens inside your fork.
 
-### 2. Enable Actions
+#### 2. Enable Actions
 
 Open the **Actions** tab of your fork. GitHub disables scheduled workflows
 in forks by default, so you'll see a banner — click **"I understand my
@@ -72,7 +97,7 @@ workflows, go ahead and enable them."**
 
 <!-- screenshot: Actions tab, enable-workflows banner -->
 
-### 3. Add the secrets
+#### 3. Add the secrets
 
 **Settings → Secrets and variables → Actions → New repository secret.**
 
@@ -115,7 +140,7 @@ alice.work@gmail.com  →  MAIL_PW_ALICE_WORK_GMAIL_COM
 Get the name wrong and that one account is skipped with a warning in the
 Actions log — the run still completes for every other account.
 
-### 4. Create an app password per account
+#### 4. Create an app password per account
 
 For **each** Gmail address in `MAIL_ACCOUNTS`:
 
@@ -126,7 +151,7 @@ For **each** Gmail address in `MAIL_ACCOUNTS`:
 
 Full walkthrough: [docs/SETUP.md](docs/SETUP.md).
 
-### 5. Edit `config.yaml` and commit
+#### 5. Edit `config.yaml` and commit
 
 Open `config.yaml` in GitHub's web editor (or clone and edit locally) and set
 at least `email_to` and `email_from`. `interests`, `avoid`, and
@@ -134,7 +159,7 @@ at least `email_to` and `email_from`. `interests`, `avoid`, and
 inbox. Commit the change — `config.yaml` holds no secrets and is meant to be
 committed.
 
-### 6. Trigger a first run
+#### 6. Trigger a first run
 
 **Actions → digest → Run workflow**, or just wait for the next scheduled
 run. Check the log if nothing arrives — see Troubleshooting below.
