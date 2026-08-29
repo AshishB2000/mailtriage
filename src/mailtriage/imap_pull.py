@@ -12,9 +12,7 @@ from email import message_from_bytes, policy
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
-
-class MailError(Exception):
-    """The only exception raised on purpose. Message is for a workflow log."""
+from mailtriage.errors import MailError
 
 
 def pw_env_var(addr: str) -> str:
