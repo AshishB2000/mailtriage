@@ -1,0 +1,1228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>mailtriage — setup</title>
+<meta name="description" content="Set up mailtriage: private AI triage of your Gmail inboxes.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23191713'/%3E%3Cg fill='%23f7f4ee'%3E%3Crect x='7' y='8' width='18' height='2.4'/%3E%3Crect x='7' y='14' width='11' height='1.6'/%3E%3Crect x='7' y='18' width='14' height='1.6'/%3E%3Crect x='7' y='22' width='9' height='1.6'/%3E%3C/g%3E%3C/svg%3E">
+
+<style>
+/* ============================================================ tokens */
+:root{
+  --paper:#f6f3ed;
+  --surface:#fffdf9;
+  --sunk:#efebe2;
+  --ink:#17150f;
+  --ink-2:#4a453b;
+  --muted:#7b7367;
+  --faint:#a9a294;
+  --rule:rgba(23,21,15,.13);
+  --hair:rgba(23,21,15,.07);
+  --accent:#a93c26;
+  --accent-2:#8b2f1c;
+  --wash:rgba(169,60,38,.08);
+  --ok:#2c7350;
+  --ok-wash:rgba(44,115,80,.10);
+  --warn:#8d6410;
+  --bad:#a92f22;
+  --bad-wash:rgba(169,47,34,.09);
+  --shadow:0 1px 1px rgba(23,21,15,.04), 0 10px 26px -18px rgba(23,21,15,.40);
+  --shadow-lg:0 1px 2px rgba(23,21,15,.05), 0 30px 60px -34px rgba(23,21,15,.45);
+  --grain:.045;
+  --serif:ui-serif,"Iris",Georgia,"Times New Roman",Times,serif;
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --r:12px;
+  --e:cubic-bezier(.22,.68,.28,1);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#0f0e0d;
+    --surface:#1a1917;
+    --sunk:#131211;
+    --ink:#ece7de;
+    --ink-2:#b3aca0;
+    --muted:#8c857a;
+    --faint:#6b655c;
+    --rule:rgba(236,231,222,.15);
+    --hair:rgba(236,231,222,.075);
+    --accent:#e07a5f;
+    --accent-2:#eb8f77;
+    --wash:rgba(224,122,95,.13);
+    --ok:#5cbd8c;
+    --ok-wash:rgba(92,189,140,.13);
+    --warn:#d2a13f;
+    --bad:#e2695a;
+    --bad-wash:rgba(226,105,90,.13);
+    --shadow:0 1px 1px rgba(0,0,0,.4), 0 12px 30px -20px rgba(0,0,0,.8);
+    --shadow-lg:0 1px 2px rgba(0,0,0,.5), 0 34px 70px -36px rgba(0,0,0,.9);
+    --grain:.035;
+  }
+}
+
+/* ============================================================ base */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+/* paper grain — inline SVG, no network */
+body::before{
+  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  opacity:var(--grain);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap{position:relative;z-index:1;max-width:720px;margin:0 auto;padding:0 20px 96px}
+@media (max-width:520px){ .wrap{padding:0 15px 72px} }
+
+h1,h2,h3{font-family:var(--serif);font-weight:600;letter-spacing:-.012em;margin:0;line-height:1.2}
+p{margin:0}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--wash);transition:border-color .18s var(--e),color .18s var(--e)}
+a:hover{border-bottom-color:currentColor}
+::selection{background:var(--wash);color:var(--ink)}
+
+/* ============================================================ masthead */
+header.mast{padding:clamp(44px,9vw,84px) 0 0;text-align:center}
+.mast .kicker{
+  font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--muted);
+  display:flex;align-items:center;gap:14px;justify-content:center;margin-bottom:22px;
+}
+.mast .kicker::before,.mast .kicker::after{content:"";height:1px;flex:1;max-width:120px;background:var(--rule)}
+.mast h1{
+  font-size:clamp(44px,11vw,72px);line-height:.98;letter-spacing:-.03em;font-weight:600;
+}
+.mast h1 .dot{color:var(--accent)}
+.mast .rule{margin:26px 0 0;border:0;border-top:1px solid var(--ink);opacity:.85}
+.mast .rule + .rule{margin-top:3px;border-top-width:1px;opacity:.28}
+.mast .tag{
+  font-family:var(--serif);font-size:clamp(16px,3.6vw,19px);font-style:italic;color:var(--ink-2);
+  margin-top:18px;
+}
+.mast .sub{font-size:13.5px;color:var(--muted);margin-top:9px;max-width:46ch;margin-left:auto;margin-right:auto}
+
+/* ============================================================ stepper */
+.stepper{display:flex;align-items:flex-start;margin:44px 0 30px;padding:0;list-style:none;counter-reset:s}
+.stepper li{flex:1;position:relative;text-align:center;min-width:0}
+.stepper li::after{
+  content:"";position:absolute;top:15px;left:calc(50% + 22px);right:calc(-50% + 22px);
+  height:1px;background:var(--rule);
+}
+.stepper li:last-child::after{display:none}
+.stepper .node{
+  width:31px;height:31px;border-radius:50%;margin:0 auto 9px;
+  display:grid;place-items:center;
+  font-size:13px;font-variant-numeric:tabular-nums;font-weight:600;
+  background:var(--surface);color:var(--faint);
+  border:1px solid var(--rule);
+  transition:background .3s var(--e),color .3s var(--e),border-color .3s var(--e),transform .3s var(--e);
+}
+.stepper .lbl{
+  font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  transition:color .3s var(--e);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;
+}
+.stepper li.on .node{background:var(--ink);color:var(--paper);border-color:var(--ink);transform:scale(1.06)}
+.stepper li.on .lbl{color:var(--ink);font-weight:600}
+.stepper li.done .node{background:var(--ok-wash);border-color:transparent;color:var(--ok)}
+.stepper li.done .lbl{color:var(--muted)}
+.stepper li.done .node::after{content:"✓";font-size:14px}
+.stepper li.done .node span{display:none}
+@media (max-width:440px){ .stepper .lbl{font-size:10px;letter-spacing:.04em} }
+
+/* ============================================================ card */
+.card{
+  background:var(--surface);
+  border:1px solid var(--hair);
+  border-radius:var(--r);
+  box-shadow:var(--shadow);
+  padding:clamp(22px,5vw,34px);
+}
+.card + .card{margin-top:18px}
+.card > h2{font-size:clamp(23px,5vw,28px);letter-spacing:-.02em}
+.card > h2 + .lede{color:var(--muted);font-size:14.5px;margin-top:8px;max-width:56ch}
+
+.panel{display:none;animation:rise .42s var(--e) both}
+.panel.on{display:block}
+@keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+
+.sect{margin-top:30px;padding-top:26px;border-top:1px solid var(--hair)}
+.sect:first-of-type{border-top:0;padding-top:0}
+.sect > h3{
+  font-family:var(--sans);font-size:11px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--faint);font-weight:600;margin-bottom:16px;
+}
+
+/* ============================================================ fields */
+.f{margin-top:18px}
+.f:first-child{margin-top:0}
+.f > label,.lgnd{
+  display:block;font-size:13.5px;font-weight:600;color:var(--ink);margin-bottom:6px;letter-spacing:-.005em;
+}
+.f .hint{font-size:12.5px;color:var(--muted);margin:-2px 0 8px;line-height:1.5}
+.f .hint a{font-size:inherit}
+
+input[type=text],input[type=password],input[type=number],input[type=email],textarea,select{
+  width:100%;font:inherit;font-size:15px;color:var(--ink);
+  background:var(--sunk);
+  border:1px solid transparent;
+  border-radius:9px;
+  padding:11px 13px;
+  transition:background .2s var(--e),border-color .2s var(--e),box-shadow .2s var(--e);
+  appearance:none;
+}
+textarea{resize:vertical;min-height:96px;line-height:1.6}
+input::placeholder,textarea::placeholder{color:var(--faint);opacity:1}
+input:focus,textarea:focus,select:focus{
+  outline:0;background:var(--surface);border-color:var(--accent);
+  box-shadow:0 0 0 3.5px var(--wash);
+}
+input.mono,textarea.mono{font-family:var(--mono);font-size:13px}
+.f.bad input,.f.bad textarea{border-color:var(--bad);background:var(--bad-wash)}
+.msg{font-size:12.5px;margin-top:6px;display:none;line-height:1.45}
+.f.bad .msg{display:block;color:var(--bad)}
+
+/* password + toggle */
+.reveal{position:relative}
+.reveal input{padding-right:62px}
+.reveal button{
+  position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  border:0;background:transparent;color:var(--muted);
+  font:inherit;font-size:12px;font-weight:600;letter-spacing:.04em;
+  padding:6px 9px;border-radius:7px;cursor:pointer;
+  transition:color .18s var(--e),background .18s var(--e);
+}
+.reveal button:hover{color:var(--ink);background:var(--hair)}
+
+/* ============================================================ buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:9px;
+  font:inherit;font-size:15px;font-weight:600;letter-spacing:-.005em;
+  padding:12px 20px;border-radius:10px;border:1px solid transparent;
+  cursor:pointer;text-decoration:none;
+  transition:transform .16s var(--e),background .18s var(--e),box-shadow .18s var(--e),opacity .18s var(--e);
+}
+.btn:active{transform:translateY(1px) scale(.995)}
+.btn-primary{background:var(--ink);color:var(--paper);box-shadow:var(--shadow)}
+.btn-primary:hover{box-shadow:var(--shadow-lg)}
+.btn-accent{background:var(--accent);color:#fff;box-shadow:var(--shadow)}
+.btn-accent:hover{background:var(--accent-2);box-shadow:var(--shadow-lg)}
+.btn-ghost{background:transparent;color:var(--ink-2);border-color:var(--rule)}
+.btn-ghost:hover{background:var(--hair);color:var(--ink)}
+.btn[disabled]{opacity:.42;pointer-events:none}
+.btn.wide{width:100%}
+.btn .arr{transition:transform .2s var(--e)}
+.btn:hover .arr{transform:translateX(3px)}
+a.btn{border-bottom:1px solid transparent}
+
+.nav{display:flex;gap:10px;margin-top:28px;padding-top:22px;border-top:1px solid var(--hair)}
+.nav .btn{flex:1}
+.nav .btn.back{flex:0 0 auto}
+
+/* chips */
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.chip{
+  font:inherit;font-size:12.5px;font-weight:500;color:var(--ink-2);
+  background:transparent;border:1px solid var(--rule);border-radius:999px;
+  padding:5px 12px;cursor:pointer;
+  transition:background .18s var(--e),color .18s var(--e),border-color .18s var(--e);
+}
+.chip:hover{background:var(--wash);border-color:transparent;color:var(--accent)}
+
+/* segmented control */
+.seg{display:flex;gap:4px;background:var(--sunk);padding:4px;border-radius:11px}
+.seg label{flex:1;position:relative;cursor:pointer;min-width:0}
+.seg input{position:absolute;opacity:0;width:0;height:0}
+.seg span{
+  display:block;text-align:center;font-size:13.5px;font-weight:600;
+  padding:9px 8px;border-radius:8px;color:var(--muted);
+  transition:background .22s var(--e),color .22s var(--e),box-shadow .22s var(--e);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.seg input:checked + span{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.seg input:focus-visible + span{box-shadow:0 0 0 3px var(--wash)}
+
+/* ============================================================ notes */
+.note{
+  display:flex;gap:11px;align-items:flex-start;
+  font-size:12.8px;line-height:1.55;color:var(--ink-2);
+  background:var(--sunk);border-radius:10px;padding:12px 14px;margin-top:10px;
+}
+.note .ic{flex:0 0 auto;width:15px;height:15px;margin-top:2px;opacity:.6}
+.note.safe{background:var(--ok-wash);color:var(--ink-2)}
+.note.safe strong{color:var(--ok)}
+.note.caution{background:var(--wash)}
+.note code{font-family:var(--mono);font-size:11.5px;background:var(--hair);padding:1px 5px;border-radius:4px;
+  word-break:break-all}
+
+/* ============================================================ identity */
+.ident{
+  display:flex;align-items:center;gap:13px;margin-top:14px;
+  background:var(--ok-wash);border-radius:11px;padding:12px 14px;
+  animation:rise .34s var(--e) both;
+}
+.ident img{width:38px;height:38px;border-radius:50%;flex:0 0 auto;background:var(--sunk)}
+.ident .who{font-size:14.5px;font-weight:600;line-height:1.3}
+.ident .sm{font-size:12.5px;color:var(--muted)}
+
+.repos{display:grid;gap:8px;margin-top:10px}
+.repo{
+  display:flex;align-items:center;gap:11px;width:100%;text-align:left;cursor:pointer;
+  font:inherit;background:transparent;border:1px solid var(--rule);border-radius:10px;padding:12px 14px;
+  transition:border-color .2s var(--e),background .2s var(--e);
+}
+.repo:hover{background:var(--hair)}
+.repo.sel{border-color:var(--accent);background:var(--wash)}
+.repo .nm{font-family:var(--mono);font-size:13px;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.repo .br{font-size:11.5px;color:var(--muted);font-family:var(--mono);flex:0 0 auto}
+
+/* ============================================================ account rows */
+.acct{margin-top:10px}
+.acct-row{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}
+.acct-row .acct-email{flex:1 1 220px}
+.acct-row .reveal{flex:1 1 220px}
+.acct-row .rm{flex:0 0 auto;padding:11px 13px}
+.acct.bad .acct-email,.acct.bad .acct-pw{border-color:var(--bad);background:var(--bad-wash)}
+.acct-msg{font-size:12.5px;color:var(--bad);margin-top:4px;display:none;line-height:1.45}
+
+/* ============================================================ launch rows */
+.runs{list-style:none;padding:0;margin:22px 0 0;border-top:1px solid var(--hair)}
+.runs li{
+  display:flex;align-items:flex-start;gap:13px;
+  padding:14px 2px;border-bottom:1px solid var(--hair);
+}
+.runs .dot{
+  flex:0 0 auto;width:19px;height:19px;border-radius:50%;margin-top:1px;
+  border:1.5px solid var(--rule);
+  display:grid;place-items:center;font-size:11px;line-height:1;
+  transition:border-color .3s var(--e),background .3s var(--e),color .3s var(--e);
+}
+.runs li .body{min-width:0;flex:1}
+.runs li .t{display:block;font-size:14px;font-weight:600;color:var(--faint);transition:color .3s var(--e)}
+.runs li .d{display:block;font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5;word-break:break-word}
+.runs li .d:empty{display:none}
+.runs li[data-s=run] .t,.runs li[data-s=done] .t,.runs li[data-s=fail] .t{color:var(--ink)}
+.runs li[data-s=run] .dot{
+  border-color:var(--accent);border-right-color:transparent;border-top-color:transparent;
+  animation:spin .8s linear infinite;
+}
+.runs li[data-s=done] .dot{background:var(--ok-wash);border-color:transparent;color:var(--ok)}
+.runs li[data-s=done] .dot::after{content:"✓"}
+.runs li[data-s=fail] .dot{background:var(--bad-wash);border-color:transparent;color:var(--bad)}
+.runs li[data-s=fail] .dot::after{content:"✕"}
+.runs li[data-s=fail] .d{color:var(--bad)}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ============================================================ done */
+.done-mark{
+  width:54px;height:54px;border-radius:50%;background:var(--ok-wash);color:var(--ok);
+  display:grid;place-items:center;font-size:25px;margin:0 auto 20px;
+  animation:pop .5s var(--e) both;
+}
+@keyframes pop{0%{transform:scale(.5);opacity:0}60%{transform:scale(1.07)}100%{transform:scale(1);opacity:1}}
+.center{text-align:center}
+.links{display:grid;gap:8px;margin-top:24px}
+
+footer{
+  text-align:center;margin-top:38px;font-size:12px;color:var(--faint);line-height:1.7;
+}
+footer a{color:var(--muted)}
+
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.spin-inline{
+  display:inline-block;width:13px;height:13px;border-radius:50%;
+  border:1.5px solid var(--rule);border-top-color:var(--accent);
+  animation:spin .8s linear infinite;vertical-align:-2px;margin-right:7px;
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  .runs li[data-s=run] .dot{border-color:var(--accent)}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="mast">
+    <div class="kicker">Setup</div>
+    <h1>mailtriage<span class="dot">.</span></h1>
+    <hr class="rule"><hr class="rule">
+    <p class="tag">Private AI triage of your Gmail inboxes.</p>
+    <p class="sub">This page writes the settings into your own fork and starts the first run. It has no server — everything happens in this browser tab.</p>
+  </header>
+
+  <ol class="stepper" id="stepper">
+    <li data-i="1"><div class="node"><span>1</span></div><div class="lbl">Connect</div></li>
+    <li data-i="2"><div class="node"><span>2</span></div><div class="lbl">Configure</div></li>
+    <li data-i="3"><div class="node"><span>3</span></div><div class="lbl">Launch</div></li>
+  </ol>
+
+  <!-- ================================================= STEP 1 -->
+  <section class="card panel" id="p1" aria-labelledby="h1t">
+    <h2 id="h1t">Connect your GitHub</h2>
+    <p class="lede">mailtriage runs inside your own repository. To put your settings there, this page needs a personal access token — a temporary password that only you can create.</p>
+
+    <div class="sect">
+      <a class="btn btn-primary wide" id="mkToken" target="_blank" rel="noopener"
+         href="https://github.com/settings/tokens/new?scopes=repo&amp;description=mailtriage+setup">
+        Create a token on GitHub <span class="arr">→</span>
+      </a>
+      <div class="note">
+        <span class="ic">◆</span>
+        <span>GitHub opens in a new tab with the right permission already ticked (<code>repo</code>). Scroll to the bottom, click <strong>Generate token</strong>, then copy the value it shows once and paste it below.</span>
+      </div>
+
+      <div class="f" id="f-token" style="margin-top:20px">
+        <label for="token">Paste your token</label>
+        <div class="reveal">
+          <input type="password" id="token" class="mono" placeholder="ghp_••••••••••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="token">Show</button>
+        </div>
+        <div class="msg"></div>
+        <div id="tokenBusy" style="display:none;font-size:12.5px;color:var(--muted);margin-top:8px">
+          <span class="spin-inline"></span>Checking with GitHub…
+        </div>
+      </div>
+
+      <div id="identity"></div>
+    </div>
+
+    <div class="sect" id="repoSect" style="display:none">
+      <h3>Your fork</h3>
+      <div id="repoBox"></div>
+    </div>
+
+    <div class="nav">
+      <button class="btn btn-accent" id="go2" disabled>Continue <span class="arr">→</span></button>
+    </div>
+  </section>
+
+  <!-- ================================================= STEP 2 -->
+  <section class="card panel" id="p2" aria-labelledby="h2t">
+    <h2 id="h2t">What needs your attention?</h2>
+    <p class="lede">This is the part that decides whether the triage is any good. The text below is handed to the model word for word, so be specific — say what a message has to look like to need a reply from you, and what's safe to drop.</p>
+
+    <div class="sect">
+      <h3>Your brief</h3>
+
+      <div class="f" id="f-interests">
+        <label for="interests">What counts as needing your action</label>
+        <p class="hint">Direct questions, deadlines, things a human is waiting on you for.</p>
+        <textarea id="interests" rows="6" placeholder="Mail that needs a decision or a reply from me: direct questions from people I work with, meeting requests, anything with a deadline, invoices or bills that need action, and account/security alerts about my own accounts. If a human is waiting on me, it belongs in the digest."></textarea>
+        <div class="msg"></div>
+      </div>
+
+      <div class="f" id="f-avoid">
+        <label for="avoid">What's noise</label>
+        <p class="hint">Read as a hard filter. Naming what you're tired of is the fastest way to improve the triage.</p>
+        <textarea id="avoid" rows="5" placeholder="Purchase receipts and shipping notifications, automated build/monitoring alerts, marketing and promotional email, newsletters and digests you only skim, and social-media notifications."></textarea>
+        <div class="msg"></div>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>AI auth</h3>
+      <div class="f">
+        <span class="lgnd" id="authlbl">Choose one</span>
+        <div class="seg" role="radiogroup" aria-labelledby="authlbl">
+          <label><input type="radio" name="authMode" value="apikey" checked><span>API key</span></label>
+          <label><input type="radio" name="authMode" value="subscription"><span>Subscription</span></label>
+        </div>
+      </div>
+
+      <div id="authApiFields">
+        <div class="f" id="f-anthropic">
+          <label for="anthropic">Anthropic API key</label>
+          <p class="hint">Create one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Pay-per-use — a few cents a month — and works for anyone with an Anthropic account. Recommended default.</p>
+          <div class="reveal">
+            <input type="password" id="anthropic" class="mono" placeholder="sk-ant-••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="anthropic">Show</button>
+          </div>
+          <div class="msg"></div>
+        </div>
+      </div>
+
+      <div id="authSubFields" style="display:none">
+        <div class="note">
+          <span class="ic">◆</span>
+          <span>Run <code>claude setup-token</code> in your terminal, approve in the browser it opens, then paste the token it prints below. Uses your Claude Pro/Max subscription instead of API billing — no per-run cost — and the token lasts about a year.</span>
+        </div>
+        <div class="f" id="f-oauth">
+          <label for="oauth">Claude Code OAuth token</label>
+          <div class="reveal">
+            <input type="password" id="oauth" class="mono" placeholder="sk-ant-oat01-••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="oauth">Show</button>
+          </div>
+          <div class="msg"></div>
+        </div>
+      </div>
+
+      <div class="note safe">
+        <span class="ic">◆</span>
+        <span><strong>Your keys are encrypted in this browser</strong> — sealed with libsodium against your repository's own public key — and sent straight to GitHub, where they become repository secrets only your workflow can read. Nothing is sent anywhere else. This page has no server and no analytics; you can read every line of it with View Source.</span>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Email delivery</h3>
+      <div class="f" id="f-resend">
+        <label for="resend">Resend API key</label>
+        <p class="hint">From <a href="https://resend.com/api-keys" target="_blank" rel="noopener">resend.com/api-keys</a> (free tier covers personal volume).</p>
+        <div class="reveal">
+          <input type="password" id="resend" class="mono" placeholder="re_••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="resend">Show</button>
+        </div>
+        <div class="msg"></div>
+      </div>
+      <div class="f" id="f-emailTo">
+        <label for="emailTo">Send to</label>
+        <input type="email" id="emailTo" placeholder="you@example.com" autocomplete="off" spellcheck="false">
+        <div class="msg"></div>
+      </div>
+      <div class="f" id="f-emailFrom">
+        <label for="emailFrom">Send from</label>
+        <input type="email" id="emailFrom" placeholder="mailtriage@yourdomain.com" autocomplete="off" spellcheck="false">
+        <div class="msg"></div>
+      </div>
+      <div class="note caution">
+        <span class="ic">◆</span>
+        <span><strong>The from-address must be on a domain you've verified in Resend</strong> at <a href="https://resend.com/domains" target="_blank" rel="noopener">resend.com/domains</a> — an unverified domain is the single most common reason the first digest never arrives, and returns a 403 that looks like a bad API key but isn't.</span>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Gmail accounts</h3>
+      <p class="hint" style="margin:-2px 0 4px">Each account needs its own 16-character app password, not your normal Google password. Enable 2-Step Verification at <a href="https://myaccount.google.com/security" target="_blank" rel="noopener">myaccount.google.com/security</a>, then create one per account at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>.</p>
+      <div id="accounts"></div>
+      <div class="chips">
+        <button type="button" class="chip" id="addAcct">+ Add another account</button>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Rhythm</h3>
+
+      <div class="f">
+        <label for="count">Max items per digest <span id="countOut" style="color:var(--accent);font-variant-numeric:tabular-nums">8</span></label>
+        <p class="hint">A ceiling, not a quota. If the window was quiet, a two-item digest is the correct answer.</p>
+        <input type="range" id="count" min="3" max="20" step="1" value="8" style="padding:0;background:transparent;accent-color:var(--accent)">
+      </div>
+
+      <div class="f" id="f-window">
+        <label for="win">Look back how many hours</label>
+        <p class="hint">mailtriage ships two runs a day, 12 hours apart. Mail older than this is ignored — and there's no other dedupe, so it must cover the gap between runs or mail arriving inside it is skipped forever.</p>
+        <input type="number" id="win" min="1" max="168" step="1" value="13" style="max-width:130px">
+        <div class="msg"></div>
+        <div class="note" id="winNote"></div>
+      </div>
+    </div>
+
+    <div class="nav">
+      <button class="btn btn-ghost back" id="back1">← Back</button>
+      <button class="btn btn-accent" id="go3">Review and launch <span class="arr">→</span></button>
+    </div>
+  </section>
+
+  <!-- ================================================= STEP 3 -->
+  <section class="card panel" id="p3" aria-labelledby="h3t">
+    <div id="launchView">
+      <h2 id="h3t">Launch</h2>
+      <p class="lede" id="launchLede"></p>
+      <ul class="runs" id="runs" aria-live="polite"></ul>
+      <div class="nav">
+        <button class="btn btn-ghost back" id="back2">← Back</button>
+        <button class="btn btn-accent" id="fire">Write it all and run <span class="arr">→</span></button>
+      </div>
+    </div>
+
+    <div id="doneView" style="display:none" class="center">
+      <div class="done-mark">✓</div>
+      <h2>It's running.</h2>
+      <p class="lede" id="doneMsg" style="margin-left:auto;margin-right:auto"></p>
+      <div class="links" id="doneLinks"></div>
+    </div>
+  </section>
+
+  <footer>
+    mailtriage · MIT licensed · <a href="https://github.com/AshishB2000/mailtriage" target="_blank" rel="noopener">source</a><br>
+    No server, no analytics, no account. Everything above happened in this tab.
+  </footer>
+</div>
+
+<script src="sodium.js"></script>
+<script>
+"use strict";
+
+/* ------------------------------------------------------------ constants */
+const API = "https://api.github.com";
+const UPSTREAM = "AshishB2000/mailtriage";
+const WORKFLOW = "digest.yml";
+const WORKFLOW_PATH = ".github/workflows/digest.yml";
+
+// mailtriage ships a fixed two-runs-a-day schedule, 12h apart (see
+// digest.yml) -- there is no schedule choice in this wizard, only a check
+// that window_hours covers the gap.
+const GAP_HOURS = 12;
+const SAFE_HOURS = 13;
+
+const S = { token: "", user: null, repos: [], repo: null, step: 1 };
+
+/* ------------------------------------------------------------ tiny dom */
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function show(n) {
+  S.step = n;
+  $$(".panel").forEach((p, i) => p.classList.toggle("on", i === n - 1));
+  $$("#stepper li").forEach((li) => {
+    const i = +li.dataset.i;
+    li.classList.toggle("on", i === n);
+    li.classList.toggle("done", i < n);
+  });
+  window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" });
+}
+
+function fieldErr(id, msg) {
+  const f = $("#f-" + id);
+  if (!f) return;
+  f.classList.toggle("bad", !!msg);
+  $(".msg", f).textContent = msg || "";
+}
+const clearErrs = (root) => $$(".f.bad", root).forEach((f) => {
+  f.classList.remove("bad");
+  $(".msg", f).textContent = "";
+});
+
+/* ------------------------------------------------------------ github */
+async function gh(method, path, body) {
+  let r;
+  try {
+    r = await fetch(API + path, {
+      method,
+      headers: Object.assign(
+        {
+          Authorization: "Bearer " + S.token,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        body ? { "Content-Type": "application/json" } : {}
+      ),
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch (e) {
+    throw new Error("Couldn't reach api.github.com. Check your connection, and any VPN or content blocker that might be filtering the request.");
+  }
+  if (r.status === 204) return null;
+  const text = await r.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) { /* non-JSON body */ }
+  if (r.ok) return data;
+
+  const m = (data && data.message) || r.statusText || ("HTTP " + r.status);
+  if (r.status === 401) throw new Error("GitHub rejected the token. It may be mistyped, expired, or already revoked — generate a fresh one and paste it again.");
+  if (r.status === 403 && /rate limit/i.test(m)) throw new Error("GitHub rate limit reached. Wait a minute and try again.");
+  if (r.status === 403) throw new Error("GitHub refused: " + m + " — the token is probably missing the 'repo' scope. Generate a new one using the button on step 1, which ticks it.");
+  if (r.status === 404) throw new Error("Not found (404): " + m + " — usually a token without the 'repo' scope, since GitHub hides what it won't let you touch.");
+  if (r.status === 422) throw new Error("GitHub rejected the contents of the request: " + m);
+  throw new Error("GitHub returned " + r.status + ": " + m);
+}
+
+/* ------------------------------------------------------------ base64 (utf-8 safe) */
+function b64encode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function b64decode(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+/* ------------------------------------------------------------ yaml */
+// Block scalar body: dedent to the shallowest line, then indent by two.
+// The first line is left-trimmed so a plain "|" is always unambiguous.
+function blockScalar(text) {
+  let lines = String(text).replace(/\r\n?/g, "\n").replace(/[ \t]+$/gm, "").split("\n");
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  const indents = lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length);
+  const cut = indents.length ? Math.min.apply(null, indents) : 0;
+  return lines
+    .map((l, i) => {
+      if (!l.trim()) return "";
+      let body = l.slice(cut);
+      if (i === 0) body = body.replace(/^\s+/, "");
+      return "  " + body;
+    })
+    .join("\n");
+}
+const yq = (s) => '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+
+function buildYaml(v) {
+  return [
+    "# mailtriage config. Written by the setup wizard, committed on purpose --",
+    "# GitHub Actions checks it out and reads it. It holds no secrets.",
+    "# Edit it by hand any time, or re-run the wizard to overwrite it.",
+    "",
+    "# What actually matters -- what counts as needing your action. Handed to",
+    "# the model verbatim.",
+    "interests: |",
+    blockScalar(v.interests),
+    "",
+    "# What's noise -- what to drop on the floor. Read as a hard filter.",
+    "avoid: |",
+    blockScalar(v.avoid),
+    "",
+    "# MAX number of items in a digest. Fewer is fine -- a quiet window",
+    "# should be short, not padded.",
+    "reading_count: " + v.reading_count,
+    "",
+    "# How far back to look, in hours. Must be >= the largest gap between two",
+    "# consecutive runs in " + WORKFLOW_PATH + ", or mail published inside",
+    "# the gap is skipped forever. Overlap is harmless; a gap is not.",
+    "window_hours: " + v.window_hours,
+    "",
+    '# Only "email" is supported.',
+    "delivery: email",
+    "",
+    "# Requires the RESEND_API_KEY secret. email_from must be on a domain",
+    "# you have verified with Resend.",
+    "email_to: " + yq(v.email_to),
+    "email_from: " + yq(v.email_from),
+    "",
+    "subject_prefix: " + yq("mailtriage"),
+    ""
+  ].join("\n");
+}
+
+// Tailored reader for exactly what buildYaml above writes -- not a general
+// YAML parser, just enough to round-trip our own output when the wizard is
+// reopened as a settings editor against an existing config.yaml.
+function parseConfig(text) {
+  const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+  const out = {};
+  for (let i = 0; i < lines.length; i++) {
+    let m = lines[i].match(/^(interests|avoid):\s*\|\s*$/);
+    if (m) {
+      const key = m[1];
+      const body = [];
+      i++;
+      while (i < lines.length && (lines[i] === "" || /^  /.test(lines[i]))) {
+        body.push(lines[i] === "" ? "" : lines[i].slice(2));
+        i++;
+      }
+      i--;
+      while (body.length && body[body.length - 1] === "") body.pop();
+      out[key] = body.join("\n");
+      continue;
+    }
+    m = lines[i].match(/^(email_to|email_from|subject_prefix):\s*"((?:[^"\\]|\\.)*)"\s*$/);
+    if (m) {
+      try { out[m[1]] = JSON.parse('"' + m[2] + '"'); } catch (e) { out[m[1]] = m[2]; }
+      continue;
+    }
+    m = lines[i].match(/^(reading_count|window_hours):\s*(\d+)\s*$/);
+    if (m) { out[m[1]] = +m[2]; continue; }
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------ step 1 */
+const tokenEl = $("#token");
+
+$$("[data-reveal]").forEach((b) => {
+  b.addEventListener("click", () => {
+    const i = document.getElementById(b.dataset.reveal);
+    const hidden = i.type === "password";
+    i.type = hidden ? "text" : "password";
+    b.textContent = hidden ? "Hide" : "Show";
+  });
+});
+
+let checkSeq = 0;
+async function checkToken() {
+  const t = tokenEl.value.trim();
+  $("#identity").innerHTML = "";
+  $("#repoSect").style.display = "none";
+  $("#go2").disabled = true;
+  S.user = null; S.repo = null;
+  if (!t) { fieldErr("token", ""); return; }
+
+  const seq = ++checkSeq;
+  S.token = t;
+  fieldErr("token", "");
+  $("#tokenBusy").style.display = "block";
+  try {
+    const u = await gh("GET", "/user");
+    if (seq !== checkSeq) return;
+    S.user = u;
+    $("#identity").innerHTML =
+      '<div class="ident">' +
+      '<img alt="" src="' + esc(u.avatar_url) + '">' +
+      '<div><div class="who">Hi, @' + esc(u.login) + "</div>" +
+      '<div class="sm">Token accepted. Looking for your fork…</div></div></div>';
+    await findRepos(seq);
+  } catch (e) {
+    if (seq !== checkSeq) return;
+    fieldErr("token", e.message);
+  } finally {
+    if (seq === checkSeq) $("#tokenBusy").style.display = "none";
+  }
+}
+
+async function findRepos(seq) {
+  const box = $("#repoBox");
+  $("#repoSect").style.display = "block";
+  box.innerHTML = '<p class="hint"><span class="spin-inline"></span>Scanning your repositories…</p>';
+  let repos;
+  try {
+    repos = await gh("GET", "/user/repos?per_page=100&sort=updated");
+  } catch (e) {
+    if (seq !== checkSeq) return;
+    box.innerHTML = '<div class="note caution"><span class="ic">◆</span><span>' + esc(e.message) + "</span></div>";
+    return;
+  }
+  if (seq !== checkSeq) return;
+
+  const hits = repos.filter((r) => r.name.toLowerCase() === "mailtriage");
+  S.repos = hits;
+  const sm = $(".ident .sm");
+
+  if (!hits.length) {
+    if (sm) sm.textContent = "No fork found on this account yet.";
+    box.innerHTML =
+      '<div class="note caution"><span class="ic">◆</span><span>' +
+      "You don't have a <code>mailtriage</code> repository yet. Fork it first — it takes one click — then come back and press rescan." +
+      "</span></div>" +
+      '<div class="links" style="margin-top:12px">' +
+      '<a class="btn btn-primary" target="_blank" rel="noopener" href="https://github.com/' + UPSTREAM + '/fork">Fork mailtriage on GitHub <span class="arr">→</span></a>' +
+      '<button class="btn btn-ghost" id="rescan">Rescan</button></div>';
+    $("#rescan").addEventListener("click", () => findRepos(seq));
+    return;
+  }
+
+  if (sm) sm.textContent = hits.length === 1 ? "Fork found." : "Found " + hits.length + " matching repositories.";
+  box.innerHTML =
+    (hits.length > 1 ? '<p class="hint">More than one repository is called mailtriage. Pick the one to set up.</p>' : "") +
+    '<div class="repos">' +
+    hits.map((r, i) =>
+      '<button type="button" class="repo" data-i="' + i + '">' +
+      '<span class="nm">' + esc(r.full_name) + "</span>" +
+      '<span class="br">' + esc(r.default_branch) + "</span></button>"
+    ).join("") +
+    "</div>";
+
+  $$(".repo", box).forEach((b) => b.addEventListener("click", () => pickRepo(+b.dataset.i)));
+  if (hits.length === 1) pickRepo(0);
+}
+
+function pickRepo(i) {
+  S.repo = S.repos[i];
+  $$(".repo").forEach((b) => b.classList.toggle("sel", +b.dataset.i === i));
+  $("#go2").disabled = false;
+  prefillFromConfig(S.repo.full_name);
+}
+
+// Reopen-as-settings: if this repo already has a config.yaml, load its
+// values into the form so the wizard edits existing settings instead of
+// silently overwriting them with placeholders. Secrets (accounts, keys)
+// can't be read back -- GitHub never returns a secret's value -- so those
+// fields always start blank.
+async function prefillFromConfig(fullName) {
+  try {
+    const cur = await gh("GET", "/repos/" + fullName + "/contents/config.yaml");
+    if (fullName !== S.repo.full_name) return; // repo changed while this was in flight
+    if (S.step !== 1) return; // user already moved past connect -- don't clobber typed input
+    const cfg = parseConfig(b64decode(cur.content));
+    if (cfg.interests != null) $("#interests").value = cfg.interests;
+    if (cfg.avoid != null) $("#avoid").value = cfg.avoid;
+    if (cfg.email_to != null) $("#emailTo").value = cfg.email_to;
+    if (cfg.email_from != null) $("#emailFrom").value = cfg.email_from;
+    if (cfg.window_hours != null) $("#win").value = cfg.window_hours;
+    if (cfg.reading_count != null) { $("#count").value = cfg.reading_count; $("#countOut").textContent = cfg.reading_count; }
+    updateWindowNote();
+  } catch (e) {
+    // no config.yaml yet, or unreadable -- defaults stand
+  }
+}
+
+tokenEl.addEventListener("blur", checkToken);
+tokenEl.addEventListener("paste", () => setTimeout(checkToken, 30));
+tokenEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); checkToken(); } });
+
+$("#go2").addEventListener("click", () => { if (S.repo) show(2); });
+$("#back1").addEventListener("click", () => show(1));
+$("#back2").addEventListener("click", () => show(2));
+
+/* ------------------------------------------------------------ step 2: auth mode */
+const authMode = () => $('input[name=authMode]:checked').value;
+$$('input[name=authMode]').forEach((r) => r.addEventListener("change", () => {
+  const api = authMode() === "apikey";
+  $("#authApiFields").style.display = api ? "block" : "none";
+  $("#authSubFields").style.display = api ? "none" : "block";
+}));
+
+/* ------------------------------------------------------------ step 2: rhythm */
+$("#count").addEventListener("input", (e) => { $("#countOut").textContent = e.target.value; });
+
+function updateWindowNote() {
+  const w = +$("#win").value;
+  const el = $("#winNote");
+  if (w >= GAP_HOURS) {
+    el.className = "note safe";
+    el.innerHTML = '<span class="ic">◆</span><span>Covered. Runs are ' + GAP_HOURS +
+      "h apart and you're looking back " + w + "h, so nothing can slip through. Overlap is harmless — you may " +
+      "occasionally see a message re-triaged, which beats never seeing it.</span>";
+  } else {
+    el.className = "note caution";
+    el.innerHTML = '<span class="ic">◆</span><span>Runs are ' + GAP_HOURS +
+      "h apart. At " + w + "h, mail that arrives inside that gap is skipped permanently — nothing catches up later. " +
+      '<button type="button" class="chip" id="fixWin" style="margin-left:4px">Use ' + SAFE_HOURS + "</button></span>";
+    $("#fixWin").addEventListener("click", () => { $("#win").value = SAFE_HOURS; updateWindowNote(); });
+  }
+}
+$("#win").addEventListener("input", updateWindowNote);
+
+/* ------------------------------------------------------------ step 2: gmail accounts */
+let acctSeq = 0;
+function acctRowHtml() {
+  acctSeq++;
+  return '<div class="acct" data-seq="' + acctSeq + '">' +
+    '<div class="acct-row">' +
+    '<input type="email" class="acct-email mono" placeholder="alice@gmail.com" autocomplete="off" spellcheck="false">' +
+    '<div class="reveal"><input type="password" class="acct-pw mono" placeholder="xxxx xxxx xxxx xxxx" autocomplete="off" spellcheck="false"><button type="button" data-reveal-row>Show</button></div>' +
+    '<button type="button" class="btn btn-ghost rm" aria-label="Remove this account">✕</button>' +
+    "</div>" +
+    '<div class="msg acct-msg"></div>' +
+    "</div>";
+}
+function addAcctRow() { $("#accounts").insertAdjacentHTML("beforeend", acctRowHtml()); }
+function removeAcctRow(el) {
+  if ($$(".acct").length <= 1) {
+    $(".acct-email", el).value = "";
+    $(".acct-pw", el).value = "";
+    acctError(el, "");
+    return;
+  }
+  el.remove();
+}
+function acctError(el, msg) {
+  el.classList.toggle("bad", !!msg);
+  const d = $(".acct-msg", el);
+  d.textContent = msg || "";
+  d.style.display = msg ? "block" : "none";
+}
+$("#addAcct").addEventListener("click", addAcctRow);
+$("#accounts").addEventListener("click", (e) => {
+  const reveal = e.target.closest("[data-reveal-row]");
+  if (reveal) {
+    const i = reveal.previousElementSibling;
+    const hidden = i.type === "password";
+    i.type = hidden ? "text" : "password";
+    reveal.textContent = hidden ? "Hide" : "Show";
+    return;
+  }
+  const rm = e.target.closest(".rm");
+  if (rm) removeAcctRow(rm.closest(".acct"));
+});
+addAcctRow(); // seed with one empty row
+
+function collectAccounts() {
+  return $$(".acct").map((el) => ({
+    email: $(".acct-email", el).value.trim(),
+    pw: $(".acct-pw", el).value.replace(/\s+/g, "")
+  }));
+}
+
+// Must match pw_env_var in src/mailtriage/imap_pull.py exactly.
+const mailPwSlug = (email) => "MAIL_PW_" + email.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+
+/* ------------------------------------------------------------ step 2: collect + validate */
+function collect() {
+  return {
+    interests: $("#interests").value,
+    avoid: $("#avoid").value,
+    reading_count: +$("#count").value,
+    window_hours: +$("#win").value,
+    email_to: $("#emailTo").value.trim(),
+    email_from: $("#emailFrom").value.trim()
+  };
+}
+
+function scrollToField(el) {
+  el.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" });
+  const input = $("input,textarea", el);
+  if (input) input.focus({ preventScroll: true });
+}
+
+function validate() {
+  clearErrs($("#p2"));
+  $$(".acct").forEach((r) => acctError(r, ""));
+  const v = collect();
+  let first = null;
+  const fail = (id, msg) => { fieldErr(id, msg); if (!first) first = $("#f-" + id); };
+
+  if (v.interests.trim().length < 30)
+    fail("interests", "Tell the model more than this — what needs a reply, what a human is waiting on. A sentence or two of real detail is the difference between a triage you trust and one you ignore.");
+
+  if (authMode() === "apikey") {
+    if (!$("#anthropic").value.trim()) fail("anthropic", "Needed — this is the key that runs the triage.");
+  } else {
+    if (!$("#oauth").value.trim()) fail("oauth", "Paste the token printed by `claude setup-token`.");
+  }
+
+  if (!$("#resend").value.trim()) fail("resend", "Needed to send the email.");
+  if (!/^\S+@\S+\.\S+$/.test(v.email_to)) fail("emailTo", "Enter the address the digest should arrive at.");
+  if (!/^\S+@\S+\.\S+$/.test(v.email_from)) fail("emailFrom", "Enter the address it should be sent from.");
+
+  if (!(v.window_hours >= 1 && v.window_hours <= 168))
+    fail("window", "Pick something between 1 and 168 hours.");
+
+  let firstAcctBad = null;
+  const seen = new Set();
+  const bySlug = new Map(); // slug -> row, to catch two addresses collapsing to one secret name
+  $$(".acct").forEach((row) => {
+    const email = $(".acct-email", row).value.trim();
+    const pw = $(".acct-pw", row).value.replace(/\s+/g, "");
+    let msg = "";
+    if (!email) msg = "Enter the Gmail address.";
+    else if (!/^\S+@\S+\.\S+$/.test(email)) msg = "This doesn't look like an email address.";
+    else if (seen.has(email.toLowerCase())) msg = "Already listed above.";
+    else if (!pw) msg = "Enter the app password Google gave you for this account.";
+    else if (!/^[A-Za-z0-9]{16}$/.test(pw)) msg = "App passwords are 16 characters (Google shows them as 4 groups of 4) — check for a missing or extra character.";
+    else {
+      const slug = mailPwSlug(email);
+      if (bySlug.has(slug)) msg = "Two addresses map to the same secret name (" + slug + "). They can't both be used — remove one.";
+      else bySlug.set(slug, row);
+    }
+    if (msg) { acctError(row, msg); if (!firstAcctBad) firstAcctBad = row; }
+    else seen.add(email.toLowerCase());
+  });
+
+  if (first) { scrollToField(first); return null; }
+  if (firstAcctBad) { scrollToField(firstAcctBad); return null; }
+  return v;
+}
+
+$("#go3").addEventListener("click", () => {
+  const v = validate();
+  if (!v) return;
+  S.cfg = v;
+
+  S.secrets = {};
+  if (authMode() === "apikey") S.secrets.ANTHROPIC_API_KEY = $("#anthropic").value.trim();
+  else S.secrets.CLAUDE_CODE_OAUTH_TOKEN = $("#oauth").value.trim();
+  S.secrets.RESEND_API_KEY = $("#resend").value.trim();
+  const accounts = collectAccounts();
+  S.secrets.MAIL_ACCOUNTS = accounts.map((a) => a.email).join(",");
+  accounts.forEach((a) => {
+    S.secrets[mailPwSlug(a.email)] = a.pw;
+  });
+
+  prepLaunch();
+  show(3);
+});
+
+/* ------------------------------------------------------------ step 3 */
+let ROWS = [];
+function prepLaunch() {
+  const names = Object.keys(S.secrets);
+  $("#launchLede").innerHTML =
+    "Everything below runs against <strong>" + esc(S.repo.full_name) + "</strong> from this tab. " +
+    "Your " + names.length + " secret" + (names.length > 1 ? "s are" : " is") +
+    " encrypted here, in the browser, before they leave it.";
+
+  ROWS = [
+    { id: "key",   t: "Fetch your repository's public key" },
+    { id: "seal",  t: "Encrypt " + names.length + " secret" + (names.length > 1 ? "s" : "") + " in this browser" },
+    { id: "put",   t: "Store them as GitHub Actions secrets" },
+    { id: "cfg",   t: "Commit config.yaml" },
+    { id: "fire",  t: "Trigger the first digest" },
+    { id: "watch", t: "Watch it run" }
+  ];
+  $("#runs").innerHTML = ROWS.map((r) =>
+    '<li data-s="wait" id="r-' + r.id + '"><span class="dot"></span>' +
+    '<span class="body"><span class="t">' + esc(r.t) + '</span><span class="d"></span></span></li>'
+  ).join("");
+}
+
+function row(id, state, detail) {
+  const li = $("#r-" + id);
+  if (!li) return;
+  if (state) li.dataset.s = state;
+  if (detail !== undefined) $(".d", li).innerHTML = detail;
+}
+
+async function launch() {
+  const btn = $("#fire");
+  btn.disabled = true;
+  $("#back2").disabled = true;
+  const repo = "/repos/" + S.repo.full_name;
+  let step = "key";
+
+  try {
+    /* 1 — public key */
+    row("key", "run");
+    const pk = await gh("GET", repo + "/actions/secrets/public-key");
+    row("key", "done", "key_id " + esc(pk.key_id));
+
+    /* 2 — seal, locally */
+    step = "seal";
+    row("seal", "run");
+    await sodium.ready;
+    const pkBytes = sodium.from_base64(pk.key, sodium.base64_variants.ORIGINAL);
+    const sealed = {};
+    for (const name of Object.keys(S.secrets)) {
+      sealed[name] = sodium.to_base64(
+        sodium.crypto_box_seal(sodium.from_string(S.secrets[name]), pkBytes),
+        sodium.base64_variants.ORIGINAL
+      );
+    }
+    row("seal", "done", "Sealed with libsodium crypto_box_seal. The plaintext never left this tab.");
+
+    /* 3 — store */
+    step = "put";
+    row("put", "run");
+    const names = Object.keys(sealed);
+    for (let i = 0; i < names.length; i++) {
+      row("put", "run", "Writing " + esc(names[i]) + " (" + (i + 1) + " of " + names.length + ")…");
+      await gh("PUT", repo + "/actions/secrets/" + names[i], {
+        encrypted_value: sealed[names[i]],
+        key_id: pk.key_id
+      });
+    }
+    row("put", "done", names.map(esc).join(" · "));
+
+    /* 4 — config.yaml */
+    step = "cfg";
+    row("cfg", "run");
+    const yaml = buildYaml(S.cfg);
+    let sha = null;
+    try {
+      const cur = await gh("GET", repo + "/contents/config.yaml?ref=" + encodeURIComponent(S.repo.default_branch));
+      sha = cur && cur.sha;
+    } catch (e) {
+      if (!/404|Not found/i.test(e.message)) throw e; // absent is fine; anything else is not
+    }
+    const body = {
+      message: "mailtriage: configure via setup wizard",
+      content: b64encode(yaml),
+      branch: S.repo.default_branch
+    };
+    if (sha) body.sha = sha;
+    const put = await gh("PUT", repo + "/contents/config.yaml", body);
+    row("cfg", "done",
+      (sha ? "Updated" : "Created") + " on " + esc(S.repo.default_branch) +
+      (put && put.commit ? ' · <a target="_blank" rel="noopener" href="' + esc(put.commit.html_url) + '">commit</a>' : ""));
+
+    /* 5 — dispatch */
+    step = "fire";
+    row("fire", "run");
+    const t0 = Date.now();
+    await gh("POST", repo + "/actions/workflows/" + WORKFLOW + "/dispatches", { ref: S.repo.default_branch });
+    row("fire", "done", "Dispatched on " + esc(S.repo.default_branch) + ".");
+
+    /* 6 — poll */
+    step = "watch";
+    row("watch", "run", "Waiting for GitHub to pick up the run…");
+    const run = await watchRun(repo, t0);
+    if (run && run.conclusion === "success") {
+      row("watch", "done", 'Finished successfully · <a target="_blank" rel="noopener" href="' + esc(run.html_url) + '">view the run</a>');
+      succeed(run);
+    } else if (run) {
+      row("watch", "fail",
+        "The run finished as <strong>" + esc(run.conclusion || "incomplete") + "</strong>. " +
+        'Open <a target="_blank" rel="noopener" href="' + esc(run.html_url) + '">the log on GitHub</a> — the failing step names the cause, ' +
+        "and it is almost always a key pasted with a character missing, an unverified Resend from-domain, or a mistyped MAIL_PW_ name.");
+      btn.disabled = false; btn.textContent = "Try again";
+      $("#back2").disabled = false;
+    } else {
+      row("watch", "done",
+        "Still running after a few minutes — that's fine, it finishes on its own. " +
+        '<a target="_blank" rel="noopener" href="https://github.com/' + esc(S.repo.full_name) + '/actions">Follow it on GitHub</a>.');
+      succeed(null);
+    }
+  } catch (e) {
+    row(step, "fail", esc(e.message));
+    btn.disabled = false;
+    btn.textContent = "Try again";
+    $("#back2").disabled = false;
+  }
+}
+
+async function watchRun(repo, t0) {
+  const deadline = Date.now() + 5 * 60 * 1000;
+  const label = { queued: "Queued on GitHub's runners…", in_progress: "Running — pulling mail, then asking the model…", requested: "Queued…", waiting: "Waiting…", pending: "Queued…" };
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3000));
+    let d;
+    try {
+      d = await gh("GET", repo + "/actions/runs?per_page=1");
+    } catch (e) {
+      continue; // a transient blip shouldn't abandon a run that is already going
+    }
+    const run = d && d.workflow_runs && d.workflow_runs[0];
+    // Ignore a run that predates our dispatch; ours hasn't been created yet.
+    if (!run || new Date(run.created_at).getTime() < t0 - 120000) continue;
+    if (run.status === "completed") return run;
+    row("watch", "run",
+      (label[run.status] || run.status) +
+      ' · <a target="_blank" rel="noopener" href="' + esc(run.html_url) + '">watch on GitHub</a>');
+  }
+  return null;
+}
+
+function succeed(run) {
+  $("#launchView").style.display = "none";
+  $("#doneView").style.display = "block";
+  $$("#stepper li").forEach((li) => { li.classList.remove("on"); li.classList.add("done"); });
+  $("#doneMsg").innerHTML =
+    "Check <strong>" + esc(S.cfg.email_to) + "</strong>, including the spam folder for the first one. It repeats twice a day.";
+  const base = "https://github.com/" + S.repo.full_name;
+  $("#doneLinks").innerHTML =
+    (run ? '<a class="btn btn-ghost" target="_blank" rel="noopener" href="' + esc(run.html_url) + '">See the run log</a>' : "") +
+    '<a class="btn btn-ghost" target="_blank" rel="noopener" href="' + base + '/edit/' + encodeURIComponent(S.repo.default_branch) + '/config.yaml">Edit config.yaml later</a>' +
+    '<a class="btn btn-ghost" target="_blank" rel="noopener" href="' + base + '/actions">All runs</a>';
+  window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" });
+}
+
+$("#fire").addEventListener("click", launch);
+
+/* ------------------------------------------------------------ remember prefs (never secrets/token/accounts) */
+const KEEP = ["interests", "avoid", "emailTo", "emailFrom", "win"];
+try {
+  const saved = JSON.parse(localStorage.getItem("mailtriage.prefs") || "{}");
+  KEEP.forEach((k) => { if (saved[k] != null && $("#" + k)) $("#" + k).value = saved[k]; });
+  if (saved.authMode) { const r = $('input[name=authMode][value="' + saved.authMode + '"]'); if (r) { r.checked = true; r.dispatchEvent(new Event("change")); } }
+  if (saved.count) { $("#count").value = saved.count; }
+  addEventListener("beforeunload", () => {
+    const o = {};
+    KEEP.forEach((k) => { if ($("#" + k)) o[k] = $("#" + k).value; });
+    o.authMode = authMode();
+    o.count = $("#count").value;
+    localStorage.setItem("mailtriage.prefs", JSON.stringify(o));
+  });
+} catch (e) { /* private mode, file:// restrictions — harmless either way */ }
+
+$("#countOut").textContent = $("#count").value;
+updateWindowNote();
+show(1);
+</script>
+</body>
+</html>

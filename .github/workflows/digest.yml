@@ -46,11 +46,26 @@ jobs:
       - name: Self-check
         run: mailtriage --self-check
 
-      # Secrets a forker sets: ANTHROPIC_API_KEY, RESEND_API_KEY, MAIL_ACCOUNTS,
-      # and one MAIL_PW_<SLUG> per Gmail address (imap_pull.py derives the
-      # slug from the address). The MAIL_PW_* names are per-account and
-      # per-fork, so a static YAML step can't enumerate them -- export the
-      # whole secrets bag into the environment instead.
+      # AI auth: exactly one of ANTHROPIC_API_KEY (pay-per-use API) or
+      # CLAUDE_CODE_OAUTH_TOKEN (Claude Pro/Max subscription, no API bill).
+      # Subscription mode needs the claude CLI on the runner -- installed
+      # below, only when that secret is set.
+      - name: Install Claude Code CLI (subscription mode only)
+        if: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install claude
+        if: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: npm install -g @anthropic-ai/claude-code
+
+      # Secrets a forker sets: EITHER ANTHROPIC_API_KEY OR
+      # CLAUDE_CODE_OAUTH_TOKEN (see above), plus RESEND_API_KEY,
+      # MAIL_ACCOUNTS, and one MAIL_PW_<SLUG> per Gmail address
+      # (imap_pull.py derives the slug from the address). The MAIL_PW_*
+      # names are per-account and per-fork, so a static YAML step can't
+      # enumerate them -- export the whole secrets bag into the environment
+      # instead.
       - name: Send digest
         env:
           ALL_SECRETS: ${{ toJSON(secrets) }}
