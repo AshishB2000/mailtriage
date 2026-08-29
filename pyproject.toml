@@ -5,8 +5,9 @@ build-backend = "hatchling.build"
 [project]
 name = "mailtriage"
 version = "1.0.0"
-description = "Twice-daily private triage dashboard for several Gmail inboxes."
+description = "Twice-daily private AI triage of your Gmail inboxes, delivered as an HTML email. Fork-and-run on your own GitHub Actions."
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = ["anthropic==0.120.2", "PyYAML==6.0.3"]
 
