@@ -1,3 +1,7 @@
-"""mailtriage — twice-daily private triage dashboard for several Gmail inboxes."""
+"""mailtriage — twice-daily private AI triage of your Gmail inboxes, delivered as an HTML email."""
+
+from mailtriage.errors import MailError
 
 __version__ = "1.0.0"
+
+__all__ = ["MailError", "__version__"]

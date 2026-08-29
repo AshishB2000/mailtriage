@@ -1,0 +1,60 @@
+name: digest
+
+# Two runs a day, evenly split at 12h apart (00:00 and 12:00 UTC). config.yaml's
+# window_hours is 13, so this leaves an hour of slack for scheduler drift.
+#
+# Two things about GitHub's scheduler you should know before filing a bug:
+#  1. It drifts. A run can fire 5-20 minutes late, occasionally more, and
+#     under heavy load it can be skipped entirely.
+#  2. Scheduled workflows are auto-disabled after 60 days with no commits to
+#     the repo. GitHub emails you first. Push anything, or hit "Run workflow",
+#     to wake it back up.
+# Both are why config.yaml's window_hours has slack built in.
+on:
+  schedule:
+    - cron: "0 0 * * *"    # 00:00 UTC
+    - cron: "0 12 * * *"   # 12:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never let a slow run and the next scheduled run overlap -- that sends the
+# same digest twice. Queue instead of cancelling: a started run should finish.
+concurrency:
+  group: digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # Runtime deps come from pyproject.toml -- one source of truth, so the
+      # pins here cannot drift from the ones a contributor installs locally.
+      - run: pip install .
+
+      # Its own step on purpose: a logic regression fails here, loudly and
+      # before any API spend, instead of quietly producing a strange digest.
+      - name: Self-check
+        run: mailtriage --self-check
+
+      # Secrets a forker sets: ANTHROPIC_API_KEY, RESEND_API_KEY, MAIL_ACCOUNTS,
+      # and one MAIL_PW_<SLUG> per Gmail address (imap_pull.py derives the
+      # slug from the address). The MAIL_PW_* names are per-account and
+      # per-fork, so a static YAML step can't enumerate them -- export the
+      # whole secrets bag into the environment instead.
+      - name: Send digest
+        env:
+          ALL_SECRETS: ${{ toJSON(secrets) }}
+        run: |
+          # Values stay masked in logs; shlex.quote prevents shell injection.
+          eval "$(python -c 'import json,os,shlex; print("\n".join(f"export {k}={shlex.quote(v)}" for k,v in json.loads(os.environ["ALL_SECRETS"]).items() if k!="github_token"))')"
+          mailtriage
