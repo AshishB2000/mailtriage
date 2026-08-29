@@ -18,7 +18,7 @@ import yaml
 
 from mailtriage.errors import MailError
 
-Delivery = Literal["email"]
+Delivery = Literal["email", "gmail"]
 DELIVERIES: tuple[str, ...] = get_args(Delivery)
 
 
@@ -47,7 +47,7 @@ class Config:
 
         delivery = data.get("delivery")
         if delivery not in DELIVERIES:
-            raise MailError(f"'delivery' in {origin} must be exactly 'email' (got {delivery!r}).")
+            raise MailError(f"'delivery' in {origin} must be one of {DELIVERIES} (got {delivery!r}).")
 
         cfg = cls(delivery=delivery)
         for name in known - {"delivery"}:

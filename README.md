@@ -166,6 +166,24 @@ run. Check the log if nothing arrives — see Troubleshooting below.
 
 ---
 
+## Delivery options
+
+`delivery` in `config.yaml` picks one of two backends:
+
+- **`email`** (default) — sends via [Resend](https://resend.com). Needs the
+  `RESEND_API_KEY` secret and `email_from` on a domain you've verified at
+  [resend.com/domains](https://resend.com/domains) (or Resend's shared
+  `onboarding@resend.dev` sender, which can only deliver to your own
+  Resend-account address). Can deliver to any address.
+- **`gmail`** — sends through your own Gmail via SMTP, authenticating with
+  the same app password you already set up for `imap_pull` to read that
+  inbox. No Resend account, no domain verification. `email_from` must be one
+  of your `MAIL_ACCOUNTS` Gmail addresses with its `MAIL_PW_*` secret set;
+  mail from your Gmail to your Gmail lands straight in the inbox. Best when
+  `email_to` is the same address (or another of your own accounts).
+
+---
+
 ## What you'll need, and what it costs
 
 | | Where | Cost |
@@ -294,7 +312,7 @@ src/mailtriage/
   config.py         config.yaml -> validated Config dataclass
   imap_pull.py       account/password lookup, IMAP fetch, time-window filter
   triage.py          the triage prompt + the forced-tool Claude call   <- the product
-  delivery/          __init__ dispatch, http.py, mail.py (Resend + the email template)
+  delivery/          __init__ dispatch, http.py, mail.py (Resend), gmail.py (your own Gmail via SMTP)
   selfcheck.py       the pre-flight assertions
   cli.py             argparse; the only module that prints and exits
 tests/               pytest suite
