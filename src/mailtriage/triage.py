@@ -175,7 +175,7 @@ def pick(cfg: Config, emails: list[Email], reply: dict[str, Any]) -> list[Triage
         src = emails[i]
         triaged = Triaged(
             bucket=bucket,
-            note=str(got.get("note", "")),
+            note=str(n) if (n := got.get("note")) else "",
             account=src["account"],
             sender=src["from"],
             subject=src["subject"],

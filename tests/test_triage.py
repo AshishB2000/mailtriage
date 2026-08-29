@@ -58,6 +58,14 @@ def test_pick_caps_worth_reading_but_not_needs_action():
     assert len(action) == 3  # uncapped
 
 
+def test_pick_coerces_null_note_to_empty_string():
+    """An explicit JSON null (not just a missing key) must not become the string "None"."""
+    emails = [make_email(0)]
+    reply = {"items": [{"id": 0, "bucket": "needs_action", "note": None}]}
+    picked = triage.pick(CFG, emails, reply)
+    assert picked[0]["note"] == ""
+
+
 def test_pick_ignores_model_supplied_fields_uses_real_email():
     emails = [make_email(0)]
     reply = {
