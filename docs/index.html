@@ -576,7 +576,7 @@ const WORKFLOW_PATH = ".github/workflows/digest.yml";
 const GAP_HOURS = 12;
 const SAFE_HOURS = 13;
 
-const S = { token: "", user: null, repos: [], repo: null, step: 1, hadConfig: false };
+const S = { token: "", user: null, repos: [], repo: null, step: 1 };
 
 /* ------------------------------------------------------------ tiny dom */
 const $ = (s, r) => (r || document).querySelector(s);
@@ -848,6 +848,7 @@ async function prefillFromConfig(fullName) {
   try {
     const cur = await gh("GET", "/repos/" + fullName + "/contents/config.yaml");
     if (fullName !== S.repo.full_name) return; // repo changed while this was in flight
+    if (S.step !== 1) return; // user already moved past connect -- don't clobber typed input
     const cfg = parseConfig(b64decode(cur.content));
     if (cfg.interests != null) $("#interests").value = cfg.interests;
     if (cfg.avoid != null) $("#avoid").value = cfg.avoid;
@@ -855,10 +856,9 @@ async function prefillFromConfig(fullName) {
     if (cfg.email_from != null) $("#emailFrom").value = cfg.email_from;
     if (cfg.window_hours != null) $("#win").value = cfg.window_hours;
     if (cfg.reading_count != null) { $("#count").value = cfg.reading_count; $("#countOut").textContent = cfg.reading_count; }
-    S.hadConfig = true;
     updateWindowNote();
   } catch (e) {
-    S.hadConfig = false; // no config.yaml yet, or unreadable -- defaults stand
+    // no config.yaml yet, or unreadable -- defaults stand
   }
 }
 
@@ -950,6 +950,9 @@ function collectAccounts() {
   }));
 }
 
+// Must match pw_env_var in src/mailtriage/imap_pull.py exactly.
+const mailPwSlug = (email) => "MAIL_PW_" + email.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+
 /* ------------------------------------------------------------ step 2: collect + validate */
 function collect() {
   return {
@@ -993,6 +996,7 @@ function validate() {
 
   let firstAcctBad = null;
   const seen = new Set();
+  const bySlug = new Map(); // slug -> row, to catch two addresses collapsing to one secret name
   $$(".acct").forEach((row) => {
     const email = $(".acct-email", row).value.trim();
     const pw = $(".acct-pw", row).value.replace(/\s+/g, "");
@@ -1002,6 +1006,11 @@ function validate() {
     else if (seen.has(email.toLowerCase())) msg = "Already listed above.";
     else if (!pw) msg = "Enter the app password Google gave you for this account.";
     else if (!/^[A-Za-z0-9]{16}$/.test(pw)) msg = "App passwords are 16 characters (Google shows them as 4 groups of 4) — check for a missing or extra character.";
+    else {
+      const slug = mailPwSlug(email);
+      if (bySlug.has(slug)) msg = "Two addresses map to the same secret name (" + slug + "). They can't both be used — remove one.";
+      else bySlug.set(slug, row);
+    }
     if (msg) { acctError(row, msg); if (!firstAcctBad) firstAcctBad = row; }
     else seen.add(email.toLowerCase());
   });
@@ -1023,7 +1032,7 @@ $("#go3").addEventListener("click", () => {
   const accounts = collectAccounts();
   S.secrets.MAIL_ACCOUNTS = accounts.map((a) => a.email).join(",");
   accounts.forEach((a) => {
-    S.secrets["MAIL_PW_" + a.email.toUpperCase().replace(/[^A-Z0-9]/g, "_")] = a.pw;
+    S.secrets[mailPwSlug(a.email)] = a.pw;
   });
 
   prepLaunch();
