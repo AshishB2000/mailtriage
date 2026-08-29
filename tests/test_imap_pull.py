@@ -6,7 +6,6 @@ from mailtriage.imap_pull import (
     MailError,
     accounts_from_env,
     gmail_link,
-    main,
     msg_datetime,
     parse_message,
     pull,
@@ -198,22 +197,3 @@ def test_pull_sorts_by_datetime_not_string():
     # The newer message (new@gmail.com, 15:00 UTC) should be first
     assert out["messages"][0]["account"] == "new@gmail.com"
     assert out["messages"][0]["subject"] == "newer message"
-
-
-def test_self_check_passes(capsys):
-    assert main(["--self-check"]) == 0
-    assert "self-check ok" in capsys.readouterr().out
-
-
-def test_main_reports_mailerror_to_stderr(capsys):
-    # empty env => MAIL_ACCOUNTS unset => MailError caught, exit 1
-    import mailtriage.imap_pull as m
-
-    saved = dict(m.os.environ)
-    m.os.environ.clear()
-    try:
-        rc = main([])
-    finally:
-        m.os.environ.update(saved)
-    assert rc == 1
-    assert "MAIL_ACCOUNTS" in capsys.readouterr().err

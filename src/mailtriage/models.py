@@ -17,6 +17,13 @@ Email = TypedDict(
 )
 
 
+class PullResult(TypedDict):
+    """Return shape of `imap_pull.pull`: collected messages plus per-account warnings."""
+
+    messages: list["Email"]
+    warnings: list[dict[str, str]]
+
+
 class Triaged(TypedDict):
     """One surfaced email. `bucket`/`note` come from the model; the rest are
     copied verbatim from the source Email (never model-authored)."""

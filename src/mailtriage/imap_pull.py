@@ -1,18 +1,15 @@
 """Pull recent INBOX mail from several Gmail accounts as JSON. Stdlib only."""
 
-import argparse
 import contextlib
 import imaplib
-import json
-import os
 import re
-import sys
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes, policy
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
 from mailtriage.errors import MailError
+from mailtriage.models import Email, PullResult
 
 
 def pw_env_var(addr: str) -> str:
@@ -81,7 +78,7 @@ def snippet_of(msg, limit: int = 200) -> str:
     return " ".join(text.split())[:limit]
 
 
-def parse_message(raw: bytes, addr: str, flags: str, now, hours: int):
+def parse_message(raw: bytes, addr: str, flags: str, now, hours: int) -> Email | None:
     msg = message_from_bytes(raw, policy=policy.default)
     dt = msg_datetime(str(msg.get("Date", "")))
     if not within_window(dt, now, hours):
@@ -122,7 +119,7 @@ def fetch_account(addr, pw, now, hours, host="imap.gmail.com"):
     return out
 
 
-def pull(environ, now, hours, fetch=fetch_account):
+def pull(environ, now, hours, fetch=fetch_account) -> PullResult:
     messages, warnings = [], []
     for addr, pw in accounts_from_env(environ):
         try:
@@ -131,43 +128,3 @@ def pull(environ, now, hours, fetch=fetch_account):
             warnings.append({"account": addr, "error": f"{type(e).__name__}: {e}"})
     messages.sort(key=lambda m: datetime.fromisoformat(m["date"]), reverse=True)
     return {"messages": messages, "warnings": warnings}
-
-
-_SELF_CHECK_RAW = (
-    b"From: Test <t@example.com>\r\nSubject: hi\r\n"
-    b"Date: Fri, 28 Aug 2026 09:00:00 +0000\r\n"
-    b"Message-ID: <sc@example.com>\r\n"
-    b"Content-Type: text/plain\r\n\r\nbody text\r\n"
-)
-
-
-def _self_check():
-    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
-    rec = parse_message(_SELF_CHECK_RAW, "me@gmail.com", "1 (FLAGS () BODY[]", now, 13)
-    assert rec is not None and rec["subject"] == "hi", "parser broken"
-    assert rec["date"] == "2026-08-28T09:00:00+00:00", "date landmine"
-    assert within_window(None, now, 13) is False, "undated must drop"
-    assert within_window(now + timedelta(hours=1), now, 13) is False, "future must clamp"
-
-
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Pull recent Gmail INBOX mail as JSON.")
-    ap.add_argument("--window-hours", type=int, default=13)
-    ap.add_argument("--self-check", action="store_true")
-    args = ap.parse_args(argv)
-    if args.self_check:
-        _self_check()
-        print("self-check ok")
-        return 0
-    now = datetime.now(timezone.utc)
-    try:
-        result = pull(os.environ, now, args.window_hours)
-    except MailError as e:
-        print(str(e), file=sys.stderr)
-        return 1
-    json.dump(result, sys.stdout)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
