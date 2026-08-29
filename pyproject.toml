@@ -29,6 +29,10 @@ line-length = 120
 # exceptional.
 ignore = ["BLE001"]
 
+[tool.ruff.lint.per-file-ignores]
+# The triage prompt is the product — long, unbroken sentences on purpose.
+"src/mailtriage/triage.py" = ["E501"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
