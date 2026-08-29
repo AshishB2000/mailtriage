@@ -1,0 +1,23 @@
+[project]
+name = "mailtriage"
+version = "1.0.0"
+description = "Twice-daily private triage dashboard for several Gmail inboxes."
+requires-python = ">=3.10"
+dependencies = []   # stdlib only — this is deliberate
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# Both blind excepts in imap_pull.py are deliberate: imaplib raises 6+ unrelated
+# types on a bad login (caught per-account so one failure never blanks the run),
+# and get_content() has a decode fallback. A dead account is expected, not
+# exceptional.
+ignore = ["BLE001"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+addopts = "-q --strict-markers"
