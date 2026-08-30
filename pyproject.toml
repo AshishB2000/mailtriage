@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mailtriage"
-version = "1.0.0"
+version = "1.1.0"
 description = "Twice-daily private AI triage of your Gmail inboxes, delivered as an HTML email. Fork-and-run on your own GitHub Actions."
 readme = "README.md"
 license = { text = "MIT" }

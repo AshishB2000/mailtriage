@@ -24,9 +24,13 @@ gh release create vX.Y.Z --target main ...     # release = tag + notes; bump pyp
 src/mailtriage/
   errors.py     MailError — the ONLY exception raised on purpose
   models.py     Email (triage input), Triaged (output), PullResult
-  imap_pull.py  read-only IMAP fetch; pw_env_var is the secret-name transform
+  imap_pull.py  read-only IMAP fetch; pw_env_var is the secret-name transform;
+                push_drafts APPENDs to \Drafts only
   config.py     config.yaml -> validated Config dataclass
-  triage.py     prompt + tool schema + pick()   <- the product
+  triage/       package, dict-dispatch pattern   <- the product
+                  __init__.py: prompt + schema + pick() + PROVIDERS
+                  claude_api.py claude_cli.py codex_cli.py openai_api.py gemini_api.py
+  drafts.py     reply-drafting prompt + hostile-input-safe id mapping
   delivery/     dispatch, http.py, mail.py (Resend), gmail.py (own-Gmail SMTP)
   selfcheck.py  pre-flight assertions, run before any API spend
   cli.py        argparse; the only module that prints and exits
@@ -47,9 +51,15 @@ keys warn, they never fail. `tests/test_config.py` loads the committed file.
 `toJSON(secrets)`), and the engine (reads env):
 
 ```
-ANTHROPIC_API_KEY   or   CLAUDE_CODE_OAUTH_TOKEN     (exactly one; token wins)
+one of: CLAUDE_CODE_OAUTH_TOKEN  ANTHROPIC_API_KEY  CODEX_AUTH_JSON
+        OPENAI_API_KEY           GEMINI_API_KEY        (exactly one AI secret)
 RESEND_API_KEY      MAIL_ACCOUNTS      MAIL_PW_<SLUG> (one per address)
 ```
+
+The wizard's provider picker writes an explicit `provider:` (never `"auto"`)
+and PUTs exactly the one secret for that provider — the other four are never
+written. `"auto"` (config.yaml default for hand-edited files) walks
+`triage.PROVIDERS` in order and takes the first secret that's set.
 
 `MAIL_PW_<SLUG>` = `"MAIL_PW_" + addr.upper()` with every non-alphanumeric →
 `_`. This transform exists in TWO places that must match character-for-character:
@@ -78,10 +88,25 @@ bill; don't upgrade to Opus without a reason.
   raises 6+ unrelated types); `BLE001` is ignored repo-wide for this.
 - **IMAP is read-only**: `select("INBOX", readonly=True)` + `BODY.PEEK[]`.
   Never let a change reintroduce plain `BODY[]` — it marks mail as read.
-- **`triage.py` never imports `anthropic` at module top.** `--self-check` must
-  pass with the SDK uninstalled; the import lives inside `_call` only.
+- **`triage/` never imports `anthropic` at module top.** `--self-check` must
+  pass with the SDK uninstalled; the import lives inside `claude_api.call` only.
 - **`delivery/mail.py` is named `mail`, never `email`** — shadows stdlib.
 - **docs/sodium.js is vendored, not CDN** — the wizard must work from `file://`.
+- **Provider auto-order is user-visible behavior, not an implementation
+  detail.** `triage.PROVIDERS`' order — `claude-subscription` →
+  `claude-api` → `chatgpt-subscription` → `openai-api` → `gemini-api` — is
+  the precedence `"auto"` walks. Reordering it silently moves which secret
+  (and which bill) an existing multi-secret fork lands on next run.
+- **Gemini's `responseSchema` rejects `additionalProperties`.** `gemini_api.py`
+  strips that keyword recursively before sending the schema. Don't "fix" the
+  stripping away — Gemini 400s on the unmodified schema.
+- **`CODEX_AUTH_JSON` tokens rotate**, and a stateless CI runner can't write
+  the rotated value back to the secret. That's not a bug to fix — the 401
+  error message already tells the user to re-run `codex login` and re-paste.
+- **Drafting never sends and never touches an existing message.**
+  `push_drafts` only `APPEND`s to the account's `\Drafts` mailbox; INBOX
+  stays `select(..., readonly=True)` for the whole run; there is no SMTP call
+  anywhere in `imap_pull.py`. Don't add one.
 
 ## Landmines (each one cost a real debugging session)
 
@@ -104,6 +129,10 @@ bill; don't upgrade to Opus without a reason.
 - **New GitHub accounts get an "Approve and run" gate** on Actions; scheduled
   runs sit waiting until the account's email is verified. Also: scheduled
   workflows auto-disable after 60 days without commits.
+- **The wizard writes `provider:` explicitly, never `"auto"`.** The user made
+  a choice in the picker; treat it as authoritative. It also PUTs exactly one
+  of the five AI secrets — writing more than one lets a stale credential
+  shadow the one the user meant to use.
 
 ## Style
 

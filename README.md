@@ -1,17 +1,86 @@
-# mailtriage
+<h1 align="center">mailtriage</h1>
 
-**Twice-daily AI triage of your Gmail inboxes, delivered as one private email.**
+<p align="center"><b>AI triages every Gmail account you have, twice a day, and drafts the replies for you — you open your inbox to find the answers already written.</b></p>
+
+<p align="center">Fork-and-run · your own GitHub Actions · your own AI credentials · no server, no accounts, nothing routes through anyone else.</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat" /></a>
+  <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat" />
+  <img alt="providers" src="https://img.shields.io/badge/AI%20providers-5-informational?style=flat" />
+  <img alt="cost" src="https://img.shields.io/badge/cost-%240%20possible-success?style=flat" />
+</p>
+
+---
 
 mailtriage reads the INBOX of one or more Gmail accounts, sorts what actually
 arrived into **needs action** / **worth reading** — and drops the rest —
-then sends you a single short HTML email. Everything else is noise it never
-shows you: newsletters, receipts, promotions, automated notifications.
+then sends you a single short HTML email. For everything that needs a reply,
+it also drafts one: into the digest, and appended straight into that
+account's Gmail Drafts folder, threaded to the original message. Everything
+else is noise it never shows you: newsletters, receipts, promotions,
+automated notifications.
 
-It runs on **your** GitHub Actions, with **your** AI provider credentials
-(Claude, ChatGPT, OpenAI, or Gemini — your choice), reading **your** Gmail
-over read-only IMAP. Your laptop can be off. There's no server, no database,
-no accounts, and nothing routes through anyone else — you fork this repo and
-it becomes entirely yours.
+It runs on **your** GitHub Actions, with **your** AI provider credentials —
+Claude, ChatGPT, OpenAI, or Gemini, whichever you already pay for — reading
+**your** Gmail over read-only IMAP. Your laptop can be off. There's no
+server, no database, no accounts, and nothing routes through anyone else —
+you fork this repo and it becomes entirely yours.
+
+---
+
+## Bring the AI you already pay for
+
+mailtriage never bills you directly — it runs entirely on your own
+credentials, in your own GitHub Actions. `provider` in `config.yaml` (default
+`"auto"`) picks the first secret below that's set; set it explicitly to force
+one instead.
+
+**Subscription CLIs — pay nothing extra, on top of a plan you already have:**
+
+| `provider` | Secret | Notes |
+|---|---|---|
+| `claude-subscription` | `CLAUDE_CODE_OAUTH_TOKEN` | Requires a Claude Pro/Max subscription. Run `claude setup-token` locally once and paste the printed token as the secret value. Lasts about a year; regenerate the same way when it expires. |
+| `chatgpt-subscription` | `CODEX_AUTH_JSON` | Requires a ChatGPT Plus/Pro subscription. Run `codex login` locally, then paste the **full contents** of `~/.codex/auth.json`. **Honest caveat:** Codex rotates its tokens during use, and a stateless CI runner can't persist that rotation back to the secret — expect to re-run `codex login` and re-paste occasionally when a run fails with an auth error. |
+
+**API keys — pay-per-use, billed by the provider directly:**
+
+| `provider` | Secret | Notes |
+|---|---|---|
+| `claude-api` | `ANTHROPIC_API_KEY` | [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys). A few cents a month for this workload. |
+| `openai-api` | `OPENAI_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys). |
+| `gemini-api` | `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — Gemini's free tier (roughly 10 requests/minute) comfortably covers two runs a day, so this option can run mailtriage at **$0**. |
+
+Set exactly one of the five secrets above. If none is set, the run fails fast
+with `No AI provider configured`, listing all five options and their secret
+names — see [Troubleshooting](#troubleshooting).
+
+---
+
+## Reply drafting
+
+Every `needs_action` item gets a model-drafted reply, in plain text, ready to
+send after a quick human read. You'll find it two places:
+
+- **In the digest email**, right under that item's note.
+- **In Gmail Drafts**, on the account the message arrived at, threaded to the
+  original via `In-Reply-To`/`References` — open the thread in Gmail and the
+  draft is already sitting there.
+
+**mailtriage never sends anything, on its own or otherwise:**
+
+- `imap_pull.py` has no SMTP call anywhere in it, by design.
+- The INBOX connection stays `select("INBOX", readonly=True)` for the entire
+  run — reply drafting reads nothing new from INBOX, it only writes to
+  Drafts.
+- Pushing a draft only ever **appends** a new message to the account's
+  `\Drafts` mailbox (`imaplib`'s `APPEND`) — it never touches an existing
+  message, never sets a flag on one, and never selects INBOX for write.
+- The model is instructed to leave a bracketed `[placeholder]` for any
+  fact it doesn't actually know, rather than invent one.
+
+Set `draft_replies: false` in `config.yaml` to turn this off — the digest
+still triages normally, it just stops drafting.
 
 ---
 
@@ -26,6 +95,11 @@ NEEDS ACTION
   ● Priya Shah · alice.work@gmail.com
   She needs your approval on the revised number by EOD Friday to hit
   the finance deadline.
+
+  Draft reply
+  Hi Priya, the revised number looks good to me — approved. Let me
+  know if you need anything else before Friday.
+  Thanks,
 
   Flight change confirmation required
   United Airlines · alice@gmail.com
@@ -68,18 +142,19 @@ how you train yourself to stop opening it.
    (clone and open the file, or download it and double-click it, no server
    needed) or via GitHub Pages if you've enabled it on your fork.
 3. Paste a [GitHub personal access token](https://github.com/settings/tokens/new?scopes=repo&description=mailtriage+setup),
-   fill in your triage brief, AI auth, Resend key, and Gmail accounts, and
-   click through.
+   fill in your triage brief, pick one AI provider from the picker and paste
+   its credential, add your Resend key and Gmail accounts, and click through.
 
 The page finds your fork, encrypts every secret **in your browser** with
 libsodium against your repository's own public key, writes them to your
-fork's Actions secrets, commits `config.yaml`, and triggers the first run —
-all directly against the GitHub API from that one tab. There's no server
-behind it and nothing to install; open the page's source and read it if you
-want to verify that yourself. Reopening the page later turns it into a
-settings editor: pick your repo again and it loads your existing
-`interests`, `avoid`, and delivery settings from `config.yaml` (secrets and
-accounts still need re-entering — GitHub never returns a secret's value).
+fork's Actions secrets, commits `config.yaml` (with your chosen `provider`
+written explicitly, not `"auto"`), and triggers the first run — all directly
+against the GitHub API from that one tab. There's no server behind it and
+nothing to install; open the page's source and read it if you want to verify
+that yourself. Reopening the page later turns it into a settings editor: pick
+your repo again and it loads your existing `interests`, `avoid`, `provider`,
+and delivery settings from `config.yaml` (secrets and accounts still need
+re-entering — GitHub never returns a secret's value).
 
 If you'd rather do it by hand — or the wizard hits something your setup
 doesn't like — the manual steps below do exactly the same thing.
@@ -104,34 +179,12 @@ workflows, go ahead and enable them."**
 
 | Secret | Value |
 |---|---|
-| one AI-auth secret | pick one from the provider matrix below |
+| one AI-auth secret | pick one from the [provider matrix above](#bring-the-ai-you-already-pay-for) |
 | `RESEND_API_KEY` | a key from [resend.com/api-keys](https://resend.com/api-keys) (free tier) — you'll also need to verify a sending domain at [resend.com/domains](https://resend.com/domains) |
 | `MAIL_ACCOUNTS` | comma-separated Gmail addresses, e.g. `alice@gmail.com,alice.work@gmail.com` |
 | one `MAIL_PW_*` per address | the app password for that address (see step 4) |
 | `EMAIL_TO` *(optional)* | where the digest is delivered. For `delivery: gmail`, defaults to your first `MAIL_ACCOUNTS` address if unset |
 | `EMAIL_FROM` *(optional)* | who it's sent from. Same default as above for `delivery: gmail`; required for `delivery: email` (Resend) |
-
-**AI auth — set exactly one secret.** `provider` in `config.yaml` (default
-`"auto"`) picks the first one below whose secret is set; set it explicitly to
-force one instead.
-
-**Subscription CLIs — pay nothing extra, on top of a plan you already have:**
-
-| `provider` | Secret | Notes |
-|---|---|---|
-| `claude-subscription` | `CLAUDE_CODE_OAUTH_TOKEN` | Requires a Claude Pro/Max subscription. Run `claude setup-token` locally once and paste the printed token as the secret value. The token lasts about a year; regenerate it with `claude setup-token` when it expires. The workflow installs the [Claude Code CLI](https://docs.claude.com/en/docs/claude-code) on the runner automatically, only when this secret is set. |
-| `chatgpt-subscription` | `CODEX_AUTH_JSON` | Requires a ChatGPT Plus/Pro subscription. Run `codex login` locally, then paste the **full contents** of `~/.codex/auth.json` as the secret value. **Honest caveat:** Codex rotates its tokens during use, and a stateless CI runner can't persist that rotation back to the secret — expect to re-run `codex login` and re-paste the secret occasionally when a run fails with an auth error. The workflow installs the [Codex CLI](https://github.com/openai/codex) on the runner automatically, only when this secret is set. |
-
-**API keys — pay-per-use, billed by the provider directly:**
-
-| `provider` | Secret | Notes |
-|---|---|---|
-| `claude-api` | `ANTHROPIC_API_KEY` | A key from [console.anthropic.com](https://console.anthropic.com/settings/keys). A few cents a month for this workload. |
-| `openai-api` | `OPENAI_API_KEY` | A key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys). |
-| `gemini-api` | `GEMINI_API_KEY` | A key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — Gemini's free tier (roughly 10 requests/minute) comfortably covers two runs a day, so this option can run mailtriage at **$0**. |
-
-If no AI-auth secret is set at all, the run fails fast with `No AI provider
-configured`, listing all five options and their secret names.
 
 **The `MAIL_PW_*` names are the most error-prone step.** Each is
 `MAIL_PW_` + the address, upper-cased, with every non-alphanumeric character
@@ -162,9 +215,10 @@ Full walkthrough: [docs/SETUP.md](docs/SETUP.md).
 Open `config.yaml` in GitHub's web editor (or clone and edit locally). Leave
 `email_to` and `email_from` as `""` — those addresses go in the `EMAIL_TO` /
 `EMAIL_FROM` secrets from step 3 instead, since this file is committed and a
-fork can be public. `interests`, `avoid`, and `window_hours` ship with sane
-defaults but are worth tuning to your own inbox. Commit the change —
-`config.yaml` holds no secrets and is meant to be committed.
+fork can be public. `interests`, `avoid`, `window_hours`, `provider`, and
+`draft_replies` ship with sane defaults but are worth tuning to your own
+inbox. Commit the change — `config.yaml` holds no secrets and is meant to be
+committed.
 
 #### 6. Trigger a first run
 
@@ -198,12 +252,13 @@ run. Check the log if nothing arrives — see Troubleshooting below.
 
 | | Where | Cost |
 |---|---|---|
-| **One AI-auth credential** | see the provider matrix above | free with a subscription CLI, a few cents/month for an API key, or $0 on Gemini's free tier |
+| **One AI-auth credential** | see the [provider matrix above](#bring-the-ai-you-already-pay-for) | free with a subscription CLI, a few cents/month for an API key, or $0 on Gemini's free tier |
 | **Resend key** | [resend.com](https://resend.com) | Free tier covers personal volume |
 | **GitHub Actions** | already have it | Free minutes are ample for 2 runs/day |
 
 Each run is one AI call with your recent INBOX mail in and a short triage
-out — this is headline-scale triage, not a long conversation. Two runs a day
+out, plus one more call to draft replies when there's anything to reply to —
+this is headline-scale triage, not a long conversation. Two runs a day
 lands in the low single-digit cents per month for a typical inbox on an API
 key, or $0 on a subscription CLI or Gemini's free tier. You're billed
 directly by your chosen AI provider and by Resend; nothing goes through this
@@ -223,7 +278,11 @@ project.
    returns bucket + one-line note per message it's keeping, referenced by an
    integer index — never a URL, so there's no risk of the model inventing or
    mangling a link.
-4. **Send** — one HTML email via Resend, or nothing if both buckets came
+4. **Draft** — if `draft_replies` is on (default) and anything landed in
+   `needs_action`, a second call drafts a reply for each. Drafts are appended
+   to the source account's Gmail Drafts mailbox — never sent — and shown in
+   the digest.
+5. **Send** — one HTML email via Resend, or nothing if both buckets came
    back empty.
 
 **No state, anywhere.** There's no database and no record of what was
@@ -272,6 +331,7 @@ failed.
 | `could not reach api.resend.com` / `could not reach api.anthropic.com` | The runner had no network, or the API was briefly down | Re-run the workflow by hand |
 | `the model's reply was cut off (stop_reason=max_tokens)` | Too much input for the reply budget | Lower `reading_count` in `config.yaml`, or shorten `interests` |
 | `mailtriage: account failed, skipping: ...` (per-account warning) | One account's IMAP login failed (bad password, network) | That account is skipped; every other account still triages normally |
+| `mailtriage: draft push failed, skipping: ...` (per-account warning) | Drafting worked but appending to that account's Drafts mailbox failed | Digest still sends with the drafts inline; that account's Gmail Drafts just didn't get them this run |
 | `mailtriage: nothing recent — sending nothing.` | No mail in the window at all | Nothing to fix — normal on a quiet window |
 | `mailtriage: the model kept none of the candidates — sending nothing.` | The model triaged everything as noise | Working as intended, not a failure |
 
@@ -280,12 +340,15 @@ failed.
 ## Privacy
 
 - Your mail never leaves your infrastructure except to the two services you
-  configured yourself: Anthropic (to triage) and Resend (to deliver).
-  Nothing routes through the maintainer of this project — no analytics, no
-  telemetry, no hosted anything.
-- IMAP access is **read-only**: mailtriage selects `INBOX` with
+  configured yourself: your chosen AI provider (to triage and draft) and
+  Resend (to deliver, unless you chose `delivery: gmail`). Nothing routes
+  through the maintainer of this project — no analytics, no telemetry, no
+  hosted anything.
+- IMAP access to INBOX is **read-only**: mailtriage selects `INBOX` with
   `readonly=True` and fetches with `BODY.PEEK[]`, so it can never mark a
-  message as read or change anything in your mailbox.
+  message as read or change anything in your inbox. Drafting only ever
+  **appends** to the Drafts mailbox — it never sends and never touches an
+  existing message.
 - Secrets (API keys, app passwords, and your `EMAIL_TO`/`EMAIL_FROM`
   addresses) live only in your fork's GitHub Actions secrets — encrypted at
   rest by GitHub, not readable back by anyone including you, once saved.
@@ -302,7 +365,7 @@ git clone https://github.com/YOUR-USERNAME/mailtriage
 cd mailtriage
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
-export ANTHROPIC_API_KEY=sk-ant-...
+export ANTHROPIC_API_KEY=sk-ant-...   # or any other secret from the provider matrix above
 export RESEND_API_KEY=re_...
 export MAIL_ACCOUNTS=alice@gmail.com
 export MAIL_PW_ALICE_GMAIL_COM=...
@@ -326,14 +389,16 @@ src/mailtriage/
   errors.py        MailError — the only exception raised on purpose
   models.py         Email (pulled message), Triaged (a bucketed, annotated one)
   config.py         config.yaml -> validated Config dataclass
-  imap_pull.py       account/password lookup, IMAP fetch, time-window filter
+  imap_pull.py       account/password lookup, IMAP fetch, time-window filter, push_drafts
   triage/            the triage prompt (__init__.py)   <- the product
                        + 5 backends: claude_api, claude_cli, codex_cli, openai_api, gemini_api
+  drafts.py          the reply-drafting prompt + hostile-input-safe id mapping
   delivery/          __init__ dispatch, http.py, mail.py (Resend), gmail.py (your own Gmail via SMTP)
   selfcheck.py       the pre-flight assertions
   cli.py             argparse; the only module that prints and exits
 tests/               pytest suite
 config.yaml          your triage settings (committed, holds no secrets)
+docs/index.html      the zero-backend setup wizard (+ vendored sodium.js)
 docs/SETUP.md        one-time credential setup (2-Step Verification + app passwords)
 .github/workflows/digest.yml   the schedule
 .github/workflows/ci.yml       lint + types + tests on every push
