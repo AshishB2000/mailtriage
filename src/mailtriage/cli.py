@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from mailtriage import __version__
 from mailtriage.config import Config, load_config
 from mailtriage.errors import MailError
-from mailtriage.imap_pull import pull
+from mailtriage.imap_pull import pull, push_drafts
 from mailtriage.models import Triaged
 
 
@@ -41,13 +41,16 @@ def _print_digest(kept: list[Triaged]) -> None:
         print(heading)
         for it in items:
             print(f"  {it['subject']} · {it['sender']} · {it['note']}")
+            if it["draft"]:
+                print(f"    Draft reply: {it['draft']}")
 
 
 def run(cfg: Config, dry_run: bool = False) -> None:
     # Imported here, not at module scope: --self-check must work on a machine
     # where `anthropic` failed to install, and this is the only path that needs it.
     from mailtriage.delivery import send
-    from mailtriage.triage import triage
+    from mailtriage.drafts import generate_drafts
+    from mailtriage.triage import select_backend, triage
 
     now = datetime.now(timezone.utc)
     result = pull(os.environ, now, cfg.window_hours)
@@ -67,6 +70,17 @@ def run(cfg: Config, dry_run: bool = False) -> None:
         # Delivering "no items today" three times a day is how a reader unsubscribes.
         print("mailtriage: the model kept none of the candidates — sending nothing.", file=sys.stderr)
         return
+
+    if cfg.draft_replies and any(t["bucket"] == "needs_action" for t in kept):
+        # select_backend is pure env inspection -- picking again here (instead
+        # of threading a pick through triage()) keeps triage()'s signature
+        # unchanged and costs nothing extra.
+        _name, call = select_backend(cfg, os.environ)
+        generate_drafts(cfg, call, emails, kept)  # MailError here is fatal -- auth is auth.
+        if not dry_run:
+            # No mailbox writes on a dry run: push only when actually delivering.
+            for w in push_drafts(os.environ, kept, emails):
+                print(f"mailtriage: draft push failed, skipping: {w}", file=sys.stderr)
 
     if dry_run:
         _print_digest(kept)

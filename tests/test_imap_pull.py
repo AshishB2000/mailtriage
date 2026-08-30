@@ -88,10 +88,20 @@ def test_parse_message_builds_record():
     assert rec["from"] == "Alice <alice@work.com>"
     assert rec["subject"] == "Lunch tomorrow?"
     assert rec["snippet"] == "Are you free around noon? Let me know."
+    assert rec["body"] == "Are you free around noon? Let me know."
     assert rec["date"] == "2026-08-28T09:00:00+00:00"
     assert rec["unread"] is True
     assert rec["account"] == "me@gmail.com"
     assert "rfc822msgid:abc123" in rec["link"]
+    assert rec["message_id"] == "<abc123@work.com>"
+    assert rec["reply_to"] == "Alice <alice@work.com>"  # falls back to From when no Reply-To header
+
+
+def test_parse_message_reply_to_header_wins_over_from():
+    raw = RAW.replace(b"Subject: Lunch tomorrow?\r\n", b"Subject: Lunch tomorrow?\r\nReply-To: team@work.com\r\n")
+    rec = parse_message(raw, "me@gmail.com", "1 (FLAGS () BODY[]", NOW, 13)
+    assert rec is not None
+    assert rec["reply_to"] == "team@work.com"
 
 
 def test_parse_message_seen_flag_marks_read():

@@ -24,9 +24,12 @@ def make_email(i: int) -> Email:
         "from": f"sender{i}@example.com",
         "subject": f"real subject {i}",
         "snippet": f"real snippet {i}",
+        "body": f"real body {i}",
         "date": "2026-08-28T10:00:00+00:00",
         "unread": True,
         "link": f"https://real.example.com/{i}",
+        "message_id": f"<real-{i}@example.com>",
+        "reply_to": f"sender{i}@example.com",
     }
 
 
