@@ -22,6 +22,8 @@ def _item(bucket: str, subject: str = "hi", **overrides: object) -> Triaged:
         "link": "https://mail.example.com/msg/1",
         "date": "2026-08-28T00:00:00Z",
         "unread": False,
+        "idx": 0,
+        "draft": "",
     }
     return cast(Triaged, {**base, **overrides})
 
@@ -78,3 +80,17 @@ def test_send_raises_mail_error_on_403(monkeypatch):
 
     with pytest.raises(MailError):
         mail.send(_cfg(), [_item("worth_reading")])
+
+
+def test_email_html_shows_escaped_draft():
+    hostile_draft = "Sounds good <script>alert(1)</script>\n\nThanks,"
+    html = mail.email_html(_cfg(), [_item("needs_action", draft=hostile_draft)])
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "Draft reply" in html
+    assert "white-space:pre-wrap" in html
+
+
+def test_email_html_omits_draft_block_when_no_draft():
+    html = mail.email_html(_cfg(), [_item("needs_action", draft="")])
+    assert "Draft reply" not in html

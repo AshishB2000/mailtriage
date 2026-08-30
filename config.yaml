@@ -62,3 +62,7 @@ provider: "auto"
 # Overrides the chosen provider's default model when non-empty. Leave blank
 # unless you have a specific reason to pin a different model.
 model: ""
+
+# AI drafts a reply for every needs-action email -- into the digest and your
+# Gmail drafts folder; never sends.
+draft_replies: true

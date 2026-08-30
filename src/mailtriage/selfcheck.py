@@ -17,9 +17,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from mailtriage.config import Config
+from mailtriage.drafts import DRAFT_SCHEMA, generate_drafts
 from mailtriage.errors import MailError
 from mailtriage.imap_pull import parse_message, within_window
-from mailtriage.models import Email
+from mailtriage.models import Email, Triaged
 from mailtriage.triage import pick, select_backend
 
 
@@ -29,9 +30,12 @@ def _email(i: int) -> Email:
         "from": f"sender{i}@example.com",
         "subject": f"subject-{i}",
         "snippet": f"snippet-{i}",
+        "body": f"body-{i}",
         "date": "2026-08-28T10:00:00+00:00",
         "unread": False,
         "link": f"https://real.example.com/{i}",
+        "message_id": f"<msg-{i}@example.com>",
+        "reply_to": f"sender{i}@example.com",
     }
 
 
@@ -117,5 +121,69 @@ def self_check() -> None:
         pass
     else:
         raise AssertionError("an unknown 'provider' in config.yaml must raise MailError")
+
+    # 6. DRAFT_SCHEMA must be strict everywhere: every object node forbids
+    # additionalProperties and requires every property it declares.
+    def _assert_strict_schema(node: object) -> None:
+        if isinstance(node, dict):
+            if node.get("type") == "object":
+                assert node.get("additionalProperties") is False, (
+                    f"object node missing additionalProperties:false: {node}"
+                )
+                props = node.get("properties", {})
+                assert set(node.get("required", [])) == set(props), (
+                    f"object node's 'required' must cover every property, or an ill-formed reply parses anyway: {node}"
+                )
+            for v in node.values():
+                _assert_strict_schema(v)
+        elif isinstance(node, list):
+            for v in node:
+                _assert_strict_schema(v)
+
+    _assert_strict_schema(DRAFT_SCHEMA)
+
+    # 7. generate_drafts is the security layer for drafts, same discipline as
+    # pick(): a bool id, an out-of-range id, and a duplicate id must all be
+    # dropped, leaving only the one legitimate draft attached.
+    def _triaged_needs_action(i: int) -> Triaged:
+        em = _email(i)
+        return {
+            "bucket": "needs_action",
+            "note": f"note-{i}",
+            "account": em["account"],
+            "sender": em["from"],
+            "subject": em["subject"],
+            "link": em["link"],
+            "date": em["date"],
+            "unread": em["unread"],
+            "idx": i,
+            "draft": "",
+        }
+
+    draft_emails = [_email(i) for i in range(2)]
+    draft_triaged = [_triaged_needs_action(0), _triaged_needs_action(1)]
+
+    def hostile_call(_cfg: Config, _system: str, _user: str, _schema: dict) -> dict:  # type: ignore[type-arg]
+        return {
+            "items": [
+                {"id": True, "draft": "bool id, must be dropped"},
+                {"id": 99, "draft": "out of range, must be dropped"},
+                {"id": 0, "draft": "the one legitimate draft"},
+                {"id": 0, "draft": "duplicate of above, must be dropped"},
+            ]
+        }
+
+    generate_drafts(cfg, hostile_call, draft_emails, draft_triaged)
+    assert draft_triaged[0]["draft"] == "the one legitimate draft", (
+        "generate_drafts must attach the single valid draft and drop every hostile id"
+    )
+    assert draft_triaged[1]["draft"] == "", "an id the model never drafted for must stay empty, not be invented"
+
+    # 8. generate_drafts must make zero calls when nothing needs action.
+    def _boom(_cfg: Config, _system: str, _user: str, _schema: dict) -> dict:  # type: ignore[type-arg]
+        raise AssertionError("generate_drafts must not call the model when nothing needs action")
+
+    no_action: list[Triaged] = [{**_triaged_needs_action(0), "bucket": "worth_reading"}]
+    generate_drafts(cfg, _boom, draft_emails, no_action)
 
     print("self-check: ok")
