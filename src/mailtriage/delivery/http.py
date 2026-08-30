@@ -10,7 +10,9 @@ from typing import Any
 UA = "mailtriage (+https://github.com/AshishB2000/mailtriage)"
 
 
-def post_json(url: str, payload: dict[str, Any], headers: dict[str, str] | None = None) -> tuple[int, str]:
+def post_json(
+    url: str, payload: dict[str, Any], headers: dict[str, str] | None = None, timeout: int = 30
+) -> tuple[int, str]:
     """POST JSON and return (status, body). A 4xx/5xx is returned, not raised —
     both callers need the response body to explain the failure usefully."""
     req = urllib.request.Request(
@@ -19,7 +21,7 @@ def post_json(url: str, payload: dict[str, Any], headers: dict[str, str] | None 
         headers={"Content-Type": "application/json", "User-Agent": UA, **(headers or {})},
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, resp.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode("utf-8", "replace")

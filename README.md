@@ -7,10 +7,11 @@ arrived into **needs action** / **worth reading** — and drops the rest —
 then sends you a single short HTML email. Everything else is noise it never
 shows you: newsletters, receipts, promotions, automated notifications.
 
-It runs on **your** GitHub Actions, with **your** Anthropic API key, reading
-**your** Gmail over read-only IMAP. Your laptop can be off. There's no
-server, no database, no accounts, and nothing routes through anyone else —
-you fork this repo and it becomes entirely yours.
+It runs on **your** GitHub Actions, with **your** AI provider credentials
+(Claude, ChatGPT, OpenAI, or Gemini — your choice), reading **your** Gmail
+over read-only IMAP. Your laptop can be off. There's no server, no database,
+no accounts, and nothing routes through anyone else — you fork this repo and
+it becomes entirely yours.
 
 ---
 
@@ -103,31 +104,34 @@ workflows, go ahead and enable them."**
 
 | Secret | Value |
 |---|---|
-| `ANTHROPIC_API_KEY` **or** `CLAUDE_CODE_OAUTH_TOKEN` | AI auth — pick one, see below |
+| one AI-auth secret | pick one from the provider matrix below |
 | `RESEND_API_KEY` | a key from [resend.com/api-keys](https://resend.com/api-keys) (free tier) — you'll also need to verify a sending domain at [resend.com/domains](https://resend.com/domains) |
 | `MAIL_ACCOUNTS` | comma-separated Gmail addresses, e.g. `alice@gmail.com,alice.work@gmail.com` |
 | one `MAIL_PW_*` per address | the app password for that address (see step 4) |
 | `EMAIL_TO` *(optional)* | where the digest is delivered. For `delivery: gmail`, defaults to your first `MAIL_ACCOUNTS` address if unset |
 | `EMAIL_FROM` *(optional)* | who it's sent from. Same default as above for `delivery: gmail`; required for `delivery: email` (Resend) |
 
-**AI auth — set exactly one of these two secrets:**
+**AI auth — set exactly one secret.** `provider` in `config.yaml` (default
+`"auto"`) picks the first one below whose secret is set; set it explicitly to
+force one instead.
 
-- **`ANTHROPIC_API_KEY`** (recommended for most forkers) — a key from
-  [console.anthropic.com](https://console.anthropic.com/settings/keys).
-  Pay-per-use, a few cents a month; works for anyone with an Anthropic
-  account.
-- **`CLAUDE_CODE_OAUTH_TOKEN`** (if you have a Claude Pro/Max subscription) —
-  run `claude setup-token` locally once and paste the printed token as the
-  secret value. Triage then runs against your subscription instead of the
-  API, so there's no per-run API bill. The token lasts about a year;
-  regenerate it with `claude setup-token` when it expires. Requires an
-  active Claude subscription and the [Claude Code
-  CLI](https://docs.claude.com/en/docs/claude-code) installed locally to run
-  `setup-token` — the workflow installs the CLI on the runner automatically,
-  only when this secret is set.
+**Subscription CLIs — pay nothing extra, on top of a plan you already have:**
 
-If neither secret is set, the run fails fast with `No Claude auth
-configured`.
+| `provider` | Secret | Notes |
+|---|---|---|
+| `claude-subscription` | `CLAUDE_CODE_OAUTH_TOKEN` | Requires a Claude Pro/Max subscription. Run `claude setup-token` locally once and paste the printed token as the secret value. The token lasts about a year; regenerate it with `claude setup-token` when it expires. The workflow installs the [Claude Code CLI](https://docs.claude.com/en/docs/claude-code) on the runner automatically, only when this secret is set. |
+| `chatgpt-subscription` | `CODEX_AUTH_JSON` | Requires a ChatGPT Plus/Pro subscription. Run `codex login` locally, then paste the **full contents** of `~/.codex/auth.json` as the secret value. **Honest caveat:** Codex rotates its tokens during use, and a stateless CI runner can't persist that rotation back to the secret — expect to re-run `codex login` and re-paste the secret occasionally when a run fails with an auth error. The workflow installs the [Codex CLI](https://github.com/openai/codex) on the runner automatically, only when this secret is set. |
+
+**API keys — pay-per-use, billed by the provider directly:**
+
+| `provider` | Secret | Notes |
+|---|---|---|
+| `claude-api` | `ANTHROPIC_API_KEY` | A key from [console.anthropic.com](https://console.anthropic.com/settings/keys). A few cents a month for this workload. |
+| `openai-api` | `OPENAI_API_KEY` | A key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys). |
+| `gemini-api` | `GEMINI_API_KEY` | A key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — Gemini's free tier (roughly 10 requests/minute) comfortably covers two runs a day, so this option can run mailtriage at **$0**. |
+
+If no AI-auth secret is set at all, the run fails fast with `No AI provider
+configured`, listing all five options and their secret names.
 
 **The `MAIL_PW_*` names are the most error-prone step.** Each is
 `MAIL_PW_` + the address, upper-cased, with every non-alphanumeric character
@@ -194,15 +198,16 @@ run. Check the log if nothing arrives — see Troubleshooting below.
 
 | | Where | Cost |
 |---|---|---|
-| **Anthropic API key** | [console.anthropic.com](https://console.anthropic.com) | A few cents a month |
+| **One AI-auth credential** | see the provider matrix above | free with a subscription CLI, a few cents/month for an API key, or $0 on Gemini's free tier |
 | **Resend key** | [resend.com](https://resend.com) | Free tier covers personal volume |
 | **GitHub Actions** | already have it | Free minutes are ample for 2 runs/day |
 
-Each run is one API call with your recent INBOX mail in and a short triage
-out, on `claude-sonnet-5` — this is headline-scale triage, not a long
-conversation. Two runs a day lands in the low single-digit cents per month
-for a typical inbox. You're billed directly by Anthropic and by Resend;
-nothing goes through this project.
+Each run is one AI call with your recent INBOX mail in and a short triage
+out — this is headline-scale triage, not a long conversation. Two runs a day
+lands in the low single-digit cents per month for a typical inbox on an API
+key, or $0 on a subscription CLI or Gemini's free tier. You're billed
+directly by your chosen AI provider and by Resend; nothing goes through this
+project.
 
 ---
 
@@ -212,11 +217,12 @@ nothing goes through this project.
    (`readonly=True`, `BODY.PEEK[]`) — mailtriage never marks anything read.
 2. **Window** — keep only messages inside `window_hours`; drop anything
    undated.
-3. **Triage** — one Anthropic API call, forced through a tool, with your
-   `interests` and `avoid` text and the windowed messages. The model returns
-   bucket + one-line note per message it's keeping, referenced by an integer
-   index — never a URL, so there's no risk of the model inventing or mangling
-   a link.
+3. **Triage** — one call to whichever AI provider `provider` in `config.yaml`
+   selects (see the provider matrix above), with your `interests` and `avoid`
+   text and the windowed messages, constrained to a strict schema. The model
+   returns bucket + one-line note per message it's keeping, referenced by an
+   integer index — never a URL, so there's no risk of the model inventing or
+   mangling a link.
 4. **Send** — one HTML email via Resend, or nothing if both buckets came
    back empty.
 
@@ -249,11 +255,14 @@ failed.
 
 | Log message | What it means | Fix |
 |---|---|---|
-| `No Claude auth configured` | Neither `ANTHROPIC_API_KEY` nor `CLAUDE_CODE_OAUTH_TOKEN` is set | Set one of the two — see step 3 above |
+| `No AI provider configured` | None of the five AI-auth secrets is set | Set one — see the provider matrix above |
 | `ANTHROPIC_API_KEY is not set.` | The secret is missing | Add it under Settings → Secrets and variables → Actions |
 | `Anthropic rejected ANTHROPIC_API_KEY.` | The secret exists but the key is wrong, revoked, or has a stray space | Generate a fresh key and update the secret |
 | `` `claude` CLI exited with status ... `` (subscription mode) | Usually an expired or invalid `CLAUDE_CODE_OAUTH_TOKEN` | Regenerate the token locally with `claude setup-token` and update the secret |
 | `Anthropic rate-limited this run, or the account is out of credit.` | Billing/rate limit on the Anthropic side, not a bug | Check your balance; the next scheduled run picks things up |
+| `OpenAI rejected OPENAI_API_KEY.` | The secret exists but the key is wrong, revoked, or has a stray space | Generate a fresh key at platform.openai.com/api-keys and update the secret |
+| `Google rejected GEMINI_API_KEY.` | The secret exists but the key is wrong, revoked, or has a stray space | Generate a fresh key at aistudio.google.com/apikey and update the secret |
+| `No Codex auth configured` / `codex CLI ... tokens in CODEX_AUTH_JSON have likely expired or rotated` | `CODEX_AUTH_JSON` is missing, or its tokens rotated since it was pasted in | Run `codex login` locally and re-paste the new `~/.codex/auth.json` into the secret, or switch to `OPENAI_API_KEY` |
 | `MAIL_ACCOUNTS is empty` | The secret isn't set, or is blank | Set it to a comma-separated list of Gmail addresses |
 | `<addr>: no app password found in $MAIL_PW_...` | That account's `MAIL_PW_*` secret is missing or misnamed | Re-check the name against the transform in step 3 above; this account is skipped, the run continues for the rest |
 | `RESEND_API_KEY is not set.` | The secret is missing | Add it from resend.com/api-keys |
@@ -318,7 +327,8 @@ src/mailtriage/
   models.py         Email (pulled message), Triaged (a bucketed, annotated one)
   config.py         config.yaml -> validated Config dataclass
   imap_pull.py       account/password lookup, IMAP fetch, time-window filter
-  triage.py          the triage prompt + the forced-tool Claude call   <- the product
+  triage/            the triage prompt (__init__.py)   <- the product
+                       + 5 backends: claude_api, claude_cli, codex_cli, openai_api, gemini_api
   delivery/          __init__ dispatch, http.py, mail.py (Resend), gmail.py (your own Gmail via SMTP)
   selfcheck.py       the pre-flight assertions
   cli.py             argparse; the only module that prints and exits

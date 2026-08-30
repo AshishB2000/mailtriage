@@ -23,6 +23,13 @@ from mailtriage.errors import MailError
 Delivery = Literal["email", "gmail"]
 DELIVERIES: tuple[str, ...] = get_args(Delivery)
 
+# The valid values of Config.provider. Kept here rather than imported from
+# mailtriage.triage.PROVIDERS -- config.py must not import triage -- so
+# tests/test_providers.py pins this tuple against triage.PROVIDERS' keys
+# (plus "auto") instead. Update both together.
+Provider = Literal["auto", "claude-subscription", "claude-api", "chatgpt-subscription", "openai-api", "gemini-api"]
+PROVIDERS: tuple[str, ...] = get_args(Provider)
+
 
 @dataclass(slots=True)
 class Config:
@@ -36,6 +43,12 @@ class Config:
     subject_prefix: str = "mailtriage"
     email_to: str = ""
     email_from: str = ""
+    # "auto" picks the first provider whose secret is set (see
+    # mailtriage.triage.PROVIDERS for the order); any other value forces
+    # that one backend and lets its own missing-secret error fire instead.
+    provider: str = "auto"
+    # Overrides each backend's own MODEL constant when non-empty.
+    model: str = ""
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any], origin: str = "config.yaml") -> Config:
@@ -63,8 +76,11 @@ class Config:
 
         # str() rather than a type error: YAML turns a bare value into whatever
         # type it looks like (e.g. an unquoted prefix or address).
-        for name in ("interests", "avoid", "subject_prefix", "email_to", "email_from"):
+        for name in ("interests", "avoid", "subject_prefix", "email_to", "email_from", "provider", "model"):
             setattr(cfg, name, str(getattr(cfg, name)))
+
+        if cfg.provider not in PROVIDERS:
+            raise MailError(f"'provider' in {origin} must be one of {PROVIDERS} (got {cfg.provider!r}).")
 
         return cfg
 

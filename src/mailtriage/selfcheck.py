@@ -7,8 +7,9 @@ before the model is ever called, and need no test framework to do it.
 ships with the workflow.
 
 HARD CONSTRAINT: this module must import ONLY pure functions. `triage.pick`
-is safe because `triage.py` imports `anthropic` lazily inside `_call`, not at
-module scope — importing `pick` here must never drag `anthropic` in.
+and `triage.select_backend` are safe because `anthropic` is imported lazily
+inside `triage.claude_api.call`, not at module scope — importing them here
+must never drag `anthropic` in.
 """
 
 from __future__ import annotations
@@ -16,9 +17,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from mailtriage.config import Config
+from mailtriage.errors import MailError
 from mailtriage.imap_pull import parse_message, within_window
 from mailtriage.models import Email
-from mailtriage.triage import pick
+from mailtriage.triage import pick, select_backend
 
 
 def _email(i: int) -> Email:
@@ -96,5 +98,24 @@ def self_check() -> None:
     assert injected["link"] == emails[2]["link"] and injected["subject"] == emails[2]["subject"], (
         "link/subject must always come from the real Email, never from model-supplied fields in the reply"
     )
+
+    # 4. Provider auto-order: PROVIDERS dict order decides the winner when
+    # multiple secrets are set. claude-subscription must win here, or a fork
+    # that has both a Claude subscription and an OpenAI key silently switches
+    # providers the moment someone adds the second secret.
+    auto_cfg = Config(delivery="email", provider="auto")
+    fake_environ = {"CLAUDE_CODE_OAUTH_TOKEN": "tok", "OPENAI_API_KEY": "key"}
+    name, _call = select_backend(auto_cfg, fake_environ)
+    assert name == "claude-subscription", (
+        "auto-order regression -- a later PROVIDERS entry must never win over an earlier one"
+    )
+
+    # 5. An unknown 'provider' in config.yaml must raise, not silently pass through.
+    try:
+        Config.from_mapping({"delivery": "email", "provider": "bogus"})
+    except MailError:
+        pass
+    else:
+        raise AssertionError("an unknown 'provider' in config.yaml must raise MailError")
 
     print("self-check: ok")
