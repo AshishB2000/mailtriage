@@ -49,6 +49,9 @@ class Config:
     provider: str = "auto"
     # Overrides each backend's own MODEL constant when non-empty.
     model: str = ""
+    # AI drafts a reply for every needs_action email -- into the digest and
+    # your Gmail drafts folder; never sends.
+    draft_replies: bool = True
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any], origin: str = "config.yaml") -> Config:
@@ -73,6 +76,9 @@ class Config:
             value = getattr(cfg, name)
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise MailError(f"'{name}' in {origin} must be a positive whole number (got {value!r}).")
+
+        if not isinstance(cfg.draft_replies, bool):
+            raise MailError(f"'draft_replies' in {origin} must be true or false (got {cfg.draft_replies!r}).")
 
         # str() rather than a type error: YAML turns a bare value into whatever
         # type it looks like (e.g. an unquoted prefix or address).

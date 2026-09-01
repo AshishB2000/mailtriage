@@ -718,6 +718,10 @@ function buildYaml(v) {
     "# secret is set. See README.md to force a specific provider or model.",
     "provider: " + yq("auto"),
     "model: " + yq(""),
+    "",
+    "# AI drafts a reply for every needs-action email -- into the digest and",
+    "# your Gmail drafts folder; never sends.",
+    "draft_replies: true",
     ""
   ].join("\n");
 }

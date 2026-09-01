@@ -154,6 +154,8 @@ def pick(cfg: Config, emails: list[Email], reply: dict[str, Any]) -> list[Triage
             link=src["link"],
             date=src["date"],
             unread=src["unread"],
+            idx=i,
+            draft="",
         )
         if bucket == "needs_action":
             needs_action.append(triaged)

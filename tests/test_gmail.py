@@ -27,6 +27,8 @@ def _item(bucket: str, subject: str = "hi", **overrides: object) -> Triaged:
         "link": "https://mail.example.com/msg/1",
         "date": "2026-08-28T00:00:00Z",
         "unread": False,
+        "idx": 0,
+        "draft": "",
     }
     return cast(Triaged, {**base, **overrides})
 
