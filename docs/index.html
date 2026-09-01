@@ -713,6 +713,11 @@ function buildYaml(v) {
     "email_from: " + yq(""),
     "",
     "subject_prefix: " + yq("mailtriage"),
+    "",
+    "# Which AI backend triages your mail. \"auto\" picks the first one whose",
+    "# secret is set. See README.md to force a specific provider or model.",
+    "provider: " + yq("auto"),
+    "model: " + yq(""),
     ""
   ].join("\n");
 }

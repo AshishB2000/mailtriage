@@ -51,3 +51,14 @@ email_to: ""
 email_from: ""
 
 subject_prefix: "mailtriage"
+
+# Which AI backend triages your mail. "auto" (default) picks the first one
+# whose secret is set, in this order: CLAUDE_CODE_OAUTH_TOKEN,
+# ANTHROPIC_API_KEY, CODEX_AUTH_JSON, OPENAI_API_KEY, GEMINI_API_KEY. Set
+# this explicitly to force one: "claude-subscription", "claude-api",
+# "chatgpt-subscription", "openai-api", or "gemini-api". See README.md.
+provider: "auto"
+
+# Overrides the chosen provider's default model when non-empty. Leave blank
+# unless you have a specific reason to pin a different model.
+model: ""

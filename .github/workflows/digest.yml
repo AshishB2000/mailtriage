@@ -31,9 +31,10 @@ jobs:
     timeout-minutes: 10
     # The `secrets` context is not allowed in a step-level `if:`, but it IS
     # allowed in a job-level `env:`. Hoist the test here, then the steps below
-    # gate on `env.HAS_SUBSCRIPTION` instead.
+    # gate on `env.HAS_SUBSCRIPTION` / `env.HAS_CODEX` instead.
     env:
       HAS_SUBSCRIPTION: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+      HAS_CODEX: ${{ secrets.CODEX_AUTH_JSON != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -51,26 +52,29 @@ jobs:
       - name: Self-check
         run: mailtriage --self-check
 
-      # AI auth: exactly one of ANTHROPIC_API_KEY (pay-per-use API) or
-      # CLAUDE_CODE_OAUTH_TOKEN (Claude Pro/Max subscription, no API bill).
-      # Subscription mode needs the claude CLI on the runner -- installed
-      # below, only when that secret is set.
-      - name: Install Claude Code CLI (subscription mode only)
-        if: env.HAS_SUBSCRIPTION == 'true'
+      # AI auth: config.yaml's `provider` (default "auto") picks one of five
+      # backends by which secret is set -- see README.md for the full matrix.
+      # The two subscription CLIs (claude, codex) need Node on the runner;
+      # installed once below, only when one of those secrets is set.
+      - name: Install Node (subscription CLIs)
+        if: env.HAS_SUBSCRIPTION == 'true' || env.HAS_CODEX == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
       - name: Install claude
         if: env.HAS_SUBSCRIPTION == 'true'
         run: npm install -g @anthropic-ai/claude-code
+      - name: Install codex
+        if: env.HAS_CODEX == 'true'
+        run: npm install -g @openai/codex
 
-      # Secrets a forker sets: EITHER ANTHROPIC_API_KEY OR
-      # CLAUDE_CODE_OAUTH_TOKEN (see above), plus RESEND_API_KEY,
-      # MAIL_ACCOUNTS, and one MAIL_PW_<SLUG> per Gmail address
-      # (imap_pull.py derives the slug from the address). The MAIL_PW_*
-      # names are per-account and per-fork, so a static YAML step can't
-      # enumerate them -- export the whole secrets bag into the environment
-      # instead.
+      # Secrets a forker sets: ONE of the five AI-auth secrets (see above),
+      # plus RESEND_API_KEY, MAIL_ACCOUNTS, and one MAIL_PW_<SLUG> per Gmail
+      # address (imap_pull.py derives the slug from the address). The
+      # MAIL_PW_* names are per-account and per-fork, so a static YAML step
+      # can't enumerate them -- export the whole secrets bag into the
+      # environment instead. This is also how CODEX_AUTH_JSON reaches
+      # codex_cli.py -- it reads the env var directly, no separate step needed.
       - name: Send digest
         env:
           ALL_SECRETS: ${{ toJSON(secrets) }}
