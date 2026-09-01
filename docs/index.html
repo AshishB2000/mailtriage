@@ -285,6 +285,19 @@ a.btn{border-bottom:1px solid transparent}
 .repo .nm{font-family:var(--mono);font-size:13px;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .repo .br{font-size:11.5px;color:var(--muted);font-family:var(--mono);flex:0 0 auto}
 
+/* ============================================================ AI provider picker */
+.provs{display:grid;gap:8px;margin-top:9px}
+.prov{
+  display:flex;align-items:center;gap:12px;cursor:pointer;
+  border:1px solid var(--rule);border-radius:10px;padding:12px 14px;
+  transition:border-color .2s var(--e),background .2s var(--e);
+}
+.prov:hover{background:var(--hair)}
+.prov:has(input:checked){border-color:var(--accent);background:var(--wash)}
+.prov input{flex:0 0 auto;width:16px;height:16px;margin:0;accent-color:var(--accent)}
+.prov .pname{display:block;font-size:13.5px;font-weight:600;color:var(--ink)}
+.prov .psec{display:block;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px}
+
 /* ============================================================ account rows */
 .acct{margin-top:10px}
 .acct-row{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}
@@ -433,44 +446,83 @@ footer a{color:var(--muted)}
 
     <div class="sect">
       <h3>AI auth</h3>
+      <p class="hint" style="margin:-2px 0 10px">Bring the AI you already pay for. Pick one — this page writes exactly one credential, as one repository secret.</p>
       <div class="f">
         <span class="lgnd" id="authlbl">Choose one</span>
-        <div class="seg" role="radiogroup" aria-labelledby="authlbl">
-          <label><input type="radio" name="authMode" value="apikey" checked><span>API key</span></label>
-          <label><input type="radio" name="authMode" value="subscription"><span>Subscription</span></label>
+        <div class="provs" role="radiogroup" aria-labelledby="authlbl">
+          <label class="prov">
+            <input type="radio" name="provider" value="claude-subscription">
+            <span><span class="pname">Claude subscription (Pro/Max)</span><span class="psec">CLAUDE_CODE_OAUTH_TOKEN</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="provider" value="claude-api" checked>
+            <span><span class="pname">Claude API key</span><span class="psec">ANTHROPIC_API_KEY</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="provider" value="chatgpt-subscription">
+            <span><span class="pname">ChatGPT subscription (Plus/Pro)</span><span class="psec">CODEX_AUTH_JSON</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="provider" value="openai-api">
+            <span><span class="pname">OpenAI API key</span><span class="psec">OPENAI_API_KEY</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="provider" value="gemini-api">
+            <span><span class="pname">Gemini API key — free tier</span><span class="psec">GEMINI_API_KEY</span></span>
+          </label>
         </div>
       </div>
 
-      <div id="authApiFields">
-        <div class="f" id="f-anthropic">
-          <label for="anthropic">Anthropic API key</label>
-          <p class="hint">Create one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Pay-per-use — a few cents a month — and works for anyone with an Anthropic account. Recommended default.</p>
-          <div class="reveal">
-            <input type="password" id="anthropic" class="mono" placeholder="sk-ant-••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
-            <button type="button" data-reveal="anthropic">Show</button>
-          </div>
-          <div class="msg"></div>
+      <div class="f" id="f-oauth" style="display:none">
+        <label for="oauth">Claude Code OAuth token</label>
+        <p class="hint">Run <code>claude setup-token</code> in your terminal, approve in the browser it opens, then paste the token it prints below. Uses your Claude Pro/Max subscription instead of API billing — no per-run cost — and the token lasts about a year. Terminal line-wrap can insert spaces into the paste; this field strips all whitespace automatically before sealing.</p>
+        <div class="reveal">
+          <input type="password" id="oauth" class="mono" placeholder="sk-ant-oat01-••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="oauth">Show</button>
         </div>
+        <div class="msg"></div>
       </div>
 
-      <div id="authSubFields" style="display:none">
-        <div class="note">
-          <span class="ic">◆</span>
-          <span>Run <code>claude setup-token</code> in your terminal, approve in the browser it opens, then paste the token it prints below. Uses your Claude Pro/Max subscription instead of API billing — no per-run cost — and the token lasts about a year.</span>
+      <div class="f" id="f-anthropic">
+        <label for="anthropic">Anthropic API key</label>
+        <p class="hint">Create one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com/settings/keys</a>. Pay-per-use — a few cents a month for this workload.</p>
+        <div class="reveal">
+          <input type="password" id="anthropic" class="mono" placeholder="sk-ant-••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="anthropic">Show</button>
         </div>
-        <div class="f" id="f-oauth">
-          <label for="oauth">Claude Code OAuth token</label>
-          <div class="reveal">
-            <input type="password" id="oauth" class="mono" placeholder="sk-ant-oat01-••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
-            <button type="button" data-reveal="oauth">Show</button>
-          </div>
-          <div class="msg"></div>
+        <div class="msg"></div>
+      </div>
+
+      <div class="f" id="f-codexAuth" style="display:none">
+        <label for="codexAuth">Contents of ~/.codex/auth.json</label>
+        <p class="hint">Run <code>codex login</code> locally, then paste the <strong>full contents</strong> of the <code>auth.json</code> file it writes. Honest caveat: Codex rotates these tokens during use, and a stateless CI runner can't persist that rotation back into the secret — expect to re-run <code>codex login</code> and re-paste it here occasionally when a run starts failing with an auth error.</p>
+        <textarea id="codexAuth" class="mono" rows="4" placeholder='{"tokens": {"access_token": "…", "refresh_token": "…"}, …}' autocomplete="off" spellcheck="false"></textarea>
+        <div class="msg"></div>
+      </div>
+
+      <div class="f" id="f-openai" style="display:none">
+        <label for="openai">OpenAI API key</label>
+        <p class="hint">Create one at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a>. Pay-per-use, billed by OpenAI directly.</p>
+        <div class="reveal">
+          <input type="password" id="openai" class="mono" placeholder="sk-proj-••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="openai">Show</button>
         </div>
+        <div class="msg"></div>
+      </div>
+
+      <div class="f" id="f-gemini" style="display:none">
+        <label for="gemini">Gemini API key</label>
+        <p class="hint">Create one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> — Gemini's free tier comfortably covers two runs a day, so this option can run mailtriage at <strong>$0</strong>.</p>
+        <div class="reveal">
+          <input type="password" id="gemini" class="mono" placeholder="AIzaSy••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="gemini">Show</button>
+        </div>
+        <div class="msg"></div>
       </div>
 
       <div class="note safe">
         <span class="ic">◆</span>
-        <span><strong>Your keys are encrypted in this browser</strong> — sealed with libsodium against your repository's own public key — and sent straight to GitHub, where they become repository secrets only your workflow can read. Nothing is sent anywhere else. This page has no server and no analytics; you can read every line of it with View Source.</span>
+        <span><strong>Your credential is encrypted in this browser</strong> — sealed with libsodium against your repository's own public key — and sent straight to GitHub, where it becomes a repository secret only your workflow can read. Nothing is sent anywhere else. This page has no server and no analytics; you can read every line of it with View Source.</span>
       </div>
     </div>
 
@@ -714,9 +766,9 @@ function buildYaml(v) {
     "",
     "subject_prefix: " + yq("mailtriage"),
     "",
-    "# Which AI backend triages your mail. \"auto\" picks the first one whose",
-    "# secret is set. See README.md to force a specific provider or model.",
-    "provider: " + yq("auto"),
+    "# Which AI backend triages your mail -- set explicitly to the provider",
+    "# chosen in the wizard. Change it by hand later, or re-run the wizard.",
+    "provider: " + yq(v.provider),
     "model: " + yq(""),
     "",
     "# AI drafts a reply for every needs-action email -- into the digest and",
@@ -747,7 +799,7 @@ function parseConfig(text) {
       out[key] = body.join("\n");
       continue;
     }
-    m = lines[i].match(/^(subject_prefix):\s*"((?:[^"\\]|\\.)*)"\s*$/);
+    m = lines[i].match(/^(subject_prefix|provider):\s*"((?:[^"\\]|\\.)*)"\s*$/);
     if (m) {
       try { out[m[1]] = JSON.parse('"' + m[2] + '"'); } catch (e) { out[m[1]] = m[2]; }
       continue;
@@ -872,6 +924,10 @@ async function prefillFromConfig(fullName) {
     // secret's value anyway.
     if (cfg.window_hours != null) $("#win").value = cfg.window_hours;
     if (cfg.reading_count != null) { $("#count").value = cfg.reading_count; $("#countOut").textContent = cfg.reading_count; }
+    if (cfg.provider && PROV_FIELD[cfg.provider]) {
+      const r = $('input[name=provider][value="' + cfg.provider + '"]');
+      if (r) { r.checked = true; updateAuthFields(); }
+    }
     updateWindowNote();
   } catch (e) {
     // no config.yaml yet, or unreadable -- defaults stand
@@ -886,13 +942,32 @@ $("#go2").addEventListener("click", () => { if (S.repo) show(2); });
 $("#back1").addEventListener("click", () => show(1));
 $("#back2").addEventListener("click", () => show(2));
 
-/* ------------------------------------------------------------ step 2: auth mode */
-const authMode = () => $('input[name=authMode]:checked').value;
-$$('input[name=authMode]').forEach((r) => r.addEventListener("change", () => {
-  const api = authMode() === "apikey";
-  $("#authApiFields").style.display = api ? "block" : "none";
-  $("#authSubFields").style.display = api ? "none" : "block";
-}));
+/* ------------------------------------------------------------ step 2: provider picker */
+// Field id + repo-secret name for each engine provider (mailtriage.triage.PROVIDERS
+// keys, mirrored here -- update both sides together, and keep this order in
+// sync with PROVIDERS' auto-detect precedence).
+const PROV_FIELD = {
+  "claude-subscription": "oauth",
+  "claude-api": "anthropic",
+  "chatgpt-subscription": "codexAuth",
+  "openai-api": "openai",
+  "gemini-api": "gemini"
+};
+const PROV_SECRET = {
+  "claude-subscription": "CLAUDE_CODE_OAUTH_TOKEN",
+  "claude-api": "ANTHROPIC_API_KEY",
+  "chatgpt-subscription": "CODEX_AUTH_JSON",
+  "openai-api": "OPENAI_API_KEY",
+  "gemini-api": "GEMINI_API_KEY"
+};
+const selectedProvider = () => $('input[name=provider]:checked').value;
+function updateAuthFields() {
+  const sel = selectedProvider();
+  Object.keys(PROV_FIELD).forEach((p) => {
+    $("#f-" + PROV_FIELD[p]).style.display = p === sel ? "block" : "none";
+  });
+}
+$$('input[name=provider]').forEach((r) => r.addEventListener("change", updateAuthFields));
 
 /* ------------------------------------------------------------ step 2: rhythm */
 $("#count").addEventListener("input", (e) => { $("#countOut").textContent = e.target.value; });
@@ -977,7 +1052,8 @@ function collect() {
     reading_count: +$("#count").value,
     window_hours: +$("#win").value,
     email_to: $("#emailTo").value.trim(),
-    email_from: $("#emailFrom").value.trim()
+    email_from: $("#emailFrom").value.trim(),
+    provider: selectedProvider()
   };
 }
 
@@ -997,11 +1073,8 @@ function validate() {
   if (v.interests.trim().length < 30)
     fail("interests", "Tell the model more than this — what needs a reply, what a human is waiting on. A sentence or two of real detail is the difference between a triage you trust and one you ignore.");
 
-  if (authMode() === "apikey") {
-    if (!$("#anthropic").value.trim()) fail("anthropic", "Needed — this is the key that runs the triage.");
-  } else {
-    if (!$("#oauth").value.trim()) fail("oauth", "Paste the token printed by `claude setup-token`.");
-  }
+  const provFid = PROV_FIELD[selectedProvider()];
+  if (!$("#" + provFid).value.trim()) fail(provFid, "Needed — this is the credential that runs the triage.");
 
   if (!$("#resend").value.trim()) fail("resend", "Needed to send the email.");
   if (!/^\S+@\S+\.\S+$/.test(v.email_to)) fail("emailTo", "Enter the address the digest should arrive at.");
@@ -1042,8 +1115,12 @@ $("#go3").addEventListener("click", () => {
   S.cfg = v;
 
   S.secrets = {};
-  if (authMode() === "apikey") S.secrets.ANTHROPIC_API_KEY = $("#anthropic").value.trim();
-  else S.secrets.CLAUDE_CODE_OAUTH_TOKEN = $("#oauth").value.trim();
+  const prov = selectedProvider();
+  const provRaw = $("#" + PROV_FIELD[prov]).value;
+  // Codex's secret is a JSON file's contents -- trim only. Every other
+  // credential is a single pasted token/key; terminal line-wrap can insert
+  // spaces mid-paste, so strip ALL whitespace, not just the ends.
+  S.secrets[PROV_SECRET[prov]] = prov === "chatgpt-subscription" ? provRaw.trim() : provRaw.replace(/\s+/g, "");
   S.secrets.RESEND_API_KEY = $("#resend").value.trim();
   // Addresses are sensitive on a public fork -- secrets, not config.yaml.
   S.secrets.EMAIL_TO = v.email_to;
@@ -1228,18 +1305,19 @@ const KEEP = ["interests", "avoid", "win"];
 try {
   const saved = JSON.parse(localStorage.getItem("mailtriage.prefs") || "{}");
   KEEP.forEach((k) => { if (saved[k] != null && $("#" + k)) $("#" + k).value = saved[k]; });
-  if (saved.authMode) { const r = $('input[name=authMode][value="' + saved.authMode + '"]'); if (r) { r.checked = true; r.dispatchEvent(new Event("change")); } }
+  if (saved.provider) { const r = $('input[name=provider][value="' + saved.provider + '"]'); if (r) { r.checked = true; r.dispatchEvent(new Event("change")); } }
   if (saved.count) { $("#count").value = saved.count; }
   addEventListener("beforeunload", () => {
     const o = {};
     KEEP.forEach((k) => { if ($("#" + k)) o[k] = $("#" + k).value; });
-    o.authMode = authMode();
+    o.provider = selectedProvider();
     o.count = $("#count").value;
     localStorage.setItem("mailtriage.prefs", JSON.stringify(o));
   });
 } catch (e) { /* private mode, file:// restrictions — harmless either way */ }
 
 $("#countOut").textContent = $("#count").value;
+updateAuthFields();
 updateWindowNote();
 show(1);
 </script>

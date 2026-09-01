@@ -21,8 +21,9 @@ Know the invariants before editing; verify all of them after.
 | Every secret is sealed with libsodium `crypto_box_seal` against the repo public key before PUT | GitHub only ever receives ciphertext |
 | Works from `file://`: no CDN, no external asset, `sodium.js` vendored and unmodified | Users may run it locally; a network asset also breaks the "everything in this tab" claim |
 | `WORKFLOW = "digest.yml"` literal; every ref/branch uses `S.repo.default_branch`, never hardcoded `main` | Dispatch is by filename; forks may use any default branch |
-| Exactly ONE AI secret written — `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, per the user's toggle | Engine prefers the token when present; writing both lets a stale one shadow a good key |
-| `sk-ant-…` strings appear only as input `placeholder` attributes | Never a real value in the page |
+| Exactly ONE AI secret written, per the user's provider picker (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `CODEX_AUTH_JSON`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`) | Writing more than one lets a stale credential shadow the one the user chose |
+| `buildYaml()` writes `provider:` to the picker's explicit choice, never `"auto"` | The user made a choice in the UI; "auto" would silently defer to `triage.PROVIDERS`' auto-detect order instead |
+| `sk-ant-…`, `sk-proj-…` strings appear only as input `placeholder` attributes | Never a real value in the page |
 | Async prefill must not clobber user input (`S.step !== 1` guard) | Race fixed once already — don't reintroduce |
 
 ## After ANY edit, run all of this

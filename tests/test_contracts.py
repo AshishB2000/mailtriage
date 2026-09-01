@@ -13,6 +13,7 @@ from pathlib import Path
 
 from mailtriage.config import Config
 from mailtriage.imap_pull import pw_env_var
+from mailtriage.triage import PROVIDERS
 
 ROOT = Path(__file__).resolve().parent.parent
 WIZARD = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
@@ -70,9 +71,28 @@ def test_workflow_lives_at_the_literal_path_the_wizard_dispatches():
 
 def test_secret_names_appear_in_wizard_and_readme():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    for name in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "MAIL_ACCOUNTS", "RESEND_API_KEY"):
+    for name in (
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "CODEX_AUTH_JSON",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "MAIL_ACCOUNTS",
+        "RESEND_API_KEY",
+    ):
         assert name in WIZARD, f"secret '{name}' missing from the wizard"
         assert name in readme, f"secret '{name}' missing from the README setup docs"
+
+
+def test_all_five_engine_providers_appear_in_wizard():
+    # The provider picker writes one of these literal strings as `provider:`
+    # in config.yaml. Imported from the engine so a rename on either side
+    # fails this test instead of silently forking the two.
+    for name in PROVIDERS:
+        assert name in WIZARD, (
+            f"engine provider '{name}' (triage.PROVIDERS) missing from docs/index.html — "
+            "the wizard's picker must write this exact string as `provider:`."
+        )
 
 
 # --- wizard hygiene ------------------------------------------------------
@@ -90,7 +110,7 @@ def test_wizard_never_persists_secrets_to_localstorage():
     # token field ids must never appear in it -- email addresses count now too,
     # since they live in EMAIL_TO/EMAIL_FROM secrets, not config.yaml.
     keep_line = next(line for line in WIZARD.splitlines() if "const KEEP" in line)
-    for forbidden in ("token", "anthropic", "oauth", "resend", "pw", "email"):
+    for forbidden in ("token", "anthropic", "oauth", "resend", "pw", "email", "codex", "openai", "gemini"):
         assert forbidden not in keep_line.lower(), (
             f"localStorage KEEP list appears to persist a secret field ('{forbidden}' found in: {keep_line.strip()})"
         )
