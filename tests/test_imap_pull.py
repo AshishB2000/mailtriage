@@ -1,10 +1,13 @@
+import imaplib
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import pytest
 
 from mailtriage.imap_pull import (
     MailError,
     accounts_from_env,
+    fetch_account,
     gmail_link,
     msg_datetime,
     parse_message,
@@ -209,3 +212,36 @@ def test_pull_sorts_by_datetime_not_string():
     # The newer message (new@gmail.com, 15:00 UTC) should be first
     assert out["messages"][0]["account"] == "new@gmail.com"
     assert out["messages"][0]["subject"] == "newer message"
+
+
+class _FakeFetchIMAP:
+    """Minimal fake for fetch_account itself (pull()'s other tests inject a
+    fake `fetch` function and never touch imaplib at all)."""
+
+    def __init__(self, host: str, port: int) -> None:
+        self.host, self.port = host, port
+
+    def login(self, user: str, pw: str) -> tuple[str, list[bytes]]:
+        return "OK", [b"Logged in"]
+
+    def select(self, mailbox: str = "INBOX", readonly: bool = False) -> tuple[str, list[bytes]]:
+        return "OK", [b"1"]
+
+    def search(self, charset: str | None, *criteria: str) -> tuple[str, list[bytes]]:
+        return "OK", [b"1"]  # one sequence number
+
+    def fetch(self, num: bytes, spec: str) -> tuple[str, list[Any]]:
+        line = f"1 (UID 77 FLAGS () BODY[] {{{len(RAW)}}}".encode()
+        return "OK", [(line, RAW), b")"]
+
+    def logout(self) -> tuple[str, list[bytes]]:
+        return "OK", [b"Logging out"]
+
+
+def test_fetch_account_populates_uid(monkeypatch: Any) -> None:
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", _FakeFetchIMAP)
+
+    out = fetch_account("me@gmail.com", "pw", NOW, 13)
+
+    assert len(out) == 1
+    assert out[0]["uid"] == "77"

@@ -102,6 +102,14 @@ class Config:
     # (added to the global ones) and/or draft_style (merged over the global
     # draft_style). See rules.py / triage/__init__.py / drafts.py.
     accounts: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Re-list a needs_action email in every digest until it's handled --
+    # cleared by replying, archiving, or removing the Gmail label below. The
+    # label itself is the memory; no state is kept in this repo.
+    carry_over: bool = True
+    # Gmail label the engine applies to needs_action mail and searches for on
+    # the next run. A "/" nests it under a parent in Gmail's sidebar (e.g.
+    # "mailtriage/action" shows as mailtriage -> action) -- intended.
+    label: str = "mailtriage/action"
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any], origin: str = "config.yaml") -> Config:
@@ -130,6 +138,9 @@ class Config:
         if not isinstance(cfg.draft_replies, bool):
             raise MailError(f"'draft_replies' in {origin} must be true or false (got {cfg.draft_replies!r}).")
 
+        if not isinstance(cfg.carry_over, bool):
+            raise MailError(f"'carry_over' in {origin} must be true or false (got {cfg.carry_over!r}).")
+
         # str() rather than a type error: YAML turns a bare value into whatever
         # type it looks like (e.g. an unquoted prefix or address).
         for name in (
@@ -142,8 +153,12 @@ class Config:
             "model",
             "timezone",
             "weekly_review",
+            "label",
         ):
             setattr(cfg, name, str(getattr(cfg, name)))
+
+        if not cfg.label.strip():
+            raise MailError(f"'label' in {origin} must not be empty.")
 
         if cfg.provider not in PROVIDERS:
             raise MailError(f"'provider' in {origin} must be one of {PROVIDERS} (got {cfg.provider!r}).")

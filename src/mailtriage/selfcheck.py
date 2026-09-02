@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from mailtriage.config import Config
 from mailtriage.drafts import DRAFT_SCHEMA, generate_drafts
 from mailtriage.errors import MailError
-from mailtriage.imap_pull import parse_message, within_window
+from mailtriage.imap_pull import _older_than_window, _quote_mailbox, parse_message, within_window
 from mailtriage.models import Email, Triaged
 from mailtriage.rules import enforce, matches
 from mailtriage.schedule import due, max_gap_hours
@@ -38,6 +38,7 @@ def _email(i: int) -> Email:
         "link": f"https://real.example.com/{i}",
         "message_id": f"<msg-{i}@example.com>",
         "reply_to": f"sender{i}@example.com",
+        "uid": f"{i}",
     }
 
 
@@ -71,6 +72,24 @@ def self_check() -> None:
         "5-minute skew must be allowed, or borderline messages vanish at the window edge"
     )
 
+    # 2b. Carried-mail window boundary: pull_open_actions must keep only mail
+    # older than the window (an in-window hit is already covered by the
+    # normal dated fetch, so counting it here would duplicate the digest).
+    assert _older_than_window(now - timedelta(hours=20), now, 13) is True, (
+        "older-than-window mail must be kept, or nothing ever carries over"
+    )
+    assert _older_than_window(now - timedelta(hours=2), now, 13) is False, (
+        "in-window mail must be dropped here, or it would duplicate the normal fetch path"
+    )
+    assert _older_than_window(None, now, 13) is False, "undated must drop, same as everywhere else"
+
+    # 2c. Label quoting: imaplib does not auto-quote, so the STORE/SEARCH
+    # value for a Gmail label must escape '"' and '\' itself or a label
+    # containing either breaks the IMAP command line.
+    assert _quote_mailbox('a"b\\c') == '"a\\"b\\\\c"', (
+        "label quoting must escape both '\"' and '\\\\', or a label containing either breaks IMAP"
+    )
+
     # 3. pick() is the security layer: every hostile-model case must be handled
     # here, without a network round trip.
     emails = [_email(i) for i in range(14)]
@@ -81,6 +100,10 @@ def self_check() -> None:
         # hostile: model tries to overwrite the real link/subject for id 2.
         {"id": 2, "bucket": "needs_action", "note": "rsvp", "link": "http://evil.example/", "subject": "EVIL"},
         {"id": 13, "bucket": "noise", "note": "unknown bucket, must be dropped"},
+        # "carried" is client-authored only (imap_pull.pull_open_actions) --
+        # the model's own bucket enum never grew it, so pick() must still
+        # reject it exactly like any other unknown bucket.
+        {"id": 12, "bucket": "carried", "note": "client-only bucket, must be dropped"},
         {"id": 99, "bucket": "worth_reading", "note": "out of range, must be dropped"},
         {"id": True, "bucket": "worth_reading", "note": "bool id, must be dropped"},
         *({"id": i, "bucket": "worth_reading", "note": f"note-{i}"} for i in range(3, 13)),  # 10 candidates

@@ -16,6 +16,7 @@ Email = TypedDict(
         "link": str,
         "message_id": str,  # raw Message-ID header, for In-Reply-To/References when drafting
         "reply_to": str,  # Reply-To header, falling back to From
+        "uid": str,  # IMAP UID, for label/draft stages to address the message without re-searching; "" if synthetic
     },
 )
 
@@ -31,7 +32,10 @@ class Triaged(TypedDict):
     """One surfaced email. `bucket`/`note`/`draft` come from the model; the
     rest are copied verbatim from the source Email (never model-authored)."""
 
-    bucket: str  # "needs_action" | "worth_reading"
+    bucket: str  # "needs_action" | "worth_reading" from the model; "carried" is
+    # client-authored only, by imap_pull.pull_open_actions re-surfacing a prior
+    # run's still-open needs_action mail -- the model's own bucket enum
+    # (triage.BUCKETS) is unchanged, so triage.pick() keeps rejecting it.
     note: str  # the single model-authored line
     account: str
     sender: str

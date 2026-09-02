@@ -643,6 +643,11 @@ const WORKFLOW_PATH = ".github/workflows/digest.yml";
 const GAP_HOURS = 12;
 const SAFE_HOURS = 13;
 
+// carry_over/label aren't exposed in the wizard UI yet -- written as fixed
+// defaults, same precedent as draft_replies below. Change by hand later.
+const CARRY_OVER = true;
+const ACTION_LABEL = "mailtriage/action";
+
 const S = { token: "", user: null, repos: [], repo: null, step: 1 };
 
 /* ------------------------------------------------------------ tiny dom */
@@ -809,6 +814,13 @@ function buildYaml(v) {
     "",
     "# Per-account overrides, keyed by account address -- see README.md.",
     "accounts: {}",
+    "# Re-list a needs-action email in every digest until it's handled --",
+    "# cleared by replying, archiving, or removing the Gmail label below.",
+    "carry_over: " + CARRY_OVER,
+    "",
+    "# The Gmail label the engine applies to needs-action mail so it can find",
+    '# it again next run. A "/" nests it under a parent in Gmail\'s sidebar.',
+    "label: " + yq(ACTION_LABEL),
     ""
   ].join("\n");
 }

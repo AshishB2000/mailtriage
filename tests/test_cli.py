@@ -14,13 +14,6 @@ from mailtriage.config import Config
 from mailtriage.models import Email, Triaged
 
 
-def _write_config(tmp_path: Any, **overrides: Any) -> Any:
-    data = {"delivery": "email", "run_at": ["08:00"], "timezone": "UTC", **overrides}
-    p = tmp_path / "config.yaml"
-    p.write_text(yaml.safe_dump(data), encoding="utf-8")
-    return p
-
-
 def test_self_check_exits_zero(capsys: Any) -> None:
     assert main(["--self-check"]) == 0
     assert "self-check: ok" in capsys.readouterr().out
@@ -50,6 +43,7 @@ def _email(i: int) -> Email:
         "link": f"https://real.example.com/{i}",
         "message_id": f"<msg-{i}@example.com>",
         "reply_to": f"sender{i}@example.com",
+        "uid": f"{i}",
     }
 
 
@@ -88,7 +82,9 @@ def test_dry_run_prints_not_sends(monkeypatch: Any, capsys: Any) -> None:
     monkeypatch.setattr(delivery_module, "send", _boom_send)
     monkeypatch.setattr(cli_module, "push_drafts", _boom_push)
 
-    cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com")
+    # carry_over is unrelated to what this test checks -- off, so it never has
+    # to touch IMAP (real MAIL_ACCOUNTS isn't set for this test process).
+    cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", carry_over=False)
     run(cfg, dry_run=True)
 
     out = capsys.readouterr().out
@@ -113,7 +109,7 @@ def test_dry_run_prints_drafts(monkeypatch: Any, capsys: Any) -> None:
         cli_module, "push_drafts", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no push on dry run"))
     )
 
-    cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com")
+    cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", carry_over=False)
     run(cfg, dry_run=True)
 
     out = capsys.readouterr().out
@@ -146,13 +142,108 @@ def test_run_pushes_drafts_and_prints_push_warnings_then_still_delivers(monkeypa
     sent: list[Any] = []
     monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: sent.append(kept))
 
-    cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com")
+    cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", carry_over=False)
     run(cfg, dry_run=False)
 
     assert len(push_calls) == 1
     assert push_calls[0][0]["draft"] == "a draft"
     assert len(sent) == 1
     assert "draft push failed, skipping" in capsys.readouterr().err
+
+
+def _open_action_email(i: int) -> Email:
+    return {
+        "account": "acct",
+        "from": f"open{i}@example.com",
+        "subject": f"open action {i}",
+        "snippet": "",
+        "body": "",
+        "date": "2026-08-20T10:00:00+00:00",
+        "unread": True,
+        "link": f"https://real.example.com/open{i}",
+        "message_id": f"<open-{i}@example.com>",
+        "reply_to": f"open{i}@example.com",
+        "uid": f"open{i}",
+    }
+
+
+def test_carried_alone_never_triggers_a_digest(monkeypatch: Any, capsys: Any) -> None:
+    """The empty-digest check runs on the model's kept list before any
+    carry-over items are merged in, so yesterday's open items never conjure a
+    digest out of thin air on their own."""
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [])  # nothing new kept
+
+    def _boom_open_actions(*a: Any, **k: Any) -> Any:
+        raise AssertionError("pull_open_actions must not run when there are no new kept items")
+
+    monkeypatch.setattr(cli_module, "pull_open_actions", _boom_open_actions)
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: (_ for _ in ()).throw(AssertionError("no send")))
+
+    cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", carry_over=True)
+    run(cfg, dry_run=False)
+
+    assert "sending nothing" in capsys.readouterr().err
+
+
+def test_new_and_carried_both_appear_in_the_digest(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [_triaged(0)])
+    monkeypatch.setattr(
+        triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
+    )
+    monkeypatch.setattr(cli_module, "label_actions", lambda *a, **k: [])
+    monkeypatch.setattr(
+        cli_module, "pull_open_actions", lambda *a, **k: {"messages": [_open_action_email(0)], "warnings": []}
+    )
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: (_ for _ in ()).throw(AssertionError("no send")))
+
+    cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", carry_over=True)
+    run(cfg, dry_run=True)
+
+    out = capsys.readouterr().out
+    assert "subject-0" in out
+    assert "open action 0" in out
+    assert "Still waiting on you" in out
+
+
+def test_dry_run_reads_carried_but_never_labels(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [_triaged(0)])
+    monkeypatch.setattr(
+        triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
+    )
+
+    def _boom_label(*a: Any, **k: Any) -> Any:
+        raise AssertionError("label_actions must not run on a dry run")
+
+    monkeypatch.setattr(cli_module, "label_actions", _boom_label)
+
+    open_calls: list[Any] = []
+
+    def fake_open_actions(*a: Any, **k: Any) -> dict[str, Any]:
+        open_calls.append(a)
+        return {"messages": [], "warnings": []}
+
+    monkeypatch.setattr(cli_module, "pull_open_actions", fake_open_actions)
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: (_ for _ in ()).throw(AssertionError("no send")))
+
+    cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", carry_over=True)
+    run(cfg, dry_run=True)
+
+    assert len(open_calls) == 1  # reading is fine on a dry run -- only the write (label) is skipped
 
 
 def test_rule_forced_item_produces_a_digest_even_when_model_kept_nothing(monkeypatch: Any, capsys: Any) -> None:
@@ -177,6 +268,7 @@ def test_rule_forced_item_produces_a_digest_even_when_model_kept_nothing(monkeyp
         email_to="me@example.com",
         email_from="bot@example.com",
         draft_replies=False,
+        carry_over=False,
         rules={"always_ignore": [], "always_surface": [], "always_action": ["boss@corp.com"]},
     )
     run(cfg, dry_run=False)
@@ -185,6 +277,13 @@ def test_rule_forced_item_produces_a_digest_even_when_model_kept_nothing(monkeyp
     assert sent[0][0]["bucket"] == "needs_action"
     assert sent[0][0]["note"] == "rule: always action from boss@corp.com"
     assert "the model kept none" not in capsys.readouterr().err
+
+
+def _write_config(tmp_path: Any, **overrides: Any) -> Any:
+    data = {"delivery": "email", "run_at": ["08:00"], "timezone": "UTC", **overrides}
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.safe_dump(data), encoding="utf-8")
+    return p
 
 
 # --- --due -------------------------------------------------------------

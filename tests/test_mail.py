@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import cast
 
 import pytest
@@ -94,3 +95,28 @@ def test_email_html_shows_escaped_draft():
 def test_email_html_omits_draft_block_when_no_draft():
     html = mail.email_html(_cfg(), [_item("needs_action", draft="")])
     assert "Draft reply" not in html
+
+
+def test_email_html_carried_section_renders_with_age_and_footer():
+    old_date = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    html = mail.email_html(_cfg(), [_item("carried", subject="Still open", date=old_date)])
+    assert "Still waiting on you" in html
+    assert "Still open" in html
+    assert "3d" in html
+    assert "Clears when you reply, archive, or remove the mailtriage/action label in Gmail." in html
+
+
+def test_email_html_omits_carried_section_when_empty():
+    html = mail.email_html(_cfg(), [_item("worth_reading")])
+    assert "Still waiting on you" not in html
+
+
+def test_email_html_carried_section_escapes_subject_and_label():
+    html = mail.email_html(
+        _cfg(label="<script>alert(2)</script>"),
+        [_item("carried", subject="<script>alert(1)</script>")],
+    )
+    assert "<script>alert(1)</script>" not in html
+    assert "<script>alert(2)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "&lt;script&gt;alert(2)&lt;/script&gt;" in html

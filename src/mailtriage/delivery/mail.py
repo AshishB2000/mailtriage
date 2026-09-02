@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html
 import os
+from datetime import datetime, timezone
 
 from mailtriage.config import Config
 from mailtriage.delivery.http import post_json
@@ -53,10 +54,45 @@ def _section(heading: str, items: list[Triaged]) -> str:
     <tr><td style="padding-top:14px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">{_rows(items)}</table></td></tr>"""
 
 
+def _age(date_iso: str) -> str:
+    days = max(0, (datetime.now(timezone.utc) - datetime.fromisoformat(date_iso)).days)
+    return f"{days}d" if days else "<1d"
+
+
+def _carried_rows(items: list[Triaged]) -> str:
+    out = ""
+    for it in items:
+        dot = "&#9679; " if it["unread"] else ""
+        out += f"""
+      <tr><td style="padding:0 0 26px 0;">
+        <a href="{html.escape(it["link"], quote=True)}" style="font:700 18px/1.35 {SERIF};color:{INK};text-decoration:none;">{html.escape(it["subject"])}</a>
+        <div class="muted" style="font:400 13px/1.4 {SANS};color:{DIM};padding-top:4px;">{dot}{html.escape(it["sender"])} &nbsp;·&nbsp; {html.escape(it["account"])} &nbsp;·&nbsp; {html.escape(_age(it["date"]))}</div>
+      </td></tr>"""
+    return out
+
+
+def _carried_section(cfg: Config, items: list[Triaged]) -> str:
+    if not items:
+        return ""
+    return f"""
+    <tr><td style="padding:26px 0 4px 0;">
+      <div style="font:700 13px/1 {SANS};letter-spacing:.1em;color:{INK};text-transform:uppercase;">Still waiting on you</div>
+    </td></tr>
+    <tr><td style="padding-top:14px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">{_carried_rows(items)}</table></td></tr>
+    <tr><td class="muted" style="font:400 12px/1.5 {SANS};color:{DIM};padding-top:2px;">Clears when you reply, archive, or remove the {html.escape(cfg.label)} label in Gmail.</td></tr>"""
+
+
 def email_html(cfg: Config, triaged: list[Triaged]) -> str:
     needs_action = [t for t in triaged if t["bucket"] == "needs_action"]
+    carried = [t for t in triaged if t["bucket"] == "carried"]
     worth_reading = [t for t in triaged if t["bucket"] == "worth_reading"]
-    sections = _section("Needs action", needs_action) + _section("Worth reading", worth_reading)
+    # Carried debts sit right after Needs action, before Worth reading --
+    # they're the oldest items in the digest, closest to the top on purpose.
+    sections = (
+        _section("Needs action", needs_action)
+        + _carried_section(cfg, carried)
+        + _section("Worth reading", worth_reading)
+    )
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">

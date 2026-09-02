@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from mailtriage import __version__
 from mailtriage.config import Config, load_config
 from mailtriage.errors import MailError
-from mailtriage.imap_pull import pull, push_drafts
-from mailtriage.models import Triaged
+from mailtriage.imap_pull import label_actions, pull, pull_open_actions, push_drafts
+from mailtriage.models import Email, Triaged
 from mailtriage.schedule import due, local_zone
 
 
@@ -75,15 +75,41 @@ def _handle_due(cfg: Config, now: datetime, event: str) -> int:
 
 
 def _print_digest(kept: list[Triaged]) -> None:
-    for heading, bucket in (("Needs action", "needs_action"), ("Worth reading", "worth_reading")):
+    headings = (
+        ("Needs action", "needs_action"),
+        ("Still waiting on you", "carried"),
+        ("Worth reading", "worth_reading"),
+    )
+    for heading, bucket in headings:
         items = [t for t in kept if t["bucket"] == bucket]
         if not items:
             continue
         print(heading)
         for it in items:
-            print(f"  {it['subject']} · {it['sender']} · {it['note']}")
+            line = f"  {it['subject']} · {it['sender']}"
+            if it["note"]:
+                line += f" · {it['note']}"
+            print(line)
             if it["draft"]:
                 print(f"    Draft reply: {it['draft']}")
+
+
+def _carried_triaged(em: Email) -> Triaged:
+    # idx=-1: carried items have no source index in this run's `emails` list
+    # (they were pulled from Gmail by label, not by triage()) -- they never
+    # go through drafts or the needs_action rules, both of which key on idx.
+    return {
+        "bucket": "carried",
+        "note": "",
+        "account": em["account"],
+        "sender": em["from"],
+        "subject": em["subject"],
+        "link": em["link"],
+        "date": em["date"],
+        "unread": em["unread"],
+        "idx": -1,
+        "draft": "",
+    }
 
 
 def run(cfg: Config, dry_run: bool = False) -> None:
@@ -115,9 +141,23 @@ def run(cfg: Config, dry_run: bool = False) -> None:
     kept = triage(cfg, emails, now)
     kept = enforce(cfg, emails, kept)  # rule-forced items must survive even if the model returned none
     if not kept:
-        # Delivering "no items today" three times a day is how a reader unsubscribes.
+        # Carried items alone must never trigger a digest: this check runs
+        # before any carry-over items are merged in, so "no new items" stays
+        # "no new items" even when yesterday's debts are still open.
         print("mailtriage: the model kept none of the candidates — sending nothing.", file=sys.stderr)
         return
+
+    if cfg.carry_over:
+        if not dry_run:
+            # No mailbox writes on a dry run: label only when actually delivering.
+            for w in label_actions(os.environ, kept, emails, cfg.label):
+                print(f"mailtriage: label failed, skipping: {w}", file=sys.stderr)
+
+        # Reading is fine on a dry run -- only writes are skipped above.
+        carried = pull_open_actions(os.environ, now, cfg.window_hours, cfg.label)
+        for w in carried["warnings"]:
+            print(f"mailtriage: carried-mail lookup failed, skipping: {w}", file=sys.stderr)
+        kept = kept + [_carried_triaged(em) for em in carried["messages"]]
 
     if cfg.draft_replies and any(t["bucket"] == "needs_action" for t in kept):
         # select_backend is pure env inspection -- picking again here (instead

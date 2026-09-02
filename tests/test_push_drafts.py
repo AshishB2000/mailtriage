@@ -29,6 +29,7 @@ def make_email(i: int, **overrides: object) -> Email:
         "link": f"https://real.example.com/{i}",
         "message_id": f"<real-{i}@example.com>",
         "reply_to": f"replyto{i}@example.com",
+        "uid": f"{i}",
     }
     return cast(Email, {**base, **overrides})
 

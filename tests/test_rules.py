@@ -23,6 +23,7 @@ def make_email(i: int, from_: str | None = None) -> Email:
         "link": f"https://real.example.com/{i}",
         "message_id": f"<real-{i}@example.com>",
         "reply_to": from_ if from_ is not None else f"sender{i}@example.com",
+        "uid": str(i),
     }
 
 

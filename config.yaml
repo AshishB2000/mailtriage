@@ -118,3 +118,12 @@ rules:
 #     draft_style:
 #       tone: formal
 accounts: {}
+# Re-list a needs-action email in every digest until it's handled. Cleared
+# three ways: reply to it, archive it, or remove the Gmail label below. The
+# label itself is the memory -- no state of any kind is kept in this repo.
+carry_over: true
+
+# The Gmail label the engine applies to needs-action mail so it can find it
+# again next run. A "/" nests it under a parent in Gmail's sidebar (this
+# shows as mailtriage -> action) -- that's intended.
+label: "mailtriage/action"

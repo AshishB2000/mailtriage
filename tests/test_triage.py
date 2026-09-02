@@ -30,6 +30,7 @@ def make_email(i: int) -> Email:
         "link": f"https://real.example.com/{i}",
         "message_id": f"<real-{i}@example.com>",
         "reply_to": f"sender{i}@example.com",
+        "uid": f"{i}",
     }
 
 
