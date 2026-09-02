@@ -454,3 +454,20 @@ def test_main_weekly_flag_dispatches_run_weekly(monkeypatch: Any, tmp_path: Any,
 
     assert main(["--weekly", "--dry-run", "--config", str(cfg_path)]) == 0
     assert calls == [("email", True)]
+
+
+def test_run_logs_candidate_count_without_subjects(monkeypatch: Any, capsys: Any) -> None:
+    """Public forks have public Actions logs: report how many messages were
+    pulled (the one fact that debugs 'kept none'), never what they were."""
+    import mailtriage.cli as cli_module
+    import mailtriage.triage as triage_module
+
+    msgs = [_email(0), {**_email(1), "account": "other-acct"}]
+    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours: {"messages": msgs, "warnings": []})
+    monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [])
+
+    run(Config(delivery="email", carry_over=False, window_hours=15), dry_run=True)
+
+    err = capsys.readouterr().err
+    assert "2 candidate(s) in the last 15h across 2 account(s)" in err
+    assert "subject-0" not in err and "subject-1" not in err
