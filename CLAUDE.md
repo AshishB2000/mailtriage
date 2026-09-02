@@ -189,6 +189,9 @@ bill; don't upgrade to Opus without a reason.
   a choice in the picker; treat it as authoritative. It also PUTs exactly one
   of the five AI secrets — writing more than one lets a stale credential
   shadow the one the user meant to use.
+- **`Email.date` is `datetime.isoformat()` output** (`+00:00` offset, never
+  `Z`). Python 3.10's `fromisoformat` rejects `Z`; CI's 3.10 job is the floor,
+  so test fixtures must use `+00:00` too — this bit us once.
 
 ## Style
 

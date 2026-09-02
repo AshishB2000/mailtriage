@@ -297,6 +297,7 @@ a.btn{border-bottom:1px solid transparent}
 .prov input{flex:0 0 auto;width:16px;height:16px;margin:0;accent-color:var(--accent)}
 .prov .pname{display:block;font-size:13.5px;font-weight:600;color:var(--ink)}
 .prov .psec{display:block;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px}
+.prov .pdesc{display:block;font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.45}
 
 /* ============================================================ account rows */
 .acct{margin-top:10px}
@@ -561,32 +562,65 @@ footer a{color:var(--muted)}
 
     <div class="sect">
       <h3>Email delivery</h3>
-      <div class="f" id="f-resend">
-        <label for="resend">Resend API key</label>
-        <p class="hint">From <a href="https://resend.com/api-keys" target="_blank" rel="noopener">resend.com/api-keys</a> (free tier covers personal volume).</p>
-        <div class="reveal">
-          <input type="password" id="resend" class="mono" placeholder="re_••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
-          <button type="button" data-reveal="resend">Show</button>
+      <div class="f">
+        <span class="lgnd" id="deliverylbl">How you get the digest</span>
+        <div class="provs" role="radiogroup" aria-labelledby="deliverylbl">
+          <label class="prov">
+            <input type="radio" name="delivery" value="gmail" id="delivery-gmail" checked>
+            <span><span class="pname">Gmail (recommended)</span><span class="pdesc">Sends the digest from your own Gmail to itself using the app password you already entered below. Lands in your inbox, never spam, nothing else to set up.</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="delivery" value="email" id="delivery-email">
+            <span><span class="pname">Resend</span><span class="pdesc">Send from a custom domain via resend.com — needs an API key and a verified sending domain.</span></span>
+          </label>
         </div>
-        <div class="msg"></div>
       </div>
-      <div class="f" id="f-emailTo">
-        <label for="emailTo">Send to</label>
-        <input type="email" id="emailTo" placeholder="you@example.com" autocomplete="off" spellcheck="false">
-        <div class="msg"></div>
+
+      <details class="ovr" id="gmailAdvanced" style="margin-top:14px">
+        <summary>Send to a different address (optional)</summary>
+        <div class="ovr-body">
+          <div class="f" id="f-emailToGmail" style="margin-top:10px">
+            <label for="emailToGmail">Send to</label>
+            <p class="hint">Leave blank to self-send to your own Gmail inbox — this also won't overwrite an <code>EMAIL_TO</code> secret already set in your repo.</p>
+            <input type="email" id="emailToGmail" placeholder="you@example.com" autocomplete="off" spellcheck="false">
+            <div class="msg"></div>
+          </div>
+        </div>
+      </details>
+
+      <div id="resendFields" style="display:none">
+        <div class="note safe" id="resendPrefillNote" style="display:none;margin-top:0;margin-bottom:10px">
+          <span class="ic">◆</span>
+          <span>This fork already has Resend secrets set. GitHub never returns their value, so re-enter each one below to keep this run working — they'll overwrite what's there.</span>
+        </div>
+        <div class="f" id="f-resend">
+          <label for="resend">Resend API key</label>
+          <p class="hint">From <a href="https://resend.com/api-keys" target="_blank" rel="noopener">resend.com/api-keys</a> (free tier covers personal volume).</p>
+          <div class="reveal">
+            <input type="password" id="resend" class="mono" placeholder="re_••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="resend">Show</button>
+          </div>
+          <div class="msg"></div>
+        </div>
+        <div class="f" id="f-emailTo">
+          <label for="emailTo">Send to</label>
+          <input type="email" id="emailTo" placeholder="you@example.com" autocomplete="off" spellcheck="false">
+          <div class="msg"></div>
+        </div>
+        <div class="f" id="f-emailFrom">
+          <label for="emailFrom">Send from</label>
+          <input type="email" id="emailFrom" placeholder="mailtriage@yourdomain.com" autocomplete="off" spellcheck="false">
+          <div class="msg"></div>
+        </div>
+        <div class="note caution">
+          <span class="ic">◆</span>
+          <span><strong>The from-address must be on a domain you've verified in Resend</strong> at <a href="https://resend.com/domains" target="_blank" rel="noopener">resend.com/domains</a> — an unverified domain is the single most common reason the first digest never arrives, and returns a 403 that looks like a bad API key but isn't. Resend's shared <code>onboarding@resend.dev</code> sender works with no domain setup, but can only deliver to your own Resend-account email.</span>
+        </div>
       </div>
-      <div class="f" id="f-emailFrom">
-        <label for="emailFrom">Send from</label>
-        <input type="email" id="emailFrom" placeholder="mailtriage@yourdomain.com" autocomplete="off" spellcheck="false">
-        <div class="msg"></div>
-      </div>
-      <div class="note caution">
-        <span class="ic">◆</span>
-        <span><strong>The from-address must be on a domain you've verified in Resend</strong> at <a href="https://resend.com/domains" target="_blank" rel="noopener">resend.com/domains</a> — an unverified domain is the single most common reason the first digest never arrives, and returns a 403 that looks like a bad API key but isn't.</span>
-      </div>
+
       <div class="note safe">
         <span class="ic">◆</span>
-        <span>These addresses are stored as encrypted <strong>EMAIL_TO</strong> / <strong>EMAIL_FROM</strong> secrets, the same way as your API keys — never written into the committed <code>config.yaml</code>, which stays readable by anyone if your fork is public.</span>
+        <span>Addresses are stored as encrypted <strong>EMAIL_TO</strong> / <strong>EMAIL_FROM</strong> secrets, the same way as your API keys — never written into the committed <code>config.yaml</code>, which stays readable by anyone if your fork is public.</span>
       </div>
     </div>
 
@@ -958,13 +992,14 @@ function buildYaml(v) {
     "# weekly roundup on top of the daily run_at slots.",
     "weekly_review: " + yamlStr(v.weekly_review),
     "",
-    '# Only "email" is supported.',
-    "delivery: email",
+    "# Valid values: delivery: gmail (recommended, via your own Gmail SMTP)",
+    "# or delivery: email (via Resend). Picked in the wizard's delivery step.",
+    "delivery: " + v.delivery,
     "",
     "# Addresses go in the EMAIL_TO / EMAIL_FROM repo secrets, not here --",
-    "# this file is committed and this repo may be public. Requires the",
-    "# RESEND_API_KEY secret; email_from must be on a domain you have",
-    "# verified with Resend.",
+    "# this file is committed and this repo may be public. For delivery:",
+    "# gmail both default to your first MAIL_ACCOUNTS address if unset; for",
+    "# delivery: email (Resend) both are required and RESEND_API_KEY must be set.",
     "email_to: " + yamlStr(""),
     "email_from: " + yamlStr(""),
     "",
@@ -1204,6 +1239,11 @@ async function prefillFromConfig(fullName) {
       const r = $('input[name=provider][value="' + cfg.provider + '"]');
       if (r) { r.checked = true; updateAuthFields(); }
     }
+    if (cfg.delivery === "gmail" || cfg.delivery === "email") {
+      const r = $('input[name=delivery][value="' + cfg.delivery + '"]');
+      if (r) { r.checked = true; updateDeliveryFields(); }
+      if (cfg.delivery === "email") $("#resendPrefillNote").style.display = "flex";
+    }
     if (Array.isArray(cfg.run_at) && cfg.run_at.length) setRunAtRows(cfg.run_at);
     if (cfg.timezone && $('#timezone option[value="' + cfg.timezone + '"]')) $("#timezone").value = cfg.timezone;
     if (cfg.weekly_review) {
@@ -1267,6 +1307,15 @@ function updateAuthFields() {
   });
 }
 $$('input[name=provider]').forEach((r) => r.addEventListener("change", updateAuthFields));
+
+/* ------------------------------------------------------------ step 2: delivery picker */
+const selectedDelivery = () => $('input[name=delivery]:checked').value;
+function updateDeliveryFields() {
+  const gmail = selectedDelivery() === "gmail";
+  $("#gmailAdvanced").style.display = gmail ? "block" : "none";
+  $("#resendFields").style.display = gmail ? "none" : "block";
+}
+$$('input[name=delivery]').forEach((r) => r.addEventListener("change", updateDeliveryFields));
 
 /* ------------------------------------------------------------ step 2: digest size */
 $("#count").addEventListener("input", (e) => { $("#countOut").textContent = e.target.value; });
@@ -1474,6 +1523,7 @@ function collectRuleList(id) {
 
 /* ------------------------------------------------------------ step 2: collect + validate */
 function collect() {
+  const delivery = selectedDelivery();
   return {
     interests: $("#interests").value,
     avoid: $("#avoid").value,
@@ -1482,8 +1532,9 @@ function collect() {
     window_hours: windowHours(),
     timezone: $("#timezone").value,
     weekly_review: $("#weeklyOn").checked ? $("#weeklyDay").value + " " + $("#weeklyTime").value : "",
-    email_to: $("#emailTo").value.trim(),
-    email_from: $("#emailFrom").value.trim(),
+    delivery: delivery,
+    email_to: (delivery === "gmail" ? $("#emailToGmail").value : $("#emailTo").value).trim(),
+    email_from: delivery === "gmail" ? "" : $("#emailFrom").value.trim(),
     provider: selectedProvider(),
     draft_replies: $("#draftReplies").checked,
     draft_style: collectDraftStyle(),
@@ -1516,9 +1567,14 @@ function validate() {
   const provFid = PROV_FIELD[selectedProvider()];
   if (!$("#" + provFid).value.trim()) fail(provFid, "Needed — this is the credential that runs the triage.");
 
-  if (!$("#resend").value.trim()) fail("resend", "Needed to send the email.");
-  if (!/^\S+@\S+\.\S+$/.test(v.email_to)) fail("emailTo", "Enter the address the digest should arrive at.");
-  if (!/^\S+@\S+\.\S+$/.test(v.email_from)) fail("emailFrom", "Enter the address it should be sent from.");
+  if (v.delivery === "email") {
+    if (!$("#resend").value.trim()) fail("resend", "Needed to send the email.");
+    if (!/^\S+@\S+\.\S+$/.test(v.email_to)) fail("emailTo", "Enter the address the digest should arrive at.");
+    if (!/^\S+@\S+\.\S+$/.test(v.email_from)) fail("emailFrom", "Enter the address it should be sent from.");
+  } else if (v.email_to && !/^\S+@\S+\.\S+$/.test(v.email_to)) {
+    $("#gmailAdvanced").open = true;
+    fail("emailToGmail", "This doesn't look like an email address.");
+  }
 
   if ($$(".run-at-time").some((i) => !i.value)) fail("runAt", "Every digest time needs a value.");
   if (!v.label) fail("label", "Needed — this is the Gmail label carried-over mail gets.");
@@ -1562,10 +1618,16 @@ $("#go3").addEventListener("click", () => {
   // can insert spaces mid-paste, so strip ALL whitespace, not just the ends.
   const isJsonSecret = prov === "chatgpt-subscription" || prov === "google-subscription";
   S.secrets[PROV_SECRET[prov]] = isJsonSecret ? provRaw.trim() : provRaw.replace(/\s+/g, "");
-  S.secrets.RESEND_API_KEY = $("#resend").value.trim();
   // Addresses are sensitive on a public fork -- secrets, not config.yaml.
-  S.secrets.EMAIL_TO = v.email_to;
-  S.secrets.EMAIL_FROM = v.email_from;
+  // Only PUT a secret whose field is non-empty: an empty field means "leave
+  // whatever's already in the repo alone", not "erase it". For delivery:
+  // email, validate() above already forced all three non-empty; for
+  // delivery: gmail, EMAIL_TO is the one optional field and RESEND_API_KEY /
+  // EMAIL_FROM are never touched at all.
+  const resendKey = $("#resend").value.trim();
+  if (resendKey) S.secrets.RESEND_API_KEY = resendKey;
+  if (v.email_to) S.secrets.EMAIL_TO = v.email_to;
+  if (v.email_from) S.secrets.EMAIL_FROM = v.email_from;
   const accounts = collectAccounts();
   S.secrets.MAIL_ACCOUNTS = accounts.map((a) => a.email).join(",");
   v.accounts = {};
@@ -1731,8 +1793,9 @@ function succeed(run) {
   $("#launchView").style.display = "none";
   $("#doneView").style.display = "block";
   $$("#stepper li").forEach((li) => { li.classList.remove("on"); li.classList.add("done"); });
+  const dest = S.cfg.email_to ? "<strong>" + esc(S.cfg.email_to) + "</strong>" : "your own Gmail inbox";
   $("#doneMsg").innerHTML =
-    "Check <strong>" + esc(S.cfg.email_to) + "</strong>, including the spam folder for the first one. " +
+    "Check " + dest + ", including the spam folder for the first one. " +
     "It repeats at " + esc(S.cfg.run_at.join(", ")) + " (" + esc(S.cfg.timezone) + ").";
   const base = "https://github.com/" + S.repo.full_name;
   $("#doneLinks").innerHTML =
@@ -1751,6 +1814,7 @@ try {
   const saved = JSON.parse(localStorage.getItem("mailtriage.prefs") || "{}");
   KEEP.forEach((k) => { if (saved[k] != null && $("#" + k)) $("#" + k).value = saved[k]; });
   if (saved.provider) { const r = $('input[name=provider][value="' + saved.provider + '"]'); if (r) { r.checked = true; r.dispatchEvent(new Event("change")); } }
+  if (saved.delivery) { const r = $('input[name=delivery][value="' + saved.delivery + '"]'); if (r) { r.checked = true; r.dispatchEvent(new Event("change")); } }
   if (saved.tone) { const r = $('input[name=tone][value="' + saved.tone + '"]'); if (r) r.checked = true; }
   if (saved.count) { $("#count").value = saved.count; }
   if (Array.isArray(saved.runAt) && saved.runAt.length) setRunAtRows(saved.runAt);
@@ -1758,6 +1822,7 @@ try {
     const o = {};
     KEEP.forEach((k) => { if ($("#" + k)) o[k] = $("#" + k).value; });
     o.provider = selectedProvider();
+    o.delivery = selectedDelivery();
     o.tone = $('input[name=tone]:checked').value;
     o.count = $("#count").value;
     o.runAt = collectRunAt();
@@ -1767,6 +1832,7 @@ try {
 
 $("#countOut").textContent = $("#count").value;
 updateAuthFields();
+updateDeliveryFields();
 updateWindowNote();
 show(1);
 </script>

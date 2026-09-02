@@ -128,6 +128,15 @@ def test_secret_names_appear_in_wizard_and_readme():
         assert name in readme, f"secret '{name}' missing from the README setup docs"
 
 
+def test_wizard_delivery_picker_writes_both_modes():
+    # buildYaml() must be able to emit either delivery mode -- a hardcoded
+    # "delivery: email" (or the reverse) would silently flip every fork's
+    # delivery choice the next time someone re-runs the wizard.
+    assert "delivery: gmail" in WIZARD, "wizard is missing the 'delivery: gmail' literal"
+    assert "delivery: email" in WIZARD, "wizard is missing the 'delivery: email' literal"
+    assert "RESEND_API_KEY" in WIZARD
+
+
 def test_all_engine_providers_appear_in_wizard():
     # The provider picker writes one of these literal strings as `provider:`
     # in config.yaml. Imported from the engine so a rename on either side

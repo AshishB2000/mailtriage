@@ -145,9 +145,11 @@ how you train yourself to stop opening it.
    needed) or via GitHub Pages if you've enabled it on your fork.
 3. Paste a [GitHub personal access token](https://github.com/settings/tokens/new?scopes=repo&description=mailtriage+setup),
    fill in your triage brief, pick one AI provider from the picker and paste
-   its credential, add your Resend key and Gmail accounts, pick your
-   schedule and timezone, set any VIP rules or draft style you want, and
-   click through.
+   its credential, add your Gmail accounts, pick your schedule and timezone,
+   set any VIP rules or draft style you want, and click through. For
+   delivery, pick **Gmail** (recommended — sends from your own Gmail to
+   itself, nothing else to set up) or **Resend** (paste an API key and a
+   verified from-domain to send from a custom domain).
 
 The page finds your fork, encrypts every secret **in your browser** with
 libsodium against your repository's own public key, writes them to your
