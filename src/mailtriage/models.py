@@ -45,3 +45,24 @@ class Triaged(TypedDict):
     unread: bool
     idx: int  # index of the source Email in the pulled list, set by pick() from the validated id
     draft: str  # AI-drafted reply for needs_action items; "" when none
+
+
+class WeekItem(TypedDict):
+    """One item in imap_pull.pull_week's roll-up. Header-only -- no body is
+    ever fetched for the weekly review, so there is no `snippet`/`body` here."""
+
+    account: str
+    sender: str
+    subject: str
+    date: str  # ISO 8601
+    link: str
+    age_days: int
+
+
+class WeekResult(TypedDict):
+    """Return shape of `imap_pull.pull_week`: per-account replied/archived/open
+    buckets (each a list[WeekItem]) plus per-account warnings, same
+    warn-and-continue shape as PullResult."""
+
+    accounts: dict[str, dict[str, list["WeekItem"]]]
+    warnings: list[dict[str, str]]

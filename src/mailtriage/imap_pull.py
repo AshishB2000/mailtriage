@@ -1,7 +1,8 @@
 """Pull recent INBOX mail from several Gmail accounts as JSON. Stdlib only.
 
-CRITICAL INVARIANT: `fetch_account`/`pull` and `pull_open_actions` are
-read-only -- `select(..., readonly=True)` and `BODY.PEEK[]` only. The engine
+CRITICAL INVARIANT: `fetch_account`/`pull`, `pull_open_actions`, and
+`pull_week` are read-only -- `select(..., readonly=True)` and `BODY.PEEK[]`
+(or `BODY.PEEK[HEADER.FIELDS (...)]`, for `pull_week`) only. The engine
 writes exactly two things to Gmail: `label_actions` adds a label to INBOX
 messages (the one read-write INBOX `select` in this codebase, required
 because STORE on an EXAMINEd mailbox returns NO) and `push_drafts` APPENDs a
@@ -26,7 +27,7 @@ from urllib.parse import quote
 
 # Re-exported: tests import MailError from this module too.
 from mailtriage.errors import MailError as MailError
-from mailtriage.models import Email, PullResult, Triaged
+from mailtriage.models import Email, PullResult, Triaged, WeekItem, WeekResult
 
 
 def pw_env_var(addr: str) -> str:
@@ -208,6 +209,10 @@ def _find_drafts_mailbox(list_lines: list[Any]) -> str:
 
 def _find_sent_mailbox(list_lines: list[Any]) -> str:
     return _find_mailbox_by_attribute(list_lines, "\\Sent", "[Gmail]/Sent Mail")
+
+
+def _find_all_mailbox(list_lines: list[Any]) -> str:
+    return _find_mailbox_by_attribute(list_lines, "\\All", "[Gmail]/All Mail")
 
 
 def _quote_mailbox(name: str) -> str:
@@ -409,3 +414,143 @@ def pull_open_actions(
             warnings.append({"account": addr, "error": f"{type(e).__name__}: {e}"})
     messages.sort(key=lambda m: datetime.fromisoformat(m["date"]), reverse=True)
     return {"messages": messages, "warnings": warnings}
+
+
+def _classify_week_item(replied: bool, in_inbox: bool) -> str:
+    """Pure classification for pull_week -- replied beats archived beats
+    open. Split out from the IMAP calls so self_check can assert on it
+    directly, with no network involved."""
+    if replied:
+        return "replied"
+    return "open" if in_inbox else "archived"
+
+
+def _in_mailbox_by_thrid(M: imaplib.IMAP4_SSL, thrid: str) -> bool:
+    """True when the currently selected mailbox holds a message in this
+    Gmail thread. Used against INBOX to tell an archived thread from one
+    still sitting there. No thrid to search by -> assume still present
+    (never call something archived when we can't actually check)."""
+    if not thrid:
+        return True
+    _, data = M.uid("SEARCH", None, "X-GM-THRID", thrid)  # type: ignore[arg-type]
+    return bool(data and data[0])
+
+
+def _parse_week_message(raw: bytes, addr: str, now: datetime, uid: str) -> dict[str, Any] | None:
+    """Header-only parse for pull_week -- only FROM/SUBJECT/DATE/MESSAGE-ID
+    are ever fetched, never a body. Returns a plain dict (not WeekItem)
+    because it also carries `message_id`, needed for the reply lookup but
+    not part of the public WeekItem shape; `_to_week_item` projects it down.
+    None for undated mail, same as everywhere else in this module."""
+    msg = message_from_bytes(raw, policy=policy.default)
+    dt = msg_datetime(str(msg.get("Date", "")))
+    if dt is None:
+        return None
+    message_id = str(msg.get("Message-ID", ""))
+    return {
+        "account": addr,
+        "sender": str(msg.get("From", "")),
+        "subject": str(msg.get("Subject", "")),
+        "date": dt.isoformat(),
+        "link": gmail_link(addr, message_id),
+        "age_days": max(0, (now - dt).days),
+        "message_id": message_id,
+    }
+
+
+def _to_week_item(rec: dict[str, Any]) -> WeekItem:
+    return {
+        "account": rec["account"],
+        "sender": rec["sender"],
+        "subject": rec["subject"],
+        "date": rec["date"],
+        "link": rec["link"],
+        "age_days": rec["age_days"],
+    }
+
+
+def pull_week(
+    environ: Mapping[str, str],
+    now: datetime,
+    label: str,
+    days: int = 7,
+    host: str = "imap.gmail.com",
+) -> WeekResult:
+    """Weekly roll-up: everything carrying `label` in the last `days` days,
+    per account, classified replied / archived / open by pure IMAP
+    arithmetic -- no model call, see _classify_week_item.
+
+    Searches Gmail's \\All mailbox (discovered the same attribute-based way
+    as \\Sent/\\Drafts), not INBOX, so archived and replied items -- which
+    have left INBOX -- are still found. SINCE is date-granular; results are
+    re-filtered exactly against `days` in Python, same as fetch_account.
+    Only header fields are ever fetched (BODY.PEEK[HEADER.FIELDS ...]), no
+    body. Read-only throughout: selects \\All, then (only if there are any
+    label hits) \\Sent and INBOX, all `readonly=True`.
+
+    An item whose label was removed since it was actioned is invisible to
+    this search -- that's fine, its disappearance from next week's roll-up
+    IS the "handled" signal; there is nothing to report for it here.
+    """
+    since = (now - timedelta(days=days) - timedelta(days=1)).strftime("%d-%b-%Y")
+    cutoff = now - timedelta(days=days)
+    quoted_label = _quote_mailbox(label)
+    accounts: dict[str, dict[str, list[WeekItem]]] = {}
+    warnings: list[dict[str, str]] = []
+
+    for addr, pw in accounts_from_env(environ):
+        try:
+            M = imaplib.IMAP4_SSL(host, 993)
+            try:
+                M.login(addr, pw)
+                list_lines = M.list()[1] or []
+                all_mailbox = _quote_mailbox(_find_all_mailbox(list_lines))
+                M.select(all_mailbox, readonly=True)
+                _, data = M.uid("SEARCH", None, "X-GM-LABELS", quoted_label, "SINCE", since)  # type: ignore[arg-type]
+                uids = data[0].split() if data and data[0] else []
+
+                candidates: list[tuple[dict[str, Any], str]] = []  # (rec, thrid)
+                for uid in uids:
+                    _, fetched = M.uid(
+                        "FETCH",
+                        uid,
+                        "(FLAGS UID X-GM-THRID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])",
+                    )
+                    flags, raw = "", b""
+                    for part in fetched:
+                        if isinstance(part, tuple):
+                            flags = part[0].decode("ascii", "replace")
+                            raw = part[1]
+                    rec = _parse_week_message(raw, addr, now, uid.decode())
+                    if rec is None or datetime.fromisoformat(rec["date"]) < cutoff:
+                        continue
+                    candidates.append((rec, _extract_thrid(flags)))
+
+                replied: list[WeekItem] = []
+                archived: list[WeekItem] = []
+                open_items: list[WeekItem] = []
+
+                if candidates:
+                    sent_mailbox = _quote_mailbox(_find_sent_mailbox(list_lines))
+                    M.select(sent_mailbox, readonly=True)
+                    still_unreplied: list[tuple[dict[str, Any], str]] = []
+                    for rec, thrid in candidates:
+                        if _replied_in_sent(M, thrid, rec["message_id"]):
+                            replied.append(_to_week_item(rec))
+                        else:
+                            still_unreplied.append((rec, thrid))
+
+                    if still_unreplied:
+                        M.select("INBOX", readonly=True)
+                        for rec, thrid in still_unreplied:
+                            bucket = _classify_week_item(False, _in_mailbox_by_thrid(M, thrid))
+                            (open_items if bucket == "open" else archived).append(_to_week_item(rec))
+
+                accounts[addr] = {"replied": replied, "archived": archived, "open": open_items}
+            finally:
+                with contextlib.suppress(Exception):
+                    M.logout()
+        except Exception as e:  # imaplib raises many unrelated types — one bad account must not abort the rest
+            warnings.append({"account": addr, "error": f"{type(e).__name__}: {e}"})
+
+    return {"accounts": accounts, "warnings": warnings}

@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from mailtriage import __version__
 from mailtriage.config import Config, load_config
 from mailtriage.errors import MailError
-from mailtriage.imap_pull import label_actions, pull, pull_open_actions, push_drafts
-from mailtriage.models import Email, Triaged
+from mailtriage.imap_pull import label_actions, pull, pull_open_actions, pull_week, push_drafts
+from mailtriage.models import Email, Triaged, WeekResult
 from mailtriage.schedule import due, local_zone
 
 
@@ -28,12 +28,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--self-check", action="store_true", help="run the built-in assertions and exit")
     ap.add_argument(
+        "--weekly",
+        action="store_true",
+        help="send the weekly review (what got handled, what's still open) instead of a normal digest",
+    )
+    ap.add_argument(
         "--due",
         action="store_true",
         help=(
-            "evaluate the schedule only, no network: exit 0 if a run_at/weekly_review "
-            "slot is due this hour, exit 3 if not (never 1, so a real failure is never "
-            "confused with 'not due')"
+            "evaluate the schedule only, no network: exit 0 and print the due mode "
+            "('digest' or 'weekly') to stdout if a run_at/weekly_review slot is due "
+            "this hour, exit 3 if not (never 1, so a real failure is never confused "
+            "with 'not due')"
         ),
     )
     # Not argparse's built-in action="version": that calls sys.exit() from inside
@@ -57,14 +63,20 @@ def _next_slot(cfg: Config, now_local: datetime) -> str:
 
 
 def _handle_due(cfg: Config, now: datetime, event: str) -> int:
+    """Print the due mode ('digest'/'weekly') to STDOUT and return the
+    exit-code contract (0 due / 3 not due). All human-readable status lines
+    go to stderr, so a caller can capture stdout as a clean mode string --
+    see the "Is it time?" step in .github/workflows/digest.yml, which
+    captures this to pick which of `mailtriage`/`mailtriage --weekly` to
+    run next."""
     result = due(cfg, now, event)
     if result == "digest":
+        print("digest")
         return 0
     if result == "weekly":
-        # The weekly digest's own send path is a later PR -- for now the slot
-        # is recognized but does no work, same as "not due".
-        print("mailtriage: weekly review slot (not implemented yet) — skipping.", file=sys.stderr)
-        return 3
+        print("mailtriage: weekly review slot — running.", file=sys.stderr)
+        print("weekly")
+        return 0
     now_local = now.astimezone(local_zone(cfg.timezone))
     print(
         f"mailtriage: not due at {now_local:%H:%M} ({cfg.timezone}); "
@@ -92,6 +104,51 @@ def _print_digest(kept: list[Triaged]) -> None:
             print(line)
             if it["draft"]:
                 print(f"    Draft reply: {it['draft']}")
+
+
+def _print_weekly(week: WeekResult) -> None:
+    for account, buckets in week["accounts"].items():
+        replied, archived, open_items = buckets["replied"], buckets["archived"], buckets["open"]
+        print(f"{account} — {len(replied)} replied · {len(archived)} archived · {len(open_items)} open")
+        for it in sorted(open_items, key=lambda i: i["date"]):  # oldest first
+            print(f"  {it['subject']} · {it['sender']} · {it['age_days']}d")
+
+
+def _week_counts(week: WeekResult) -> tuple[int, int]:
+    handled = sum(len(b["replied"]) + len(b["archived"]) for b in week["accounts"].values())
+    still_open = sum(len(b["open"]) for b in week["accounts"].values())
+    return handled, still_open
+
+
+def run_weekly(cfg: Config, dry_run: bool = False) -> None:
+    # Imported here, not at module scope: mirrors run()'s lazy delivery
+    # import (weekly_html lives in delivery.mail, alongside the Resend
+    # HTTP client) so --self-check keeps working the same way.
+    from mailtriage.delivery import send_html
+    from mailtriage.delivery.mail import weekly_html
+
+    now = _now()
+    week = pull_week(os.environ, now, cfg.label)
+
+    for w in week["warnings"]:
+        print(f"mailtriage: account failed, skipping: {w}", file=sys.stderr)
+
+    handled, still_open = _week_counts(week)
+    if handled == 0 and still_open == 0:
+        # Same "send nothing" philosophy as the normal digest: a roll-up with
+        # nothing to report trains you to ignore it.
+        print("mailtriage: nothing this week — sending nothing.", file=sys.stderr)
+        return
+
+    if dry_run:
+        _print_weekly(week)
+        return
+
+    send_html(cfg, f"{cfg.subject_prefix} · weekly review", weekly_html(cfg, week))
+    print(
+        f"mailtriage: weekly review delivered ({handled} handled, {still_open} open) via {cfg.delivery}.",
+        file=sys.stderr,
+    )
 
 
 def _carried_triaged(em: Email) -> Triaged:
@@ -194,7 +251,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.due:
             event = os.environ.get("GITHUB_EVENT_NAME", "schedule")
             return _handle_due(load_config(args.config), _now(), event)
-        run(load_config(args.config), dry_run=args.dry_run)
+        if args.weekly:
+            run_weekly(load_config(args.config), dry_run=args.dry_run)
+        else:
+            run(load_config(args.config), dry_run=args.dry_run)
     except MailError as e:
         print(f"mailtriage: {e}", file=sys.stderr)
         return 1

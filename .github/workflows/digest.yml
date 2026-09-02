@@ -56,16 +56,33 @@ jobs:
       - run: pip install .
 
       # The hourly trigger fires every run; this decides whether *this* hour
-      # is actually one of the user's run_at/weekly_review slots. `--due`
-      # only evaluates the schedule (no network, no IMAP) and exits 0 (due),
-      # 3 (not due) or 1 (a real failure -- e.g. a broken config.yaml, which
-      # must fail the job loudly rather than silently look like "not due").
-      # GITHUB_EVENT_NAME lets a manual "Run workflow" click bypass the gate.
+      # is actually one of the user's run_at/weekly_review slots, and which
+      # kind ("digest" or "weekly") it is. `--due` only evaluates the
+      # schedule (no network, no IMAP): exit 0 with the mode printed on
+      # stdout when due, exit 3 when not due, exit 1 on a real failure (e.g.
+      # a broken config.yaml, which must fail the job loudly rather than
+      # silently look like "not due"). GITHUB_EVENT_NAME lets a manual "Run
+      # workflow" click bypass the gate.
+      #
+      # Deliberately not `mailtriage --due && A || { [ $? -eq 3 ] && B; }`:
+      # actionlint/shellcheck flags that shape (SC2015, "A && B || C is not
+      # if-then-else") because B failing would fall through to C. The `case`
+      # below captures the exit code once and branches on it explicitly, so
+      # there's no A/B/C ambiguity to flag.
       - name: Is it time?
         id: gate
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-        run: mailtriage --due && echo "due=true" >> "$GITHUB_OUTPUT" || { [ $? -eq 3 ] && echo "due=false" >> "$GITHUB_OUTPUT"; }
+        run: |
+          set +e
+          mode=$(mailtriage --due)
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "due=true" >> "$GITHUB_OUTPUT"; echo "mode=$mode" >> "$GITHUB_OUTPUT" ;;
+            3) echo "due=false" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$rc" ;;
+          esac
 
       # Its own step on purpose: a logic regression fails here, loudly and
       # before any API spend, instead of quietly producing a strange digest.
@@ -103,7 +120,12 @@ jobs:
         if: steps.gate.outputs.due == 'true'
         env:
           ALL_SECRETS: ${{ toJSON(secrets) }}
+          MODE: ${{ steps.gate.outputs.mode }}
         run: |
           # Values stay masked in logs; shlex.quote prevents shell injection.
           eval "$(python -c 'import json,os,shlex; print("\n".join(f"export {k}={shlex.quote(v)}" for k,v in json.loads(os.environ["ALL_SECRETS"]).items() if k!="github_token"))')"
-          mailtriage
+          if [ "$MODE" = "weekly" ]; then
+            mailtriage --weekly
+          else
+            mailtriage
+          fi

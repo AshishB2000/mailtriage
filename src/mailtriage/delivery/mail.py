@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from mailtriage.config import Config
 from mailtriage.delivery.http import post_json
 from mailtriage.errors import MailError
-from mailtriage.models import Triaged
+from mailtriage.models import Triaged, WeekItem, WeekResult
 
 INK, DIM, RULE, PAPER = "#16161a", "#6b6b76", "#e4e2dd", "#faf9f7"
 SERIF = "Georgia,'Times New Roman',serif"
@@ -115,7 +115,79 @@ def email_html(cfg: Config, triaged: list[Triaged]) -> str:
 </td></tr></table></body></html>"""
 
 
-def send(cfg: Config, triaged: list[Triaged]) -> None:
+def _week_open_rows(items: list[WeekItem]) -> str:
+    out = ""
+    for it in sorted(items, key=lambda i: i["date"]):  # oldest first
+        out += f"""
+      <tr><td style="padding:0 0 14px 0;">
+        <a href="{html.escape(it["link"], quote=True)}" style="font:700 15px/1.4 {SERIF};color:{INK};text-decoration:none;">{html.escape(it["subject"])}</a>
+        <div class="muted" style="font:400 12px/1.4 {SANS};color:{DIM};padding-top:2px;">{html.escape(it["sender"])} &nbsp;·&nbsp; {it["age_days"]}d</div>
+      </td></tr>"""
+    return out
+
+
+def _week_recent_subjects(items: list[WeekItem], limit: int = 5) -> str:
+    recent = sorted(items, key=lambda i: i["date"], reverse=True)[:limit]
+    lis = "".join(f'<li style="padding:2px 0;">{html.escape(it["subject"])}</li>' for it in recent)
+    return f'<ul style="margin:6px 0 0 0;padding-left:18px;font:400 13px/1.5 {SANS};color:{DIM};">{lis}</ul>'
+
+
+def _week_extra_section(heading: str, items: list[WeekItem]) -> str:
+    if not items:
+        return ""
+    return f"""
+    <tr><td class="muted" style="font:700 12px/1.4 {SANS};color:{DIM};padding-top:10px;">{html.escape(heading)} ({len(items)})</td></tr>
+    <tr><td>{_week_recent_subjects(items)}</td></tr>"""
+
+
+def _week_account_block(account: str, buckets: dict[str, list[WeekItem]]) -> str:
+    replied, archived, open_items = buckets["replied"], buckets["archived"], buckets["open"]
+    open_rows = (
+        _week_open_rows(open_items)
+        if open_items
+        else f'<tr><td class="muted" style="font:400 13px/1.5 {SANS};color:{DIM};padding:2px 0;">Nothing open.</td></tr>'
+    )
+    return f"""
+    <tr><td style="padding:26px 0 4px 0;">
+      <div style="font:700 13px/1 {SANS};letter-spacing:.08em;color:{INK};text-transform:uppercase;">{html.escape(account)}</div>
+      <div class="muted" style="font:400 12px/1.4 {SANS};color:{DIM};padding-top:6px;">{len(replied)} replied &nbsp;·&nbsp; {len(archived)} archived &nbsp;·&nbsp; {len(open_items)} open</div>
+    </td></tr>
+    <tr><td style="padding-top:12px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">{open_rows}</table></td></tr>
+    {_week_extra_section("Replied", replied)}
+    {_week_extra_section("Archived", archived)}"""
+
+
+def weekly_html(cfg: Config, week: WeekResult) -> str:
+    handled = sum(len(b["replied"]) + len(b["archived"]) for b in week["accounts"].values())
+    still_open = sum(len(b["open"]) for b in week["accounts"].values())
+    blocks = "".join(_week_account_block(account, buckets) for account, buckets in week["accounts"].items())
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<style>@media (prefers-color-scheme:dark){{
+  body,.sheet,.sheet table{{background:#111114!important}}
+  .sheet a,.sheet p,.sheet div{{color:#eceae5!important}}
+  .muted,.muted *{{color:#9a9aa4!important}}
+}}</style></head>
+<body class="sheet" style="margin:0;padding:0;background:{PAPER};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PAPER};">
+<tr><td align="center" style="padding:32px 16px 44px 16px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+    <tr><td style="padding-bottom:26px;border-bottom:1px solid {RULE};">
+      <div style="font:700 26px/1 {SERIF};color:{INK};">Your week</div>
+      <div class="muted" style="font:400 13px/1 {SANS};color:{DIM};padding-top:9px;">{handled} handled · {still_open} still open</div>
+    </td></tr>
+    {blocks}
+    <tr><td class="muted" style="border-top:1px solid {RULE};padding-top:18px;font:400 12px/1.5 {SANS};color:{DIM};">Open items clear when you reply, archive, or remove the {html.escape(cfg.label)} label.</td></tr>
+  </table>
+</td></tr></table></body></html>"""
+
+
+def send_html(cfg: Config, subject: str, html_body: str) -> None:
+    """Post a prebuilt subject+HTML to Resend. Shared transport for both the
+    normal digest (`send`, which builds the html itself) and the weekly
+    review (delivery.send_html -> here), so the auth/validation/HTTP logic
+    lives in exactly one place."""
     key = os.environ.get("RESEND_API_KEY")
     if not key:
         raise MailError(
@@ -130,17 +202,14 @@ def send(cfg: Config, triaged: list[Triaged]) -> None:
             "email_from is empty in config.yaml. It must be an address on a domain you verified at "
             "https://resend.com/domains, e.g. mailtriage@yourdomain.com."
         )
-    needs_action = [t for t in triaged if t["bucket"] == "needs_action"]
-    worth_reading = [t for t in triaged if t["bucket"] == "worth_reading"]
-    a, r = len(needs_action), len(worth_reading)
     try:
         status, body = post_json(
             "https://api.resend.com/emails",
             {
                 "from": sender,
                 "to": [to],  # must be a list — a bare string 422s
-                "subject": f"{cfg.subject_prefix} · {a} to act · {r} to read",
-                "html": email_html(cfg, triaged),
+                "subject": subject,
+                "html": html_body,
             },
             {"Authorization": f"Bearer {key}"},
         )
@@ -155,3 +224,10 @@ def send(cfg: Config, triaged: list[Triaged]) -> None:
             f"  A 403 here almost always means '{sender}' is not on a verified domain — it reads like a bad "
             "API key but it isn't. Verify the sending domain at https://resend.com/domains."
         )
+
+
+def send(cfg: Config, triaged: list[Triaged]) -> None:
+    needs_action = [t for t in triaged if t["bucket"] == "needs_action"]
+    worth_reading = [t for t in triaged if t["bucket"] == "worth_reading"]
+    a, r = len(needs_action), len(worth_reading)
+    send_html(cfg, f"{cfg.subject_prefix} · {a} to act · {r} to read", email_html(cfg, triaged))

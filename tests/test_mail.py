@@ -10,7 +10,7 @@ import pytest
 from mailtriage.config import Config
 from mailtriage.delivery import mail
 from mailtriage.errors import MailError
-from mailtriage.models import Triaged
+from mailtriage.models import Triaged, WeekItem, WeekResult
 
 
 def _item(bucket: str, subject: str = "hi", **overrides: object) -> Triaged:
@@ -81,6 +81,117 @@ def test_send_raises_mail_error_on_403(monkeypatch):
 
     with pytest.raises(MailError):
         mail.send(_cfg(), [_item("worth_reading")])
+
+
+def test_send_html_posts_given_subject_and_body(monkeypatch):
+    captured = {}
+
+    def fake_post_json(url, payload, headers=None):
+        captured["payload"] = payload
+        return 200, "{}"
+
+    monkeypatch.setattr(mail, "post_json", fake_post_json)
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
+
+    mail.send_html(_cfg(), "mailtriage · weekly review", "<p>hi</p>")
+
+    assert captured["payload"]["subject"] == "mailtriage · weekly review"
+    assert captured["payload"]["html"] == "<p>hi</p>"
+    assert captured["payload"]["to"] == ["me@example.com"]
+
+
+# --- weekly_html ---------------------------------------------------------
+
+
+def _week_item(subject: str = "hi", **overrides: object) -> WeekItem:
+    base: WeekItem = {
+        "account": "work@example.com",
+        "sender": "Alice <alice@example.com>",
+        "subject": subject,
+        "date": "2026-08-25T00:00:00+00:00",
+        "link": "https://mail.example.com/msg/1",
+        "age_days": 3,
+    }
+    return cast(WeekItem, {**base, **overrides})
+
+
+def _week(accounts: dict[str, dict[str, list[WeekItem]]]) -> WeekResult:
+    return {"accounts": accounts, "warnings": []}
+
+
+def test_weekly_html_shows_totals_and_headline():
+    week = _week(
+        {
+            "work@example.com": {
+                "replied": [_week_item("replied one")],
+                "archived": [_week_item("archived one")],
+                "open": [_week_item("open one")],
+            }
+        }
+    )
+    html = mail.weekly_html(_cfg(), week)
+    assert "Your week" in html
+    assert "2 handled" in html
+    assert "1 still open" in html
+
+
+def test_weekly_html_renders_open_items_oldest_first():
+    week = _week(
+        {
+            "work@example.com": {
+                "replied": [],
+                "archived": [],
+                "open": [
+                    _week_item("newer", date="2026-08-27T00:00:00+00:00", age_days=1),
+                    _week_item("older", date="2026-08-20T00:00:00+00:00", age_days=8),
+                ],
+            }
+        }
+    )
+    html = mail.weekly_html(_cfg(), week)
+    assert html.index("older") < html.index("newer")
+    assert "8d" in html
+
+
+def test_weekly_html_shows_account_counts_and_recent_subjects():
+    week = _week(
+        {
+            "work@example.com": {
+                "replied": [_week_item("replied subject")],
+                "archived": [],
+                "open": [],
+            }
+        }
+    )
+    html = mail.weekly_html(_cfg(), week)
+    assert "work@example.com" in html
+    assert "1 replied" in html
+    assert "0 archived" in html
+    assert "0 open" in html
+    assert "replied subject" in html
+
+
+def test_weekly_html_footer_names_the_label():
+    week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item()]}})
+    html = mail.weekly_html(_cfg(label="mailtriage/action"), week)
+    assert "Open items clear when you reply, archive, or remove the mailtriage/action label." in html
+
+
+def test_weekly_html_escapes_hostile_subject_and_label():
+    week = _week(
+        {"work@example.com": {"replied": [], "archived": [], "open": [_week_item("<script>alert(1)</script>")]}}
+    )
+    html = mail.weekly_html(_cfg(label="<script>alert(2)</script>"), week)
+    assert "<script>alert(1)</script>" not in html
+    assert "<script>alert(2)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "&lt;script&gt;alert(2)&lt;/script&gt;" in html
+
+
+def test_weekly_html_no_open_items_shows_placeholder():
+    week = _week({"work@example.com": {"replied": [_week_item()], "archived": [], "open": []}})
+    html = mail.weekly_html(_cfg(), week)
+    assert "Nothing open." in html
 
 
 def test_email_html_shows_escaped_draft():

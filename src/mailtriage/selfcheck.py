@@ -17,10 +17,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from mailtriage.config import Config
+from mailtriage.delivery.mail import weekly_html
 from mailtriage.drafts import DRAFT_SCHEMA, generate_drafts
 from mailtriage.errors import MailError
-from mailtriage.imap_pull import _older_than_window, _quote_mailbox, parse_message, within_window
-from mailtriage.models import Email, Triaged
+from mailtriage.imap_pull import _classify_week_item, _older_than_window, _quote_mailbox, parse_message, within_window
+from mailtriage.models import Email, Triaged, WeekResult
 from mailtriage.rules import enforce, matches
 from mailtriage.schedule import due, max_gap_hours
 from mailtriage.triage import pick, select_backend
@@ -250,5 +251,44 @@ def self_check() -> None:
     assert max_gap_hours(["08:00", "18:00"]) == 14, (
         "max_gap_hours wrap-around math regressed -- this backs the window_hours warning"
     )
+
+    # 12. pull_week's classification: replied beats archived beats open, pure
+    # data, no IMAP -- get this backwards and a replied-to thread would still
+    # nag as "open" (or worse, a still-open one silently vanishes).
+    assert _classify_week_item(replied=True, in_inbox=True) == "replied", (
+        "replied must win even when the thread is still sitting in the inbox"
+    )
+    assert _classify_week_item(replied=True, in_inbox=False) == "replied", "replied must win over archived"
+    assert _classify_week_item(replied=False, in_inbox=True) == "open", (
+        "not replied and still in the inbox must classify as open"
+    )
+    assert _classify_week_item(replied=False, in_inbox=False) == "archived", (
+        "not replied and no longer in the inbox must classify as archived"
+    )
+
+    # 13. weekly_html must escape a hostile subject exactly like email_html --
+    # it renders the same untrusted IMAP-sourced strings.
+    hostile_week: WeekResult = {
+        "accounts": {
+            "acct@example.com": {
+                "replied": [],
+                "archived": [],
+                "open": [
+                    {
+                        "account": "acct@example.com",
+                        "sender": "boss@example.com",
+                        "subject": "<script>alert(1)</script>",
+                        "date": "2026-08-20T10:00:00+00:00",
+                        "link": "https://real.example.com/x",
+                        "age_days": 3,
+                    }
+                ],
+            }
+        },
+        "warnings": [],
+    }
+    weekly = weekly_html(Config(delivery="email", label="mailtriage/action"), hostile_week)
+    assert "<script>alert(1)</script>" not in weekly, "weekly_html must escape a hostile subject, not pass it through"
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in weekly, "weekly_html must HTML-escape hostile subjects"
 
     print("self-check: ok")
