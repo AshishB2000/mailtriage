@@ -22,6 +22,7 @@ from mailtriage.errors import MailError
 from mailtriage.imap_pull import parse_message, within_window
 from mailtriage.models import Email, Triaged
 from mailtriage.rules import enforce, matches
+from mailtriage.schedule import due, max_gap_hours
 from mailtriage.triage import pick, select_backend
 
 
@@ -209,6 +210,22 @@ def self_check() -> None:
     )
     assert len(moved) == 1 and moved[0]["bucket"] == "needs_action" and moved[0]["note"] == "model's own note", (
         "always_action must move a worth_reading item to needs_action while keeping the model's note"
+    )
+
+    # 11. schedule.due(): the hourly-workflow gate. cheap, no I/O -- catches a
+    # sign error here instead of a fork that never fires (or fires every hour).
+    sched_cfg = Config(delivery="email", run_at=["08:00", "18:00"])
+    assert due(sched_cfg, datetime(2026, 8, 28, 8, 30, tzinfo=timezone.utc)) == "digest", (
+        "a run_at slot, evaluated 30 minutes late (normal cron drift), must still be due"
+    )
+    assert due(sched_cfg, datetime(2026, 8, 28, 9, 30, tzinfo=timezone.utc)) is None, (
+        "90 minutes past a run_at slot must no longer be due, or the digest fires all day"
+    )
+    assert due(sched_cfg, datetime(2026, 8, 28, 3, 0, tzinfo=timezone.utc), event="workflow_dispatch") == "digest", (
+        "workflow_dispatch (a human clicking 'Run workflow') must always be due, gate or no gate"
+    )
+    assert max_gap_hours(["08:00", "18:00"]) == 14, (
+        "max_gap_hours wrap-around math regressed -- this backs the window_hours warning"
     )
 
     print("self-check: ok")

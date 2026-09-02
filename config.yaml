@@ -21,9 +21,28 @@ avoid: |
 reading_count: 8
 
 # How far back to look, in hours. Must be >= the largest gap between two
-# consecutive runs in .github/workflows/digest.yml, or mail published inside
-# the gap is skipped forever. Overlap is harmless; a gap is not.
-window_hours: 13
+# consecutive run_at slots below (+1h slack), or mail published inside the
+# gap is skipped forever. Overlap is harmless; a gap is not. A warning prints
+# to stderr if this is too small; it does not stop the run. 15 = the default
+# run_at slots' 14h overnight gap (18:00 to next day's 08:00) + 1h slack.
+window_hours: 15
+
+# Daily digest times, "HH:MM" 24h, local to `timezone` below. Pick as many as
+# you like. .github/workflows/digest.yml runs hourly and only actually
+# triages during the hour after one of these -- that's what lets everyone
+# have their own schedule without editing the workflow file (which would
+# need the wizard to have write access it doesn't ask for).
+run_at: ["08:00", "18:00"]
+
+# IANA time zone name (e.g. "America/New_York", "Europe/London") that run_at
+# and weekly_review are interpreted in. See
+# https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for the list.
+timezone: "UTC"
+
+# Blank = off. Otherwise "<mon|tue|wed|thu|fri|sat|sun> HH:MM" for a weekly
+# roundup on top of the daily run_at slots. Not implemented yet -- the slot
+# is recognized but currently just skips, same as an off-hour.
+weekly_review: ""
 
 # "email" (via Resend) or "gmail" (via your own Gmail's SMTP).
 #

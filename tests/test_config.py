@@ -22,8 +22,11 @@ def test_defaults_match_shipped_config():
     deletes a key silently gets different behavior from one that keeps it."""
     cfg = Config.from_mapping(MINIMAL)
     assert cfg.reading_count == 8
-    assert cfg.window_hours == 13
+    assert cfg.window_hours == 15
     assert cfg.subject_prefix == "mailtriage"
+    assert cfg.run_at == ["08:00", "18:00"]
+    assert cfg.timezone == "UTC"
+    assert cfg.weekly_review == ""
 
 
 def test_shipped_config_yaml_loads():
@@ -31,7 +34,7 @@ def test_shipped_config_yaml_loads():
     cfg = load_config("config.yaml")
     # Don't pin the shipped delivery choice — it's user-editable; just require a valid one.
     assert cfg.delivery in ("email", "gmail")
-    assert cfg.window_hours == 13
+    assert cfg.window_hours == 15
 
 
 def test_shipped_config_yaml_is_loadable_via_from_mapping():
@@ -229,3 +232,107 @@ def test_accounts_draft_style_merges_over_the_global_draft_style_not_defaults():
 def test_accounts_draft_style_invalid_raises():
     with pytest.raises(MailError, match="tone"):
         Config.from_mapping({**MINIMAL, "accounts": {"work@corp.com": {"draft_style": {"tone": "bogus"}}}})
+
+
+# --- run_at ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "run_at",
+    [
+        ["09:00", "21:30"],
+        ["00:00"],
+        ["23:59"],
+    ],
+)
+def test_valid_run_at_shapes(run_at):
+    cfg = Config.from_mapping({**MINIMAL, "run_at": run_at})
+    assert cfg.run_at == run_at
+
+
+def test_run_at_deduplicates_preserving_order():
+    cfg = Config.from_mapping({**MINIMAL, "run_at": ["08:00", "18:00", "08:00"]})
+    assert cfg.run_at == ["08:00", "18:00"]
+
+
+@pytest.mark.parametrize(
+    "run_at",
+    [
+        [],
+        "08:00",
+        ["8:00"],  # not zero-padded
+        ["25:00"],  # bad hour
+        ["12:60"],  # bad minute
+        ["noon"],
+        [123],
+        [True],
+    ],
+)
+def test_invalid_run_at_raises(run_at):
+    with pytest.raises(MailError, match="run_at"):
+        Config.from_mapping({**MINIMAL, "run_at": run_at})
+
+
+# --- timezone ---------------------------------------------------------------
+
+
+def test_valid_timezone():
+    cfg = Config.from_mapping({**MINIMAL, "timezone": "America/New_York"})
+    assert cfg.timezone == "America/New_York"
+
+
+def test_bad_timezone_raises_naming_the_tz_list(capsys):
+    with pytest.raises(MailError) as e:
+        Config.from_mapping({**MINIMAL, "timezone": "Mars/Olympus_Mons"})
+    assert "timezone" in str(e.value)
+    assert "en.wikipedia.org/wiki/List_of_tz_database_time_zones" in str(e.value)
+
+
+# --- weekly_review ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "weekly_review, expected",
+    [
+        ("", ""),
+        ("wed 09:00", "wed 09:00"),
+        ("WED 09:00", "wed 09:00"),  # case-insensitive day, normalized to lowercase
+        ("sun 23:59", "sun 23:59"),
+    ],
+)
+def test_valid_weekly_review_shapes(weekly_review, expected):
+    cfg = Config.from_mapping({**MINIMAL, "weekly_review": weekly_review})
+    assert cfg.weekly_review == expected
+
+
+@pytest.mark.parametrize(
+    "weekly_review",
+    [
+        "wednesday 09:00",
+        "wed 9:00",
+        "wed",
+        "09:00",
+        "wed 25:00",
+        "xyz 09:00",
+    ],
+)
+def test_invalid_weekly_review_raises(weekly_review):
+    with pytest.raises(MailError, match="weekly_review"):
+        Config.from_mapping({**MINIMAL, "weekly_review": weekly_review})
+
+
+# --- window_hours vs run_at gap warning -------------------------------------
+
+
+def test_window_hours_smaller_than_gap_warns_but_does_not_raise(capsys):
+    cfg = Config.from_mapping({**MINIMAL, "run_at": ["08:00", "18:00"], "window_hours": 10})
+    assert cfg.window_hours == 10  # not raised, not silently corrected
+    err = capsys.readouterr().err
+    assert "window_hours=10" in err
+    assert "14h gap" in err
+    assert "08:00" in err and "18:00" in err
+
+
+def test_window_hours_covering_gap_is_silent(capsys):
+    Config.from_mapping({**MINIMAL, "run_at": ["08:00", "18:00"], "window_hours": 15})
+    assert capsys.readouterr().err == ""

@@ -10,15 +10,26 @@ field names on :class:`Config` are now that contract, and
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Literal, get_args
+from zoneinfo import ZoneInfoNotFoundError
 
 import yaml
 
 from mailtriage.errors import MailError
+
+_RUN_AT_RE = re.compile(r"^\d{2}:\d{2}$")
+_WEEKLY_RE = re.compile(r"^(mon|tue|wed|thu|fri|sat|sun) (\d{2}:\d{2})$", re.IGNORECASE)
+
+
+def _valid_time(hhmm: str) -> bool:
+    h, m = hhmm.split(":")
+    return 0 <= int(h) <= 23 and 0 <= int(m) <= 59
+
 
 Delivery = Literal["email", "gmail"]
 DELIVERIES: tuple[str, ...] = get_args(Delivery)
@@ -56,7 +67,20 @@ class Config:
     interests: str = ""
     avoid: str = ""
     reading_count: int = 8
-    window_hours: int = 13
+    # 15 = the default run_at slots' 14h overnight gap + 1h slack -- see the
+    # gap-vs-window_hours warning below.
+    window_hours: int = 15
+    # Daily digest times, "HH:MM" 24h, in `timezone`. GitHub Actions runs the
+    # workflow hourly and schedule.due() decides which hour is one of these.
+    run_at: list[str] = field(default_factory=lambda: ["08:00", "18:00"])
+    # IANA name (e.g. "America/New_York") that `run_at` and `weekly_review`
+    # are interpreted in. See the tz database list linked in the error this
+    # raises for a bad name.
+    timezone: str = "UTC"
+    # Blank = off. Otherwise "<mon|tue|wed|thu|fri|sat|sun> HH:MM" -- a weekly
+    # slot on top of the daily ones. The weekly digest itself ships in a
+    # later PR; for now schedule.due() only recognizes the slot.
+    weekly_review: str = ""
     subject_prefix: str = "mailtriage"
     email_to: str = ""
     email_from: str = ""
@@ -108,7 +132,17 @@ class Config:
 
         # str() rather than a type error: YAML turns a bare value into whatever
         # type it looks like (e.g. an unquoted prefix or address).
-        for name in ("interests", "avoid", "subject_prefix", "email_to", "email_from", "provider", "model"):
+        for name in (
+            "interests",
+            "avoid",
+            "subject_prefix",
+            "email_to",
+            "email_from",
+            "provider",
+            "model",
+            "timezone",
+            "weekly_review",
+        ):
             setattr(cfg, name, str(getattr(cfg, name)))
 
         if cfg.provider not in PROVIDERS:
@@ -117,6 +151,52 @@ class Config:
         cfg.draft_style = _validate_draft_style(cfg.draft_style, DRAFT_STYLE_DEFAULTS, origin, "draft_style")
         cfg.rules = _validate_rules(cfg.rules, origin)
         cfg.accounts = _validate_accounts(cfg.accounts, cfg.draft_style, origin)
+        if not isinstance(cfg.run_at, list) or not cfg.run_at:
+            raise MailError(f"'run_at' in {origin} must be a non-empty list of \"HH:MM\" times (got {cfg.run_at!r}).")
+        deduped: list[str] = []
+        for slot in cfg.run_at:
+            if not isinstance(slot, str) or not _RUN_AT_RE.match(slot) or not _valid_time(slot):
+                raise MailError(f"'run_at' entry {slot!r} in {origin} must look like \"HH:MM\" (24h, zero-padded).")
+            if slot not in deduped:
+                deduped.append(slot)
+        cfg.run_at = deduped
+
+        # Deferred import: schedule.py imports Config from this module for its
+        # own type hints, so importing it at config.py's top level would be a
+        # circular import. Calling it from inside a function (after config.py
+        # has already finished loading) sidesteps that -- config.py stays
+        # import-light at module scope either way.
+        from mailtriage.schedule import local_zone, max_gap_pair
+
+        try:
+            local_zone(cfg.timezone)
+        except (ZoneInfoNotFoundError, ValueError) as e:
+            raise MailError(
+                f"'timezone' in {origin} must be a valid IANA time zone name (got {cfg.timezone!r}). "
+                "See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones."
+            ) from e
+
+        if cfg.weekly_review:
+            m = _WEEKLY_RE.match(cfg.weekly_review.strip())
+            if not m or not _valid_time(m.group(2)):
+                raise MailError(
+                    f"'weekly_review' in {origin} must be blank or "
+                    f'"<mon|tue|wed|thu|fri|sat|sun> HH:MM" (got {cfg.weekly_review!r}).'
+                )
+            cfg.weekly_review = f"{m.group(1).lower()} {m.group(2)}"
+
+        # A warning, not an error: the run still works, it just misses mail
+        # published inside the uncovered gap. Strict "<", not "<=" -- a
+        # window_hours exactly equal to the gap leaves zero slack for
+        # scheduler drift, which is still a real risk, hence "+ 1".
+        gap, slot_a, slot_b = max_gap_pair(cfg.run_at)
+        if cfg.window_hours < gap + 1:
+            print(
+                f"mailtriage: window_hours={cfg.window_hours} is smaller than the {gap:g}h gap between runs "
+                f"at {slot_a} and {slot_b} (+1h slack); mail arriving in the gap will be missed. "
+                f"Set window_hours to at least {gap + 1:g}.",
+                file=sys.stderr,
+            )
 
         return cfg
 

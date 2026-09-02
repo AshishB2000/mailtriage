@@ -4,11 +4,21 @@ with anthropic uninstalled, so this must never import triage/delivery eagerly.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
+
+import yaml
 
 from mailtriage.cli import main, run
 from mailtriage.config import Config
 from mailtriage.models import Email, Triaged
+
+
+def _write_config(tmp_path: Any, **overrides: Any) -> Any:
+    data = {"delivery": "email", "run_at": ["08:00"], "timezone": "UTC", **overrides}
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.safe_dump(data), encoding="utf-8")
+    return p
 
 
 def test_self_check_exits_zero(capsys: Any) -> None:
@@ -175,3 +185,65 @@ def test_rule_forced_item_produces_a_digest_even_when_model_kept_nothing(monkeyp
     assert sent[0][0]["bucket"] == "needs_action"
     assert sent[0][0]["note"] == "rule: always action from boss@corp.com"
     assert "the model kept none" not in capsys.readouterr().err
+
+
+# --- --due -------------------------------------------------------------
+
+
+def test_due_exits_0_and_never_calls_pull(monkeypatch: Any, tmp_path: Any) -> None:
+    import mailtriage.cli as cli_module
+
+    cfg_path = _write_config(tmp_path)  # run_at: ["08:00"]
+    monkeypatch.setattr(cli_module, "_now", lambda: datetime(2026, 1, 1, 8, 0, tzinfo=timezone.utc))
+    monkeypatch.delenv("GITHUB_EVENT_NAME", raising=False)
+    monkeypatch.setattr(
+        cli_module, "pull", lambda *a, **k: (_ for _ in ()).throw(AssertionError("pull must not run for --due"))
+    )
+
+    assert main(["--due", "--config", str(cfg_path)]) == 0
+
+
+def test_due_exits_3_and_prints_not_due_message(monkeypatch: Any, tmp_path: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+
+    cfg_path = _write_config(tmp_path)  # run_at: ["08:00"]
+    monkeypatch.setattr(cli_module, "_now", lambda: datetime(2026, 1, 1, 15, 0, tzinfo=timezone.utc))
+    monkeypatch.delenv("GITHUB_EVENT_NAME", raising=False)
+    monkeypatch.setattr(
+        cli_module, "pull", lambda *a, **k: (_ for _ in ()).throw(AssertionError("pull must not run for --due"))
+    )
+
+    assert main(["--due", "--config", str(cfg_path)]) == 3
+    err = capsys.readouterr().err
+    assert "not due" in err
+    assert "08:00" in err
+
+
+def test_due_weekly_slot_exits_3_with_not_implemented_message(monkeypatch: Any, tmp_path: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+
+    cfg_path = _write_config(tmp_path, run_at=["06:00"], weekly_review="thu 09:00")
+    monkeypatch.setattr(cli_module, "_now", lambda: datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc))  # a Thursday
+    monkeypatch.delenv("GITHUB_EVENT_NAME", raising=False)
+    monkeypatch.setattr(
+        cli_module, "pull", lambda *a, **k: (_ for _ in ()).throw(AssertionError("pull must not run for --due"))
+    )
+
+    assert main(["--due", "--config", str(cfg_path)]) == 3
+    assert "weekly review slot (not implemented yet)" in capsys.readouterr().err
+
+
+def test_due_workflow_dispatch_always_due_regardless_of_time(monkeypatch: Any, tmp_path: Any) -> None:
+    import mailtriage.cli as cli_module
+
+    cfg_path = _write_config(tmp_path)  # run_at: ["08:00"]
+    monkeypatch.setattr(cli_module, "_now", lambda: datetime(2026, 1, 1, 15, 0, tzinfo=timezone.utc))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+
+    assert main(["--due", "--config", str(cfg_path)]) == 0
+
+
+def test_due_bad_config_returns_1_not_3(tmp_path: Any, capsys: Any) -> None:
+    missing = tmp_path / "nope.yaml"
+    assert main(["--due", "--config", str(missing)]) == 1
+    assert "mailtriage:" in capsys.readouterr().err
