@@ -1,6 +1,6 @@
 <h1 align="center">mailtriage</h1>
 
-<p align="center"><b>AI triages every Gmail account you have, twice a day, and drafts the replies for you — you open your inbox to find the answers already written.</b></p>
+<p align="center"><b>AI triages every Gmail account you have, on your own schedule, and drafts the replies for you — you open your inbox to find the answers already written.</b></p>
 
 <p align="center">Fork-and-run · your own GitHub Actions · your own AI credentials · no server, no accounts, nothing routes through anyone else.</p>
 
@@ -145,18 +145,22 @@ how you train yourself to stop opening it.
    needed) or via GitHub Pages if you've enabled it on your fork.
 3. Paste a [GitHub personal access token](https://github.com/settings/tokens/new?scopes=repo&description=mailtriage+setup),
    fill in your triage brief, pick one AI provider from the picker and paste
-   its credential, add your Resend key and Gmail accounts, and click through.
+   its credential, add your Resend key and Gmail accounts, pick your
+   schedule and timezone, set any VIP rules or draft style you want, and
+   click through.
 
 The page finds your fork, encrypts every secret **in your browser** with
 libsodium against your repository's own public key, writes them to your
 fork's Actions secrets, commits `config.yaml` (with your chosen `provider`
-written explicitly, not `"auto"`), and triggers the first run — all directly
+written explicitly, not `"auto"`, and `window_hours` computed from the
+`run_at` times you picked), and triggers the first run — all directly
 against the GitHub API from that one tab. There's no server behind it and
 nothing to install; open the page's source and read it if you want to verify
 that yourself. Reopening the page later turns it into a settings editor: pick
 your repo again and it loads your existing `interests`, `avoid`, `provider`,
-and delivery settings from `config.yaml` (secrets and accounts still need
-re-entering — GitHub never returns a secret's value).
+schedule, rules, and draft-style settings from `config.yaml` (secrets and
+accounts still need re-entering — GitHub never returns a secret's value; a
+per-account override reappears once you retype that account's address).
 
 If you'd rather do it by hand — or the wizard hits something your setup
 doesn't like — the manual steps below do exactly the same thing.
@@ -270,31 +274,144 @@ project.
 
 ## How it works
 
-1. **Pull** — connect to each Gmail account over IMAP, **read-only**
+1. **Gate** — `.github/workflows/digest.yml` runs *hourly*; `mailtriage --due`
+   checks whether the current hour matches one of your `run_at` times (or
+   your `weekly_review` slot) in your `timezone`, and skips the rest of the
+   job if not. See [Your schedule](#your-schedule) below.
+2. **Pull** — connect to each Gmail account over IMAP, **read-only**
    (`readonly=True`, `BODY.PEEK[]`) — mailtriage never marks anything read.
-2. **Window** — keep only messages inside `window_hours`; drop anything
+3. **Window** — keep only messages inside `window_hours`; drop anything
    undated.
-3. **Triage** — one call to whichever AI provider `provider` in `config.yaml`
+4. **Rules** — `rules.always_ignore` drops matching senders before the model
+   ever sees them. See [Your rules](#your-rules).
+5. **Triage** — one call to whichever AI provider `provider` in `config.yaml`
    selects (see the provider matrix above), with your `interests` and `avoid`
-   text and the windowed messages, constrained to a strict schema. The model
-   returns bucket + one-line note per message it's keeping, referenced by an
-   integer index — never a URL, so there's no risk of the model inventing or
-   mangling a link.
-4. **Draft** — if `draft_replies` is on (default) and anything landed in
-   `needs_action`, a second call drafts a reply for each. Drafts are appended
-   to the source account's Gmail Drafts mailbox — never sent — and shown in
-   the digest.
-5. **Send** — one HTML email via Resend, or nothing if both buckets came
+   text (plus any per-account overrides, see
+   [Per-account settings](#per-account-settings)) and the windowed messages,
+   constrained to a strict schema. The model returns bucket + one-line note
+   per message it's keeping, referenced by an integer index — never a URL, so
+   there's no risk of the model inventing or mangling a link.
+   `rules.always_surface` / `rules.always_action` are then applied on top of
+   what the model returned, deterministically — a rule always wins.
+6. **Draft** — if `draft_replies` is on (default) and anything landed in
+   `needs_action`, a second call drafts a reply for each, in the style set by
+   `draft_style` (see [Draft style](#draft-style)). Drafts are appended to
+   the source account's Gmail Drafts mailbox — never sent — and shown in the
+   digest.
+7. **Send** — one HTML email via Resend, or nothing if both buckets came
    back empty.
 
-**No state, anywhere.** There's no database and no record of what was
-already sent — `window_hours` is the *only* dedupe. That means
-`window_hours` **must be at least as long as the largest gap between two
-consecutive scheduled runs**, or mail that arrives inside the gap is
-silently skipped forever and never appears in any digest. The shipped
-`config.yaml` (`window_hours: 13`) is tuned to the shipped
-`.github/workflows/digest.yml` (12-hour cron spacing, an hour of slack) — if
-you change the schedule, update `window_hours` to match.
+**No state, anywhere** — there's no database and no record of what was
+already sent. `window_hours` is the dedupe: it must be at least as long as
+the largest gap between two consecutive `run_at` slots, or mail that arrives
+inside the gap is silently skipped forever and never appears in any digest.
+The setup wizard computes `window_hours` for you from `run_at` every time it
+writes `config.yaml`; if you hand-edit `run_at`, update `window_hours` to
+match (`mailtriage --self-check` doesn't catch a stale value — only a real
+run's stderr warning does).
+
+---
+
+## Your schedule
+
+Pick your own digest times instead of a fixed cadence. In `config.yaml`:
+
+```yaml
+run_at: ["08:00", "18:00"]     # as many as you like, "HH:MM" 24h
+timezone: "America/New_York"   # IANA name — any tz database zone
+weekly_review: ""              # "" = off, or "<mon..sun> HH:MM" for a weekly slot
+```
+
+`.github/workflows/digest.yml` itself never changes — it can't, without every
+fork granting the setup wizard write access to workflow files it doesn't
+need for anything else. Instead it runs on a fixed hourly cron (`17 * * * *`
+— GitHub's own docs warn the top of the hour gets crowded, so this dodges
+it), and `mailtriage --due` decides whether *this* hour is one of your
+`run_at` slots before anything else runs. Two things follow from that:
+
+- **Runs fire within about an hour after the time you picked**, not on the
+  minute — GitHub's scheduler can drift 5-30 minutes late under load, and the
+  gate accepts the whole hour after your slot rather than requiring exact
+  equality, so a drifted trigger still catches it.
+- **A skipped or delayed hour doesn't lose mail** — `window_hours` overlaps
+  between runs specifically so a late or dropped trigger's mail shows up at
+  the next slot instead of vanishing.
+
+The setup wizard's Schedule step picks your timezone (defaulting to the one
+your browser reports), lets you add/remove `run_at` times, and computes
+`window_hours` for you — see [How it works](#how-it-works) above for why that
+number matters.
+
+---
+
+## Your rules
+
+Hard VIP-sender rules, checked deterministically — no API call, so they
+never depend on the model getting it right:
+
+```yaml
+rules:
+  always_ignore: ["newsletter@example.com"]   # dropped before the model ever sees them
+  always_surface: ["@vip-client.com"]         # always worth_reading, bypasses reading_count
+  always_action: ["boss@corp.com"]            # always needs_action, wins over always_ignore
+```
+
+Each entry is a full address or a domain rule starting with `@` (which also
+matches its subdomains). If an address appears in both `always_ignore` and
+`always_action`, action wins — ignoring is your general "don't bother me"
+setting, and a more specific `always_action` entry for the same sender means
+you decided their messages must never be silenced.
+
+---
+
+## Draft style
+
+Tone, sign-off, language, and length for AI-drafted replies:
+
+```yaml
+draft_style:
+  tone: friendly       # friendly | formal | casual
+  sign_off: ""          # e.g. "Best, Alex" -- overrides the generic "Thanks,"
+  language: auto        # or a language name, e.g. "French"
+  max_sentences: 5
+```
+
+`language: auto` matches the sender's language rather than always replying
+in one. Set `draft_replies: false` to turn drafting off entirely — see
+[Reply drafting](#reply-drafting) above.
+
+---
+
+## Per-account settings
+
+If you triage more than one Gmail account, each can have its own interests,
+avoid list, and draft style — added to (interests/avoid) or merged over
+(draft_style) the global settings above:
+
+```yaml
+accounts:
+  work@corp.com:
+    interests: |
+      Anything from the eng-leads mailing list counts as needing action.
+    draft_style:
+      tone: formal
+```
+
+Leave a key out of a per-account entry and it inherits the global value —
+only what you actually set here overrides it.
+
+---
+
+## Never lose an action item
+
+`carry_over: true` (default) applies a Gmail label — `label:
+"mailtriage/action"` by default — to every `needs_action` message, and keeps
+re-listing it in every digest until you reply, archive, or remove the label
+yourself. It's Gmail's own labels doing the remembering, not a database this
+project runs: nothing is stored outside your inbox, and there's still no
+`seen.json`, no repo state, and no per-run commit. Turn it off with
+`carry_over: false` if you'd rather each digest be a clean snapshot of the
+current `window_hours` only.
 
 ---
 
@@ -392,6 +509,8 @@ src/mailtriage/
   errors.py        MailError — the only exception raised on purpose
   models.py         Email (pulled message), Triaged (a bucketed, annotated one)
   config.py         config.yaml -> validated Config dataclass
+  schedule.py        "is it time?" -- max_gap_hours, due() -- pure, no I/O
+  rules.py           VIP-sender rules, checked deterministically around the model
   imap_pull.py       account/password lookup, IMAP fetch, time-window filter, push_drafts
   triage/            the triage prompt (__init__.py)   <- the product
                        + 6 backends: claude_api, claude_cli, codex_cli, openai_api, gemini_api, gemini_cli

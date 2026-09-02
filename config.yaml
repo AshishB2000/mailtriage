@@ -25,6 +25,8 @@ reading_count: 8
 # gap is skipped forever. Overlap is harmless; a gap is not. A warning prints
 # to stderr if this is too small; it does not stop the run. 15 = the default
 # run_at slots' 14h overnight gap (18:00 to next day's 08:00) + 1h slack.
+# The setup wizard computes this for you from run_at below every time it
+# writes this file -- if you edit run_at by hand, update this by hand too.
 window_hours: 15
 
 # Daily digest times, "HH:MM" 24h, local to `timezone` below. Pick as many as

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from mailtriage.config import Config
 from mailtriage.imap_pull import pw_env_var
+from mailtriage.schedule import max_gap_hours
 from mailtriage.triage import PROVIDERS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -39,6 +40,48 @@ def test_python_side_of_the_mirror_is_pinned():
     # Pin the Python behavior the JS mirrors — including the awkward chars.
     assert pw_env_var("alice@gmail.com") == "MAIL_PW_ALICE_GMAIL_COM"
     assert pw_env_var("a.b+x@work.co") == "MAIL_PW_A_B_X_WORK_CO"
+
+
+# --- the max_gap_hours (window_hours auto-compute) mirror ---------------
+
+# The exact JS expression the wizard's maxGapHours() returns from. If this
+# line changes in docs/index.html, it MUST still be equivalent to
+# mailtriage.schedule.max_gap_hours -- the wizard uses it to auto-compute
+# window_hours from run_at, and a divergent gap calculation would either
+# under-cover the schedule (silently dropped mail) or over-report it.
+JS_GAP_EXPR = (
+    "return Math.max.apply(null, slots.map((s, i) => "
+    "(((slotMinutes(slots[(i + 1) % slots.length]) - slotMinutes(s)) % 1440 + 1440) % 1440) / 60));"
+)
+
+
+def test_wizard_gap_expression_is_the_pinned_mirror():
+    assert JS_GAP_EXPR in WIZARD, (
+        "docs/index.html no longer contains the exact maxGapHours return expression. "
+        "It must stay equivalent to mailtriage.schedule.max_gap_hours, or the wizard's "
+        "auto-computed window_hours can drift from what the engine actually needs."
+    )
+
+
+def test_python_side_of_the_gap_mirror_is_pinned():
+    assert max_gap_hours(["08:00", "18:00"]) == 14
+    assert max_gap_hours(["08:00"]) == 24
+    assert max_gap_hours(["18:00", "08:00"]) == 14
+    assert max_gap_hours(["08:00", "14:00", "20:00"]) == 12
+    assert max_gap_hours(["08:00", "12:30", "18:00"]) == 14
+
+
+# --- forward-compat: carry_over / label (landing on a sibling branch) ---
+
+
+def test_wizard_writes_carry_over_and_label_forward_compat():
+    # config.py on this branch doesn't have these fields yet (a sibling
+    # branch adds them with these exact names/defaults), so
+    # test_every_config_field_appears_in_wizard_and_shipped_yaml above can't
+    # see them. Pin them here so the wizard doesn't regress once that branch
+    # lands.
+    for name in ("carry_over", "label", "run_at", "timezone", "weekly_review", "draft_style", "rules", "accounts"):
+        assert name in WIZARD, f"'{name}' missing from docs/index.html"
 
 
 # --- config.yaml field names --------------------------------------------

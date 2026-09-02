@@ -27,6 +27,9 @@ src/mailtriage/
   imap_pull.py  read-only IMAP fetch; pw_env_var is the secret-name transform;
                 push_drafts APPENDs to \Drafts only
   config.py     config.yaml -> validated Config dataclass
+  schedule.py   "is it time?" -- max_gap_hours, due() -- pure, no I/O
+  rules.py      always_ignore/always_surface/always_action, checked around
+                the model, never inside the prompt
   triage/       package, dict-dispatch pattern   <- the product
                   __init__.py: prompt + schema + pick() + PROVIDERS
                   claude_api.py claude_cli.py codex_cli.py openai_api.py gemini_api.py gemini_cli.py
@@ -46,6 +49,29 @@ workflow log — say what to change and where.
 **config.yaml** is written by the wizard, read by the engine, shipped as the
 committed default. The field names on `config.Config` ARE the contract; unknown
 keys warn, they never fail. `tests/test_config.py` loads the committed file.
+The wizard writes the **full** config every time it fires — no partial
+writes, no merge with what was there — so a field the wizard doesn't yet
+have UI for should still get an explicit default in `buildYaml()`, never be
+left out of the file.
+
+```
+delivery: "email" | "gmail"        interests: str (multiline)
+avoid: str (multiline)             reading_count: int
+window_hours: int                  run_at: list[str] ("HH:MM", wizard
+                                      auto-derives this from run_at — see
+                                      schedule.max_gap_hours)
+timezone: str (IANA)               weekly_review: str ("" or "<day> HH:MM")
+subject_prefix: str                email_to: str        email_from: str
+provider: str                      model: str
+draft_replies: bool                draft_style: {tone, sign_off, language,
+                                      max_sentences}
+rules: {always_ignore, always_surface, always_action}   accounts: {addr: {…}}
+```
+
+A sibling branch adds `carry_over: bool` and `label: str` with those exact
+names — the wizard already writes both (forward-compat) even though
+`Config` on this branch doesn't parse them yet (they show up as a harmless
+"ignoring unknown key" warning until that branch lands).
 
 **Secret names** — used by the wizard (writes), the workflow (exports all via
 `toJSON(secrets)`), and the engine (reads env):
@@ -112,6 +138,34 @@ bill; don't upgrade to Opus without a reason.
 
 ## Landmines (each one cost a real debugging session)
 
+- **The hourly gate exits 3 for "not due", never 1.** `mailtriage --due` is
+  the only thing standing between the hourly cron and a real triage run —
+  `digest.yml` treats exit 0 as "run it" and exit 3 as "skip this hour", and
+  any *other* nonzero exit as a real failure that must fail the job loudly.
+  A "not due" path that returns 1 would make every off-hour run look like a
+  broken workflow.
+- **`--due` must never do I/O.** `schedule.due()` is pure — no network, no
+  IMAP, no file writes beyond `load_config` itself — specifically so the
+  hourly gate can run 24x a day without touching the mailbox or spending an
+  API call on the 22ish hours it's not due.
+- **Rules are deterministic and run around the model, not inside the
+  prompt.** `rules.apply_ignore` runs before triage, `rules.enforce` runs
+  after — see `cli.run()`. Folding VIP rules into the prompt instead would
+  make them a suggestion the model can ignore; asking it to always flag
+  `boss@corp.com` is exactly the kind of instruction a long inbox dump can
+  bury.
+- **`window_hours` is auto-derived in the wizard, not hand-typed.** The
+  wizard computes it from `run_at` (`maxGapHours` in docs/index.html,
+  mirroring `schedule.max_gap_hours` — pinned by
+  `tests/test_contracts.py`) every time it writes the file. Hand-editing
+  `run_at` in a committed `config.yaml` without also updating
+  `window_hours` is still valid — `Config.from_mapping` only warns — but it
+  reopens the missed-mail gap the wizard exists to close.
+- **The wizard writes the full config every time, never a partial diff.**
+  `buildYaml()` emits every `Config` field on every save; there's no
+  "unchanged fields keep their old value" merge. Adding a new setting means
+  adding it to `buildYaml()` with an explicit default, not assuming the
+  shipped file already has it.
 - **`secrets` context is illegal in a step-level `if:`.** GitHub rejects the
   whole workflow at dispatch time ("Unrecognized named-value: 'secrets'").
   Hoist to job-level `env:` and gate on `env.X`. Plain YAML parsing does NOT
