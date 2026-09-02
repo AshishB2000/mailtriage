@@ -16,6 +16,7 @@ backends behind one `call(cfg, system, user, schema) -> dict` contract.
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any
@@ -207,6 +208,26 @@ def select_backend(cfg: Config, environ: Mapping[str, str]) -> tuple[str, CallFn
 
 
 def triage(cfg: Config, emails: list[Email], now: datetime) -> list[Triaged]:
-    _name, call = select_backend(cfg, os.environ)
+    name, call = select_backend(cfg, os.environ)
+    print(f"mailtriage: triaging with {name} ({cfg.model or 'default model'}).", file=sys.stderr)
     reply = call(cfg, build_system(cfg), build_user(emails, now), TRIAGE_SCHEMA)
-    return pick(cfg, emails, reply)
+    kept = pick(cfg, emails, reply)
+
+    # Diagnostics on stderr, like config.py's warnings: "kept none" alone
+    # cannot tell an empty reply from a reply pick() threw away, and that
+    # difference is the whole diagnosis when a run goes quiet. Counts and
+    # shapes only -- Actions logs on a public fork are public, so never the
+    # note text, subjects, or ids.
+    returned = reply.get("items")
+    n_returned = len(returned) if isinstance(returned, list) else 0
+    print(f"mailtriage: model returned {n_returned} item(s); {len(kept)} passed validation.", file=sys.stderr)
+    if n_returned and not kept and isinstance(returned, list) and isinstance(returned[0], dict):
+        first = returned[0]
+        bucket = first.get("bucket")
+        shape = {k: type(v).__name__ for k, v in first.items()}
+        print(
+            f"mailtriage: first rejected item shape={shape} "
+            f"bucket={bucket if bucket in BUCKETS else type(bucket).__name__}",
+            file=sys.stderr,
+        )
+    return kept
