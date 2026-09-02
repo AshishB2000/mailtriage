@@ -785,6 +785,23 @@ function buildYaml(v) {
     "# AI drafts a reply for every needs-action email -- into the digest and",
     "# your Gmail drafts folder; never sends.",
     "draft_replies: true",
+    "",
+    "# Reply tone/sign-off/language/length for AI-drafted replies -- edit by",
+    "# hand any time. See README.md for the full syntax.",
+    "draft_style:",
+    "  tone: friendly",
+    "  sign_off: " + yq(""),
+    "  language: auto",
+    "  max_sentences: 5",
+    "",
+    "# Hard VIP-sender rules, checked deterministically -- see README.md.",
+    "rules:",
+    "  always_ignore: []",
+    "  always_surface: []",
+    "  always_action: []",
+    "",
+    "# Per-account overrides, keyed by account address -- see README.md.",
+    "accounts: {}",
     ""
   ].join("\n");
 }

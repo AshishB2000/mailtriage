@@ -50,6 +50,7 @@ def run(cfg: Config, dry_run: bool = False) -> None:
     # where `anthropic` failed to install, and this is the only path that needs it.
     from mailtriage.delivery import send
     from mailtriage.drafts import generate_drafts
+    from mailtriage.rules import apply_ignore, enforce
     from mailtriage.triage import select_backend, triage
 
     now = datetime.now(timezone.utc)
@@ -61,11 +62,17 @@ def run(cfg: Config, dry_run: bool = False) -> None:
         print(f"mailtriage: account failed, skipping: {w}", file=sys.stderr)
 
     emails = result["messages"]
+    before = len(emails)
+    emails = apply_ignore(cfg, emails)
+    if before > len(emails):
+        print(f"mailtriage: rules.always_ignore dropped {before - len(emails)} message(s).", file=sys.stderr)
+
     if not emails:
         print("mailtriage: nothing recent — sending nothing.", file=sys.stderr)
         return
 
     kept = triage(cfg, emails, now)
+    kept = enforce(cfg, emails, kept)  # rule-forced items must survive even if the model returned none
     if not kept:
         # Delivering "no items today" three times a day is how a reader unsubscribes.
         print("mailtriage: the model kept none of the candidates — sending nothing.", file=sys.stderr)

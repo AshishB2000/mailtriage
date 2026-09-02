@@ -67,3 +67,35 @@ model: ""
 # AI drafts a reply for every needs-action email -- into the digest and your
 # Gmail drafts folder; never sends.
 draft_replies: true
+
+# Reply tone/sign-off/language/length for AI-drafted replies. Any key you
+# omit keeps its default below. "language" is "auto" (match the sender's
+# language) unless set to a specific language name.
+draft_style:
+  tone: friendly # friendly | formal | casual
+  sign_off: "" # e.g. "Best, Alex" -- overrides the generic "Thanks,"
+  language: auto # or a language name, e.g. "French"
+  max_sentences: 5
+
+# Hard rules you set by hand -- checked deterministically, no API call.
+# Entries are a full address ("boss@corp.com") or a domain starting with "@"
+# ("@corp.com", which also matches its subdomains).
+# rules:
+#   always_ignore: ["newsletter@example.com"]  # dropped before the model ever sees them
+#   always_surface: ["@vip-client.com"]        # always worth_reading, bypasses reading_count
+#   always_action: ["boss@corp.com"]           # always needs_action, wins over always_ignore
+rules:
+  always_ignore: []
+  always_surface: []
+  always_action: []
+
+# Per-account overrides, keyed by the account's address (case-insensitive).
+# Each entry may set interests/avoid (added to the global ones above) and/or
+# draft_style (merged over the global draft_style above).
+# accounts:
+#   work@corp.com:
+#     interests: |
+#       Anything from the eng-leads mailing list counts as needing action.
+#     draft_style:
+#       tone: formal
+accounts: {}

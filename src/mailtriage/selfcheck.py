@@ -21,6 +21,7 @@ from mailtriage.drafts import DRAFT_SCHEMA, generate_drafts
 from mailtriage.errors import MailError
 from mailtriage.imap_pull import parse_message, within_window
 from mailtriage.models import Email, Triaged
+from mailtriage.rules import enforce, matches
 from mailtriage.triage import pick, select_backend
 
 
@@ -185,5 +186,29 @@ def self_check() -> None:
 
     no_action: list[Triaged] = [{**_triaged_needs_action(0), "bucket": "worth_reading"}]
     generate_drafts(cfg, _boom, draft_emails, no_action)
+
+    # 9. rules.matches: domain rules match subdomains, never a mere suffix, and
+    # a display-name From header must not defeat the address parse.
+    assert matches("@corp.com", "x@mail.corp.com") is True, "a domain rule must match its subdomains"
+    assert matches("@corp.com", "x@notcorp.com") is False, (
+        "a domain rule must never match by mere string suffix -- @corp.com must not catch notcorp.com"
+    )
+    assert matches("boss@corp.com", '"Boss" <boss@corp.com>') is True, (
+        "matches() must parse the address out of a display-name From header"
+    )
+
+    # 10. rules.enforce precedence: an email matching both always_action and
+    # a model verdict of worth_reading must be MOVED to needs_action, keeping
+    # the model's own note -- not overwritten with the generic rule note.
+    rules_cfg = Config(
+        delivery="email", rules={"always_ignore": [], "always_surface": [], "always_action": ["sender0@example.com"]}
+    )
+    rules_emails = [_email(0)]
+    moved = enforce(
+        rules_cfg, rules_emails, [{**_triaged_needs_action(0), "bucket": "worth_reading", "note": "model's own note"}]
+    )
+    assert len(moved) == 1 and moved[0]["bucket"] == "needs_action" and moved[0]["note"] == "model's own note", (
+        "always_action must move a worth_reading item to needs_action while keeping the model's note"
+    )
 
     print("self-check: ok")

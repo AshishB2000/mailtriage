@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Mapping
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Literal, get_args
 
@@ -38,6 +38,15 @@ Provider = Literal[
 ]
 PROVIDERS: tuple[str, ...] = get_args(Provider)
 
+DraftTone = Literal["friendly", "formal", "casual"]
+DRAFT_TONES: tuple[str, ...] = get_args(DraftTone)
+
+# Shared by the global draft_style default and every unset sub-key of a
+# per-account draft_style override.
+DRAFT_STYLE_DEFAULTS: dict[str, Any] = {"tone": "friendly", "sign_off": "", "language": "auto", "max_sentences": 5}
+
+RULE_KEYS: tuple[str, ...] = ("always_ignore", "always_surface", "always_action")
+
 
 @dataclass(slots=True)
 class Config:
@@ -60,6 +69,15 @@ class Config:
     # AI drafts a reply for every needs_action email -- into the digest and
     # your Gmail drafts folder; never sends.
     draft_replies: bool = True
+    # tone/sign_off/language/max_sentences for AI-drafted replies. Partial
+    # mappings merge over DRAFT_STYLE_DEFAULTS.
+    draft_style: dict[str, Any] = field(default_factory=lambda: dict(DRAFT_STYLE_DEFAULTS))
+    # Hard VIP-sender rules, checked deterministically -- see rules.py.
+    rules: dict[str, list[str]] = field(default_factory=lambda: {k: [] for k in RULE_KEYS})
+    # Per-account overrides keyed by lowercased address: interests/avoid
+    # (added to the global ones) and/or draft_style (merged over the global
+    # draft_style). See rules.py / triage/__init__.py / drafts.py.
+    accounts: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any], origin: str = "config.yaml") -> Config:
@@ -96,7 +114,74 @@ class Config:
         if cfg.provider not in PROVIDERS:
             raise MailError(f"'provider' in {origin} must be one of {PROVIDERS} (got {cfg.provider!r}).")
 
+        cfg.draft_style = _validate_draft_style(cfg.draft_style, DRAFT_STYLE_DEFAULTS, origin, "draft_style")
+        cfg.rules = _validate_rules(cfg.rules, origin)
+        cfg.accounts = _validate_accounts(cfg.accounts, cfg.draft_style, origin)
+
         return cfg
+
+
+def _validate_draft_style(data: Any, base: dict[str, Any], origin: str, where: str) -> dict[str, Any]:
+    """Merge a (possibly partial) draft_style mapping over `base` and validate
+    it. `base` is DRAFT_STYLE_DEFAULTS for the global setting, or the already-
+    validated global draft_style for a per-account override."""
+    if not isinstance(data, dict):
+        raise MailError(f"'{where}' in {origin} must be a mapping (got {type(data).__name__}).")
+    known = {"tone", "sign_off", "language", "max_sentences"}
+    for key in sorted(set(data) - known):
+        print(f"mailtriage: ignoring unknown key {key!r} in {where} in {origin}", file=sys.stderr)
+
+    style = {**base, **{k: v for k, v in data.items() if k in known}}
+
+    if style["tone"] not in DRAFT_TONES:
+        raise MailError(f"'{where}.tone' in {origin} must be one of {DRAFT_TONES} (got {style['tone']!r}).")
+    style["sign_off"] = str(style["sign_off"])
+    style["language"] = str(style["language"])
+    max_sentences = style["max_sentences"]
+    if not isinstance(max_sentences, int) or isinstance(max_sentences, bool) or max_sentences < 1:
+        raise MailError(f"'{where}.max_sentences' in {origin} must be a positive whole number (got {max_sentences!r}).")
+    return style
+
+
+def _validate_rules(data: Any, origin: str) -> dict[str, list[str]]:
+    if not isinstance(data, dict):
+        raise MailError(f"'rules' in {origin} must be a mapping (got {type(data).__name__}).")
+    for key in sorted(set(data) - set(RULE_KEYS)):
+        print(f"mailtriage: ignoring unknown key {key!r} in rules in {origin}", file=sys.stderr)
+
+    out: dict[str, list[str]] = {k: [] for k in RULE_KEYS}
+    for k in RULE_KEYS:
+        if k not in data:
+            continue
+        entries = data[k]
+        if not isinstance(entries, list) or not all(isinstance(e, str) and e for e in entries):
+            raise MailError(f"'rules.{k}' in {origin} must be a list of non-empty strings (got {entries!r}).")
+        out[k] = entries
+    return out
+
+
+def _validate_accounts(data: Any, global_style: dict[str, Any], origin: str) -> dict[str, dict[str, Any]]:
+    if not isinstance(data, dict):
+        raise MailError(f"'accounts' in {origin} must be a mapping (got {type(data).__name__}).")
+    known = {"interests", "avoid", "draft_style"}
+    out: dict[str, dict[str, Any]] = {}
+    for addr, val in data.items():
+        if not isinstance(val, dict):
+            raise MailError(f"'accounts.{addr}' in {origin} must be a mapping (got {type(val).__name__}).")
+        for key in sorted(set(val) - known):
+            print(f"mailtriage: ignoring unknown key {key!r} in accounts.{addr} in {origin}", file=sys.stderr)
+
+        entry: dict[str, Any] = {}
+        if "interests" in val:
+            entry["interests"] = str(val["interests"])
+        if "avoid" in val:
+            entry["avoid"] = str(val["avoid"])
+        if "draft_style" in val:
+            entry["draft_style"] = _validate_draft_style(
+                val["draft_style"], global_style, origin, f"accounts.{addr}.draft_style"
+            )
+        out[str(addr).lower()] = entry
+    return out
 
 
 def load_config(path: str | Path, environ: Mapping[str, str] | None = None) -> Config:

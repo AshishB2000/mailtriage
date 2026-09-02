@@ -143,3 +143,35 @@ def test_run_pushes_drafts_and_prints_push_warnings_then_still_delivers(monkeypa
     assert push_calls[0][0]["draft"] == "a draft"
     assert len(sent) == 1
     assert "draft push failed, skipping" in capsys.readouterr().err
+
+
+def test_rule_forced_item_produces_a_digest_even_when_model_kept_nothing(monkeypatch: Any, capsys: Any) -> None:
+    """always_action must survive the 'model kept none' early return -- see
+    rules.enforce() and its wiring in cli.run()."""
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    boss_email = {**_email(0), "from": "boss@corp.com"}
+    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours: {"messages": [boss_email], "warnings": []})
+    monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [])  # model kept nothing
+    monkeypatch.setattr(
+        triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
+    )
+
+    sent: list[Any] = []
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: sent.append(kept))
+
+    cfg = Config(
+        delivery="email",
+        email_to="me@example.com",
+        email_from="bot@example.com",
+        draft_replies=False,
+        rules={"always_ignore": [], "always_surface": [], "always_action": ["boss@corp.com"]},
+    )
+    run(cfg, dry_run=False)
+
+    assert len(sent) == 1
+    assert sent[0][0]["bucket"] == "needs_action"
+    assert sent[0][0]["note"] == "rule: always action from boss@corp.com"
+    assert "the model kept none" not in capsys.readouterr().err

@@ -10,9 +10,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from mailtriage.config import Config
+from mailtriage.config import DRAFT_STYLE_DEFAULTS, Config
 from mailtriage.models import Email, Triaged
 from mailtriage.triage import CallFn
+
+# One line of guidance per draft_style tone -- keyed to Config.DRAFT_TONES.
+TONE_GUIDANCE: dict[str, str] = {
+    "friendly": "Tone: friendly and warm, like writing to a colleague you like.",
+    "formal": "Tone: formal and businesslike -- no contractions, no casual asides.",
+    "casual": "Tone: casual and easygoing -- contractions are fine, keep it conversational.",
+}
 
 DRAFT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -42,8 +49,18 @@ DRAFT_SCHEMA: dict[str, Any] = {
 }
 
 
+def _style_lines(style: dict[str, Any]) -> list[str]:
+    lines = [TONE_GUIDANCE[style["tone"]]]
+    if style["sign_off"]:
+        lines.append(f"Sign off as: {style['sign_off']}")
+    if style["language"] != "auto":
+        lines.append(f"Write in {style['language']}.")
+    lines.append(f"At most {style['max_sentences']} sentences unless the email demands more.")
+    return lines
+
+
 def build_draft_system(cfg: Config) -> str:
-    return f"""You are drafting reply emails on behalf of one person, for the messages below that need a reply from them.
+    base = f"""You are drafting reply emails on behalf of one person, for the messages below that need a reply from them.
 
 <about-the-reader>
 {cfg.interests}
@@ -57,6 +74,28 @@ RULES
 - No signature block beyond a simple sign-off -- omit the reader's first name, end with "Thanks," (or the language-appropriate equivalent) on its own line.
 - Reply only to messages by their bracketed integer id, copied exactly. Never invent an id.
 - You may return fewer items than given: skip any message where a reply obviously isn't the right action (e.g. "pay this bill") by omitting it."""
+
+    parts = [base]
+
+    # Only append a STYLE section when the reader actually changed something --
+    # a fork on default settings must get byte-identical prompts to before
+    # draft_style existed.
+    if cfg.draft_style != DRAFT_STYLE_DEFAULTS:
+        parts.append("STYLE\n" + "\n".join(f"- {ln}" for ln in _style_lines(cfg.draft_style)))
+
+    overrides = {addr: acc["draft_style"] for addr, acc in cfg.accounts.items() if "draft_style" in acc}
+    if overrides:
+        blocks = []
+        for addr, style in overrides.items():
+            body = "\n".join(f"- {ln}" for ln in _style_lines(style))
+            blocks.append(f'<account addr="{addr}">\n{body}\n</account>')
+        parts.append(
+            "PER-ACCOUNT STYLE\n"
+            "Messages carry their account address. When a message's account appears below, use its style instead "
+            "of the global style above.\n\n" + "\n\n".join(blocks)
+        )
+
+    return "\n\n".join(parts)
 
 
 def build_draft_user(emails: list[Email], triaged_needs_action: list[Triaged]) -> str:

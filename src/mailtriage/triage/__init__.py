@@ -79,7 +79,7 @@ PROVIDERS: dict[str, tuple[CallFn, str]] = {
 
 
 def build_system(cfg: Config) -> str:
-    return f"""You are triaging one person's email inbox. Below are the messages that arrived recently. Sort them into buckets, or leave them out entirely.
+    base = f"""You are triaging one person's email inbox. Below are the messages that arrived recently. Sort them into buckets, or leave them out entirely.
 
 <interests>
 {cfg.interests}
@@ -101,6 +101,24 @@ HOW MANY TO RETURN
 WRITING
 - note: one line. For needs_action, name the concrete action the reader must take. For worth_reading, say why it's worth a glance. No hedging, no "this could mean big things".
 - Copy each message's bracketed integer id EXACTLY as given. Never invent an id, and never address a message by anything other than its bracketed integer."""
+
+    blocks = []
+    for addr, acc in cfg.accounts.items():
+        inner = []
+        if acc.get("interests"):
+            inner.append(f"<interests>\n{acc['interests']}\n</interests>")
+        if acc.get("avoid"):
+            inner.append(f"<avoid>\n{acc['avoid']}\n</avoid>")
+        if inner:
+            blocks.append(f'<account addr="{addr}">\n' + "\n".join(inner) + "\n</account>")
+    if not blocks:
+        return base
+
+    return (
+        base + "\n\nPER-ACCOUNT CONTEXT\n"
+        "Messages carry their account address. When a message's account appears below, its interests/avoid apply IN ADDITION to the global ones above.\n\n"
+        + "\n\n".join(blocks)
+    )
 
 
 def build_user(emails: list[Email], now: datetime) -> str:
