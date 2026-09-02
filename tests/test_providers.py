@@ -9,7 +9,16 @@ import pytest
 from mailtriage import config as config_module
 from mailtriage.config import Config
 from mailtriage.errors import MailError
-from mailtriage.triage import PROVIDERS, claude_api, claude_cli, codex_cli, gemini_api, openai_api, select_backend
+from mailtriage.triage import (
+    PROVIDERS,
+    claude_api,
+    claude_cli,
+    codex_cli,
+    gemini_api,
+    gemini_cli,
+    openai_api,
+    select_backend,
+)
 
 CFG_AUTO = Config(delivery="email")
 
@@ -29,6 +38,7 @@ def test_config_provider_choices_mirror_triage_providers():
         ("CODEX_AUTH_JSON", "chatgpt-subscription", codex_cli.call),
         ("OPENAI_API_KEY", "openai-api", openai_api.call),
         ("GEMINI_API_KEY", "gemini-api", gemini_api.call),
+        ("GEMINI_OAUTH_JSON", "google-subscription", gemini_cli.call),
     ],
 )
 def test_auto_mode_each_secret_alone_selects_its_backend(secret, expected_name, expected_call):
@@ -41,6 +51,7 @@ def test_auto_mode_precedence_when_multiple_secrets_set():
     # PROVIDERS dict order is the precedence order -- this is today's
     # CLAUDE_CODE_OAUTH_TOKEN-over-ANTHROPIC_API_KEY behavior, extended.
     environ = {
+        "GEMINI_OAUTH_JSON": "j",
         "GEMINI_API_KEY": "g",
         "OPENAI_API_KEY": "o",
         "CODEX_AUTH_JSON": "c",
@@ -57,6 +68,10 @@ def test_auto_mode_precedence_when_multiple_secrets_set():
         CFG_AUTO, {k: v for k, v in environ.items() if k not in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")}
     )
     assert name == "chatgpt-subscription"
+
+    name, _call = select_backend(CFG_AUTO, {"GEMINI_OAUTH_JSON": "j"})
+    assert name == "google-subscription"
+    assert _call is gemini_cli.call
 
 
 def test_explicit_provider_overrides_auto_order():

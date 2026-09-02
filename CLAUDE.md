@@ -29,7 +29,7 @@ src/mailtriage/
   config.py     config.yaml -> validated Config dataclass
   triage/       package, dict-dispatch pattern   <- the product
                   __init__.py: prompt + schema + pick() + PROVIDERS
-                  claude_api.py claude_cli.py codex_cli.py openai_api.py gemini_api.py
+                  claude_api.py claude_cli.py codex_cli.py openai_api.py gemini_api.py gemini_cli.py
   drafts.py     reply-drafting prompt + hostile-input-safe id mapping
   delivery/     dispatch, http.py, mail.py (Resend), gmail.py (own-Gmail SMTP)
   selfcheck.py  pre-flight assertions, run before any API spend
@@ -52,7 +52,8 @@ keys warn, they never fail. `tests/test_config.py` loads the committed file.
 
 ```
 one of: CLAUDE_CODE_OAUTH_TOKEN  ANTHROPIC_API_KEY  CODEX_AUTH_JSON
-        OPENAI_API_KEY           GEMINI_API_KEY        (exactly one AI secret)
+        OPENAI_API_KEY           GEMINI_API_KEY      GEMINI_OAUTH_JSON
+                                                       (exactly one AI secret)
 RESEND_API_KEY      MAIL_ACCOUNTS      MAIL_PW_<SLUG> (one per address)
 ```
 
@@ -94,9 +95,10 @@ bill; don't upgrade to Opus without a reason.
 - **docs/sodium.js is vendored, not CDN** — the wizard must work from `file://`.
 - **Provider auto-order is user-visible behavior, not an implementation
   detail.** `triage.PROVIDERS`' order — `claude-subscription` →
-  `claude-api` → `chatgpt-subscription` → `openai-api` → `gemini-api` — is
-  the precedence `"auto"` walks. Reordering it silently moves which secret
-  (and which bill) an existing multi-secret fork lands on next run.
+  `claude-api` → `chatgpt-subscription` → `openai-api` → `gemini-api` →
+  `google-subscription` — is the precedence `"auto"` walks. Reordering it
+  silently moves which secret (and which bill) an existing multi-secret fork
+  lands on next run.
 - **Gemini's `responseSchema` rejects `additionalProperties`.** `gemini_api.py`
   strips that keyword recursively before sending the schema. Don't "fix" the
   stripping away — Gemini 400s on the unmodified schema.

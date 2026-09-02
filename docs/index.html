@@ -470,6 +470,10 @@ footer a{color:var(--muted)}
             <input type="radio" name="provider" value="gemini-api">
             <span><span class="pname">Gemini API key — free tier</span><span class="psec">GEMINI_API_KEY</span></span>
           </label>
+          <label class="prov">
+            <input type="radio" name="provider" value="google-subscription">
+            <span><span class="pname">Google subscription (free — Gemini CLI)</span><span class="psec">GEMINI_OAUTH_JSON</span></span>
+          </label>
         </div>
       </div>
 
@@ -517,6 +521,13 @@ footer a{color:var(--muted)}
           <input type="password" id="gemini" class="mono" placeholder="AIzaSy••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
           <button type="button" data-reveal="gemini">Show</button>
         </div>
+        <div class="msg"></div>
+      </div>
+
+      <div class="f" id="f-geminiOauth" style="display:none">
+        <label for="geminiOauth">Contents of ~/.gemini/oauth_creds.json</label>
+        <p class="hint">Run <code>gemini</code> locally, sign in with your Google account, then paste the <strong>full contents</strong> of the <code>oauth_creds.json</code> file it writes. <strong>Free: 60 requests/min, 1,000/day.</strong> Re-paste only if you revoke access or don't use it for 6 months — Google expires refresh tokens that sit idle that long.</p>
+        <textarea id="geminiOauth" class="mono" rows="4" placeholder='{"access_token": "…", "refresh_token": "…", …}' autocomplete="off" spellcheck="false"></textarea>
         <div class="msg"></div>
       </div>
 
@@ -951,14 +962,16 @@ const PROV_FIELD = {
   "claude-api": "anthropic",
   "chatgpt-subscription": "codexAuth",
   "openai-api": "openai",
-  "gemini-api": "gemini"
+  "gemini-api": "gemini",
+  "google-subscription": "geminiOauth"
 };
 const PROV_SECRET = {
   "claude-subscription": "CLAUDE_CODE_OAUTH_TOKEN",
   "claude-api": "ANTHROPIC_API_KEY",
   "chatgpt-subscription": "CODEX_AUTH_JSON",
   "openai-api": "OPENAI_API_KEY",
-  "gemini-api": "GEMINI_API_KEY"
+  "gemini-api": "GEMINI_API_KEY",
+  "google-subscription": "GEMINI_OAUTH_JSON"
 };
 const selectedProvider = () => $('input[name=provider]:checked').value;
 function updateAuthFields() {
@@ -1117,10 +1130,11 @@ $("#go3").addEventListener("click", () => {
   S.secrets = {};
   const prov = selectedProvider();
   const provRaw = $("#" + PROV_FIELD[prov]).value;
-  // Codex's secret is a JSON file's contents -- trim only. Every other
-  // credential is a single pasted token/key; terminal line-wrap can insert
-  // spaces mid-paste, so strip ALL whitespace, not just the ends.
-  S.secrets[PROV_SECRET[prov]] = prov === "chatgpt-subscription" ? provRaw.trim() : provRaw.replace(/\s+/g, "");
+  // Codex's and Gemini CLI's secrets are JSON file contents -- trim only.
+  // Every other credential is a single pasted token/key; terminal line-wrap
+  // can insert spaces mid-paste, so strip ALL whitespace, not just the ends.
+  const isJsonSecret = prov === "chatgpt-subscription" || prov === "google-subscription";
+  S.secrets[PROV_SECRET[prov]] = isJsonSecret ? provRaw.trim() : provRaw.replace(/\s+/g, "");
   S.secrets.RESEND_API_KEY = $("#resend").value.trim();
   // Addresses are sensitive on a public fork -- secrets, not config.yaml.
   S.secrets.EMAIL_TO = v.email_to;

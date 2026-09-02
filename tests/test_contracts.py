@@ -77,6 +77,7 @@ def test_secret_names_appear_in_wizard_and_readme():
         "CODEX_AUTH_JSON",
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
+        "GEMINI_OAUTH_JSON",
         "MAIL_ACCOUNTS",
         "RESEND_API_KEY",
     ):
@@ -84,7 +85,7 @@ def test_secret_names_appear_in_wizard_and_readme():
         assert name in readme, f"secret '{name}' missing from the README setup docs"
 
 
-def test_all_five_engine_providers_appear_in_wizard():
+def test_all_engine_providers_appear_in_wizard():
     # The provider picker writes one of these literal strings as `provider:`
     # in config.yaml. Imported from the engine so a rename on either side
     # fails this test instead of silently forking the two.

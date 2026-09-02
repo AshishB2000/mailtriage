@@ -7,7 +7,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat" /></a>
   <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat" />
-  <img alt="providers" src="https://img.shields.io/badge/AI%20providers-5-informational?style=flat" />
+  <img alt="providers" src="https://img.shields.io/badge/AI%20providers-6-informational?style=flat" />
   <img alt="cost" src="https://img.shields.io/badge/cost-%240%20possible-success?style=flat" />
 </p>
 
@@ -22,7 +22,8 @@ else is noise it never shows you: newsletters, receipts, promotions,
 automated notifications.
 
 It runs on **your** GitHub Actions, with **your** AI provider credentials —
-Claude, ChatGPT, OpenAI, or Gemini, whichever you already pay for — reading
+Claude, ChatGPT, OpenAI, or Gemini, whichever you already pay for (or a free
+Google account), reading
 **your** Gmail over read-only IMAP. Your laptop can be off. There's no
 server, no database, no accounts, and nothing routes through anyone else —
 you fork this repo and it becomes entirely yours.
@@ -42,6 +43,7 @@ one instead.
 |---|---|---|
 | `claude-subscription` | `CLAUDE_CODE_OAUTH_TOKEN` | Requires a Claude Pro/Max subscription. Run `claude setup-token` locally once and paste the printed token as the secret value. Lasts about a year; regenerate the same way when it expires. |
 | `chatgpt-subscription` | `CODEX_AUTH_JSON` | Requires a ChatGPT Plus/Pro subscription. Run `codex login` locally, then paste the **full contents** of `~/.codex/auth.json`. **Honest caveat:** Codex rotates its tokens during use, and a stateless CI runner can't persist that rotation back to the secret — expect to re-run `codex login` and re-paste occasionally when a run fails with an auth error. |
+| `google-subscription` | `GEMINI_OAUTH_JSON` | **Free** — no subscription needed, just a personal Google account: 60 requests/min, 1,000/day. Run `gemini` locally, sign in with Google, then paste the **full contents** of `~/.gemini/oauth_creds.json`. **Honest caveat:** Google's refresh token dies if unused for 6 months, or if you revoke access — re-run `gemini` locally, sign in again, and re-paste when a run fails with an auth error. |
 
 **API keys — pay-per-use, billed by the provider directly:**
 
@@ -51,8 +53,8 @@ one instead.
 | `openai-api` | `OPENAI_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys). |
 | `gemini-api` | `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — Gemini's free tier (roughly 10 requests/minute) comfortably covers two runs a day, so this option can run mailtriage at **$0**. |
 
-Set exactly one of the five secrets above. If none is set, the run fails fast
-with `No AI provider configured`, listing all five options and their secret
+Set exactly one of the six secrets above. If none is set, the run fails fast
+with `No AI provider configured`, listing all six options and their secret
 names — see [Troubleshooting](#troubleshooting).
 
 ---
@@ -314,7 +316,7 @@ failed.
 
 | Log message | What it means | Fix |
 |---|---|---|
-| `No AI provider configured` | None of the five AI-auth secrets is set | Set one — see the provider matrix above |
+| `No AI provider configured` | None of the six AI-auth secrets is set | Set one — see the provider matrix above |
 | `ANTHROPIC_API_KEY is not set.` | The secret is missing | Add it under Settings → Secrets and variables → Actions |
 | `Anthropic rejected ANTHROPIC_API_KEY.` | The secret exists but the key is wrong, revoked, or has a stray space | Generate a fresh key and update the secret |
 | `` `claude` CLI exited with status ... `` (subscription mode) | Usually an expired or invalid `CLAUDE_CODE_OAUTH_TOKEN` | Regenerate the token locally with `claude setup-token` and update the secret |
@@ -322,6 +324,7 @@ failed.
 | `OpenAI rejected OPENAI_API_KEY.` | The secret exists but the key is wrong, revoked, or has a stray space | Generate a fresh key at platform.openai.com/api-keys and update the secret |
 | `Google rejected GEMINI_API_KEY.` | The secret exists but the key is wrong, revoked, or has a stray space | Generate a fresh key at aistudio.google.com/apikey and update the secret |
 | `No Codex auth configured` / `codex CLI ... tokens in CODEX_AUTH_JSON have likely expired or rotated` | `CODEX_AUTH_JSON` is missing, or its tokens rotated since it was pasted in | Run `codex login` locally and re-paste the new `~/.codex/auth.json` into the secret, or switch to `OPENAI_API_KEY` |
+| `` `gemini` CLI exited with status ... `` (authentication error) | `GEMINI_OAUTH_JSON` is missing, or the refresh token expired (unused 6 months) or was revoked | Run `gemini` locally, sign in again, and re-paste the new `~/.gemini/oauth_creds.json` into the secret |
 | `MAIL_ACCOUNTS is empty` | The secret isn't set, or is blank | Set it to a comma-separated list of Gmail addresses |
 | `<addr>: no app password found in $MAIL_PW_...` | That account's `MAIL_PW_*` secret is missing or misnamed | Re-check the name against the transform in step 3 above; this account is skipped, the run continues for the rest |
 | `RESEND_API_KEY is not set.` | The secret is missing | Add it from resend.com/api-keys |
@@ -391,7 +394,7 @@ src/mailtriage/
   config.py         config.yaml -> validated Config dataclass
   imap_pull.py       account/password lookup, IMAP fetch, time-window filter, push_drafts
   triage/            the triage prompt (__init__.py)   <- the product
-                       + 5 backends: claude_api, claude_cli, codex_cli, openai_api, gemini_api
+                       + 6 backends: claude_api, claude_cli, codex_cli, openai_api, gemini_api, gemini_cli
   drafts.py          the reply-drafting prompt + hostile-input-safe id mapping
   delivery/          __init__ dispatch, http.py, mail.py (Resend), gmail.py (your own Gmail via SMTP)
   selfcheck.py       the pre-flight assertions

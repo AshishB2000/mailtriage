@@ -35,6 +35,7 @@ jobs:
     env:
       HAS_SUBSCRIPTION: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
       HAS_CODEX: ${{ secrets.CODEX_AUTH_JSON != '' }}
+      HAS_GEMINI_CLI: ${{ secrets.GEMINI_OAUTH_JSON != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -52,12 +53,12 @@ jobs:
       - name: Self-check
         run: mailtriage --self-check
 
-      # AI auth: config.yaml's `provider` (default "auto") picks one of five
+      # AI auth: config.yaml's `provider` (default "auto") picks one of six
       # backends by which secret is set -- see README.md for the full matrix.
-      # The two subscription CLIs (claude, codex) need Node on the runner;
-      # installed once below, only when one of those secrets is set.
+      # The three subscription CLIs (claude, codex, gemini) need Node on the
+      # runner; installed once below, only when one of those secrets is set.
       - name: Install Node (subscription CLIs)
-        if: env.HAS_SUBSCRIPTION == 'true' || env.HAS_CODEX == 'true'
+        if: env.HAS_SUBSCRIPTION == 'true' || env.HAS_CODEX == 'true' || env.HAS_GEMINI_CLI == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -67,8 +68,11 @@ jobs:
       - name: Install codex
         if: env.HAS_CODEX == 'true'
         run: npm install -g @openai/codex
+      - name: Install gemini
+        if: env.HAS_GEMINI_CLI == 'true'
+        run: npm install -g @google/gemini-cli
 
-      # Secrets a forker sets: ONE of the five AI-auth secrets (see above),
+      # Secrets a forker sets: ONE of the six AI-auth secrets (see above),
       # plus RESEND_API_KEY, MAIL_ACCOUNTS, and one MAIL_PW_<SLUG> per Gmail
       # address (imap_pull.py derives the slug from the address). The
       # MAIL_PW_* names are per-account and per-fork, so a static YAML step

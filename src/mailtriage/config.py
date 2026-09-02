@@ -27,7 +27,15 @@ DELIVERIES: tuple[str, ...] = get_args(Delivery)
 # mailtriage.triage.PROVIDERS -- config.py must not import triage -- so
 # tests/test_providers.py pins this tuple against triage.PROVIDERS' keys
 # (plus "auto") instead. Update both together.
-Provider = Literal["auto", "claude-subscription", "claude-api", "chatgpt-subscription", "openai-api", "gemini-api"]
+Provider = Literal[
+    "auto",
+    "claude-subscription",
+    "claude-api",
+    "chatgpt-subscription",
+    "openai-api",
+    "gemini-api",
+    "google-subscription",
+]
 PROVIDERS: tuple[str, ...] = get_args(Provider)
 
 
