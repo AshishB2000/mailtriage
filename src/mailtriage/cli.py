@@ -186,6 +186,14 @@ def run(cfg: Config, dry_run: bool = False) -> None:
         print(f"mailtriage: account failed, skipping: {w}", file=sys.stderr)
 
     emails = result["messages"]
+    # Counts only -- never subjects or senders. Actions logs on a public fork
+    # are public; this line is what lets someone debug "kept none" without
+    # leaking what was in the inbox.
+    n_accounts = len({e["account"] for e in emails})
+    print(
+        f"mailtriage: {len(emails)} candidate(s) in the last {cfg.window_hours}h across {n_accounts} account(s).",
+        file=sys.stderr,
+    )
     before = len(emails)
     emails = apply_ignore(cfg, emails)
     if before > len(emails):
