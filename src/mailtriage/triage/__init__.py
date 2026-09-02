@@ -9,7 +9,7 @@ in this package. selfcheck.py imports `pick` (and this module imports every
 backend module at module scope) and must work with `anthropic` uninstalled —
 so that import lives inside `claude_api.call` only.
 
-This package mirrors delivery/'s dict-dispatch pattern: five interchangeable
+This package mirrors delivery/'s dict-dispatch pattern: six interchangeable
 backends behind one `call(cfg, system, user, schema) -> dict` contract.
 """
 
@@ -23,14 +23,14 @@ from typing import Any
 from mailtriage.config import Config
 from mailtriage.errors import MailError
 from mailtriage.models import Email, Triaged
-from mailtriage.triage import claude_api, claude_cli, codex_cli, gemini_api, openai_api
+from mailtriage.triage import claude_api, claude_cli, codex_cli, gemini_api, gemini_cli, openai_api
 
 BUCKETS = ("needs_action", "worth_reading")
 
 # Same shape every backend must fill in. Claude gets it wrapped as a forced
 # tool's input_schema; OpenAI and Gemini get it as a response schema; the two
-# CLI backends get it as --output-schema/--json-schema. One definition, five
-# transports.
+# CLI backends get it as --output-schema/--json-schema/prompt-appended. One
+# definition, six transports.
 TRIAGE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -74,11 +74,12 @@ PROVIDERS: dict[str, tuple[CallFn, str]] = {
     "chatgpt-subscription": (codex_cli.call, "CODEX_AUTH_JSON"),
     "openai-api": (openai_api.call, "OPENAI_API_KEY"),
     "gemini-api": (gemini_api.call, "GEMINI_API_KEY"),
+    "google-subscription": (gemini_cli.call, "GEMINI_OAUTH_JSON"),
 }
 
 
 def build_system(cfg: Config) -> str:
-    return f"""You are triaging one person's email inbox. Below are the messages that arrived recently. Sort them into buckets, or leave them out entirely.
+    base = f"""You are triaging one person's email inbox. Below are the messages that arrived recently. Sort them into buckets, or leave them out entirely.
 
 <interests>
 {cfg.interests}
@@ -100,6 +101,24 @@ HOW MANY TO RETURN
 WRITING
 - note: one line. For needs_action, name the concrete action the reader must take. For worth_reading, say why it's worth a glance. No hedging, no "this could mean big things".
 - Copy each message's bracketed integer id EXACTLY as given. Never invent an id, and never address a message by anything other than its bracketed integer."""
+
+    blocks = []
+    for addr, acc in cfg.accounts.items():
+        inner = []
+        if acc.get("interests"):
+            inner.append(f"<interests>\n{acc['interests']}\n</interests>")
+        if acc.get("avoid"):
+            inner.append(f"<avoid>\n{acc['avoid']}\n</avoid>")
+        if inner:
+            blocks.append(f'<account addr="{addr}">\n' + "\n".join(inner) + "\n</account>")
+    if not blocks:
+        return base
+
+    return (
+        base + "\n\nPER-ACCOUNT CONTEXT\n"
+        "Messages carry their account address. When a message's account appears below, its interests/avoid apply IN ADDITION to the global ones above.\n\n"
+        + "\n\n".join(blocks)
+    )
 
 
 def build_user(emails: list[Email], now: datetime) -> str:
@@ -129,7 +148,7 @@ def pick(cfg: Config, emails: list[Email], reply: dict[str, Any]) -> list[Triage
 
     Split out from the backend calls so it can be tested without a network
     round trip — this is where every hostile-model case is handled, no
-    matter which of the five backends produced the reply.
+    matter which of the six backends produced the reply.
     """
     needs_action: list[Triaged] = []
     worth_reading: list[Triaged] = []

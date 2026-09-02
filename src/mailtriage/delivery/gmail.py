@@ -18,7 +18,11 @@ from mailtriage.imap_pull import accounts_from_env, pw_env_var
 from mailtriage.models import Triaged
 
 
-def send(cfg: Config, triaged: list[Triaged]) -> None:
+def send_html(cfg: Config, subject: str, html_body: str) -> None:
+    """Send a prebuilt subject+HTML through the user's own Gmail SMTP.
+    Shared transport for both the normal digest (`send`, which builds the
+    html itself) and the weekly review (delivery.send_html -> here), so the
+    account-resolution/auth/SMTP logic lives in exactly one place."""
     to, sender = cfg.email_to.strip(), cfg.email_from.strip()
     if not sender:
         try:
@@ -39,16 +43,12 @@ def send(cfg: Config, triaged: list[Triaged]) -> None:
             f"If {sender} is one of your MAIL_ACCOUNTS, this is the same secret used to read that inbox."
         )
 
-    needs_action = [t for t in triaged if t["bucket"] == "needs_action"]
-    worth_reading = [t for t in triaged if t["bucket"] == "worth_reading"]
-    a, r = len(needs_action), len(worth_reading)
-
     msg = EmailMessage()
-    msg["Subject"] = f"{cfg.subject_prefix} · {a} to act · {r} to read"
+    msg["Subject"] = subject
     msg["From"] = sender
     msg["To"] = to
     msg.set_content("Your mail client does not render HTML. See the HTML version.")
-    msg.add_alternative(email_html(cfg, triaged), subtype="html")
+    msg.add_alternative(html_body, subtype="html")
 
     try:
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as s:
@@ -62,3 +62,10 @@ def send(cfg: Config, triaged: list[Triaged]) -> None:
         ) from e
     except (smtplib.SMTPException, OSError) as e:
         raise MailError(f"could not send via Gmail SMTP ({type(e).__name__}: {e}). Re-run the workflow.") from e
+
+
+def send(cfg: Config, triaged: list[Triaged]) -> None:
+    needs_action = [t for t in triaged if t["bucket"] == "needs_action"]
+    worth_reading = [t for t in triaged if t["bucket"] == "worth_reading"]
+    a, r = len(needs_action), len(worth_reading)
+    send_html(cfg, f"{cfg.subject_prefix} · {a} to act · {r} to read", email_html(cfg, triaged))

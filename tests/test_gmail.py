@@ -25,7 +25,7 @@ def _item(bucket: str, subject: str = "hi", **overrides: object) -> Triaged:
         "sender": "Bob <bob@example.com>",
         "subject": subject,
         "link": "https://mail.example.com/msg/1",
-        "date": "2026-08-28T00:00:00Z",
+        "date": "2026-08-28T00:00:00+00:00",
         "unread": False,
         "idx": 0,
         "draft": "",

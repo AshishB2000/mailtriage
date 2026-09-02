@@ -21,9 +21,30 @@ avoid: |
 reading_count: 8
 
 # How far back to look, in hours. Must be >= the largest gap between two
-# consecutive runs in .github/workflows/digest.yml, or mail published inside
-# the gap is skipped forever. Overlap is harmless; a gap is not.
-window_hours: 13
+# consecutive run_at slots below (+1h slack), or mail published inside the
+# gap is skipped forever. Overlap is harmless; a gap is not. A warning prints
+# to stderr if this is too small; it does not stop the run. 15 = the default
+# run_at slots' 14h overnight gap (18:00 to next day's 08:00) + 1h slack.
+# The setup wizard computes this for you from run_at below every time it
+# writes this file -- if you edit run_at by hand, update this by hand too.
+window_hours: 15
+
+# Daily digest times, "HH:MM" 24h, local to `timezone` below. Pick as many as
+# you like. .github/workflows/digest.yml runs hourly and only actually
+# triages during the hour after one of these -- that's what lets everyone
+# have their own schedule without editing the workflow file (which would
+# need the wizard to have write access it doesn't ask for).
+run_at: ["08:00", "18:00"]
+
+# IANA time zone name (e.g. "America/New_York", "Europe/London") that run_at
+# and weekly_review are interpreted in. See
+# https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for the list.
+timezone: "UTC"
+
+# Blank = off. Otherwise "<mon|tue|wed|thu|fri|sat|sun> HH:MM" for a weekly
+# roundup on top of the daily run_at slots. Not implemented yet -- the slot
+# is recognized but currently just skips, same as an off-hour.
+weekly_review: ""
 
 # "email" (via Resend) or "gmail" (via your own Gmail's SMTP).
 #
@@ -54,9 +75,10 @@ subject_prefix: "mailtriage"
 
 # Which AI backend triages your mail. "auto" (default) picks the first one
 # whose secret is set, in this order: CLAUDE_CODE_OAUTH_TOKEN,
-# ANTHROPIC_API_KEY, CODEX_AUTH_JSON, OPENAI_API_KEY, GEMINI_API_KEY. Set
-# this explicitly to force one: "claude-subscription", "claude-api",
-# "chatgpt-subscription", "openai-api", or "gemini-api". See README.md.
+# ANTHROPIC_API_KEY, CODEX_AUTH_JSON, OPENAI_API_KEY, GEMINI_API_KEY,
+# GEMINI_OAUTH_JSON. Set this explicitly to force one: "claude-subscription",
+# "claude-api", "chatgpt-subscription", "openai-api", "gemini-api", or
+# "google-subscription". See README.md.
 provider: "auto"
 
 # Overrides the chosen provider's default model when non-empty. Leave blank
@@ -66,3 +88,44 @@ model: ""
 # AI drafts a reply for every needs-action email -- into the digest and your
 # Gmail drafts folder; never sends.
 draft_replies: true
+
+# Reply tone/sign-off/language/length for AI-drafted replies. Any key you
+# omit keeps its default below. "language" is "auto" (match the sender's
+# language) unless set to a specific language name.
+draft_style:
+  tone: friendly # friendly | formal | casual
+  sign_off: "" # e.g. "Best, Alex" -- overrides the generic "Thanks,"
+  language: auto # or a language name, e.g. "French"
+  max_sentences: 5
+
+# Hard rules you set by hand -- checked deterministically, no API call.
+# Entries are a full address ("boss@corp.com") or a domain starting with "@"
+# ("@corp.com", which also matches its subdomains).
+# rules:
+#   always_ignore: ["newsletter@example.com"]  # dropped before the model ever sees them
+#   always_surface: ["@vip-client.com"]        # always worth_reading, bypasses reading_count
+#   always_action: ["boss@corp.com"]           # always needs_action, wins over always_ignore
+rules:
+  always_ignore: []
+  always_surface: []
+  always_action: []
+
+# Per-account overrides, keyed by the account's address (case-insensitive).
+# Each entry may set interests/avoid (added to the global ones above) and/or
+# draft_style (merged over the global draft_style above).
+# accounts:
+#   work@corp.com:
+#     interests: |
+#       Anything from the eng-leads mailing list counts as needing action.
+#     draft_style:
+#       tone: formal
+accounts: {}
+# Re-list a needs-action email in every digest until it's handled. Cleared
+# three ways: reply to it, archive it, or remove the Gmail label below. The
+# label itself is the memory -- no state of any kind is kept in this repo.
+carry_over: true
+
+# The Gmail label the engine applies to needs-action mail so it can find it
+# again next run. A "/" nests it under a parent in Gmail's sidebar (this
+# shows as mailtriage -> action) -- that's intended.
+label: "mailtriage/action"

@@ -17,10 +17,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from mailtriage.config import Config
+from mailtriage.delivery.mail import weekly_html
 from mailtriage.drafts import DRAFT_SCHEMA, generate_drafts
 from mailtriage.errors import MailError
-from mailtriage.imap_pull import parse_message, within_window
-from mailtriage.models import Email, Triaged
+from mailtriage.imap_pull import _classify_week_item, _older_than_window, _quote_mailbox, parse_message, within_window
+from mailtriage.models import Email, Triaged, WeekResult
+from mailtriage.rules import enforce, matches
+from mailtriage.schedule import due, max_gap_hours
 from mailtriage.triage import pick, select_backend
 
 
@@ -36,6 +39,7 @@ def _email(i: int) -> Email:
         "link": f"https://real.example.com/{i}",
         "message_id": f"<msg-{i}@example.com>",
         "reply_to": f"sender{i}@example.com",
+        "uid": f"{i}",
     }
 
 
@@ -69,6 +73,24 @@ def self_check() -> None:
         "5-minute skew must be allowed, or borderline messages vanish at the window edge"
     )
 
+    # 2b. Carried-mail window boundary: pull_open_actions must keep only mail
+    # older than the window (an in-window hit is already covered by the
+    # normal dated fetch, so counting it here would duplicate the digest).
+    assert _older_than_window(now - timedelta(hours=20), now, 13) is True, (
+        "older-than-window mail must be kept, or nothing ever carries over"
+    )
+    assert _older_than_window(now - timedelta(hours=2), now, 13) is False, (
+        "in-window mail must be dropped here, or it would duplicate the normal fetch path"
+    )
+    assert _older_than_window(None, now, 13) is False, "undated must drop, same as everywhere else"
+
+    # 2c. Label quoting: imaplib does not auto-quote, so the STORE/SEARCH
+    # value for a Gmail label must escape '"' and '\' itself or a label
+    # containing either breaks the IMAP command line.
+    assert _quote_mailbox('a"b\\c') == '"a\\"b\\\\c"', (
+        "label quoting must escape both '\"' and '\\\\', or a label containing either breaks IMAP"
+    )
+
     # 3. pick() is the security layer: every hostile-model case must be handled
     # here, without a network round trip.
     emails = [_email(i) for i in range(14)]
@@ -79,6 +101,10 @@ def self_check() -> None:
         # hostile: model tries to overwrite the real link/subject for id 2.
         {"id": 2, "bucket": "needs_action", "note": "rsvp", "link": "http://evil.example/", "subject": "EVIL"},
         {"id": 13, "bucket": "noise", "note": "unknown bucket, must be dropped"},
+        # "carried" is client-authored only (imap_pull.pull_open_actions) --
+        # the model's own bucket enum never grew it, so pick() must still
+        # reject it exactly like any other unknown bucket.
+        {"id": 12, "bucket": "carried", "note": "client-only bucket, must be dropped"},
         {"id": 99, "bucket": "worth_reading", "note": "out of range, must be dropped"},
         {"id": True, "bucket": "worth_reading", "note": "bool id, must be dropped"},
         *({"id": i, "bucket": "worth_reading", "note": f"note-{i}"} for i in range(3, 13)),  # 10 candidates
@@ -185,5 +211,84 @@ def self_check() -> None:
 
     no_action: list[Triaged] = [{**_triaged_needs_action(0), "bucket": "worth_reading"}]
     generate_drafts(cfg, _boom, draft_emails, no_action)
+
+    # 9. rules.matches: domain rules match subdomains, never a mere suffix, and
+    # a display-name From header must not defeat the address parse.
+    assert matches("@corp.com", "x@mail.corp.com") is True, "a domain rule must match its subdomains"
+    assert matches("@corp.com", "x@notcorp.com") is False, (
+        "a domain rule must never match by mere string suffix -- @corp.com must not catch notcorp.com"
+    )
+    assert matches("boss@corp.com", '"Boss" <boss@corp.com>') is True, (
+        "matches() must parse the address out of a display-name From header"
+    )
+
+    # 10. rules.enforce precedence: an email matching both always_action and
+    # a model verdict of worth_reading must be MOVED to needs_action, keeping
+    # the model's own note -- not overwritten with the generic rule note.
+    rules_cfg = Config(
+        delivery="email", rules={"always_ignore": [], "always_surface": [], "always_action": ["sender0@example.com"]}
+    )
+    rules_emails = [_email(0)]
+    moved = enforce(
+        rules_cfg, rules_emails, [{**_triaged_needs_action(0), "bucket": "worth_reading", "note": "model's own note"}]
+    )
+    assert len(moved) == 1 and moved[0]["bucket"] == "needs_action" and moved[0]["note"] == "model's own note", (
+        "always_action must move a worth_reading item to needs_action while keeping the model's note"
+    )
+
+    # 11. schedule.due(): the hourly-workflow gate. cheap, no I/O -- catches a
+    # sign error here instead of a fork that never fires (or fires every hour).
+    sched_cfg = Config(delivery="email", run_at=["08:00", "18:00"])
+    assert due(sched_cfg, datetime(2026, 8, 28, 8, 30, tzinfo=timezone.utc)) == "digest", (
+        "a run_at slot, evaluated 30 minutes late (normal cron drift), must still be due"
+    )
+    assert due(sched_cfg, datetime(2026, 8, 28, 9, 30, tzinfo=timezone.utc)) is None, (
+        "90 minutes past a run_at slot must no longer be due, or the digest fires all day"
+    )
+    assert due(sched_cfg, datetime(2026, 8, 28, 3, 0, tzinfo=timezone.utc), event="workflow_dispatch") == "digest", (
+        "workflow_dispatch (a human clicking 'Run workflow') must always be due, gate or no gate"
+    )
+    assert max_gap_hours(["08:00", "18:00"]) == 14, (
+        "max_gap_hours wrap-around math regressed -- this backs the window_hours warning"
+    )
+
+    # 12. pull_week's classification: replied beats archived beats open, pure
+    # data, no IMAP -- get this backwards and a replied-to thread would still
+    # nag as "open" (or worse, a still-open one silently vanishes).
+    assert _classify_week_item(replied=True, in_inbox=True) == "replied", (
+        "replied must win even when the thread is still sitting in the inbox"
+    )
+    assert _classify_week_item(replied=True, in_inbox=False) == "replied", "replied must win over archived"
+    assert _classify_week_item(replied=False, in_inbox=True) == "open", (
+        "not replied and still in the inbox must classify as open"
+    )
+    assert _classify_week_item(replied=False, in_inbox=False) == "archived", (
+        "not replied and no longer in the inbox must classify as archived"
+    )
+
+    # 13. weekly_html must escape a hostile subject exactly like email_html --
+    # it renders the same untrusted IMAP-sourced strings.
+    hostile_week: WeekResult = {
+        "accounts": {
+            "acct@example.com": {
+                "replied": [],
+                "archived": [],
+                "open": [
+                    {
+                        "account": "acct@example.com",
+                        "sender": "boss@example.com",
+                        "subject": "<script>alert(1)</script>",
+                        "date": "2026-08-20T10:00:00+00:00",
+                        "link": "https://real.example.com/x",
+                        "age_days": 3,
+                    }
+                ],
+            }
+        },
+        "warnings": [],
+    }
+    weekly = weekly_html(Config(delivery="email", label="mailtriage/action"), hostile_week)
+    assert "<script>alert(1)</script>" not in weekly, "weekly_html must escape a hostile subject, not pass it through"
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in weekly, "weekly_html must HTML-escape hostile subjects"
 
     print("self-check: ok")

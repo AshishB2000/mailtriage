@@ -30,6 +30,7 @@ def make_email(i: int) -> Email:
         "link": f"https://real.example.com/{i}",
         "message_id": f"<real-{i}@example.com>",
         "reply_to": f"sender{i}@example.com",
+        "uid": f"{i}",
     }
 
 
@@ -111,6 +112,73 @@ def test_build_system_has_interests_and_bucket_names():
     assert "rockets and clocks" in system
     assert "needs_action" in system
     assert "worth_reading" in system
+
+
+# Snapshot of build_system's output for CFG, captured from the source BEFORE
+# accounts/rules/draft_style existed. A default config (no cfg.accounts) must
+# keep producing exactly this -- adding the per-account feature must not
+# change the prompt for every fork that never uses it.
+_BUILD_SYSTEM_SNAPSHOT = f"""You are triaging one person's email inbox. Below are the messages that arrived recently. Sort them into buckets, or leave them out entirely.
+
+<interests>
+{CFG.interests}
+</interests>
+
+<avoid>
+{CFG.avoid}
+</avoid>
+
+BUCKETS
+- needs_action: the reader must DO something about this message — a reply is expected, a bill or payment is due, there's a deadline or RSVP, something is expiring, or someone asked them a direct question. If you cannot name the concrete action, it is NOT needs_action — demote it to worth_reading, or leave it out.
+- worth_reading: a real human or real content worth a glance, with nothing the reader needs to do about it.
+- Anything else — newsletters, promotions, receipts, automated notifications — is noise. Do not return noise at all. There is no third bucket for it; simply omit it.
+
+HOW MANY TO RETURN
+- needs_action has no cap. Never drop a message that genuinely needs action just to keep the list short.
+- worth_reading: return at most {CFG.reading_count}, and you are explicitly permitted — and expected — to return fewer. Most windows do not contain {CFG.reading_count} things worth reading; feeds and mailing lists post on their own schedule, not this reader's. An honest short list beats a padded one: if a worth_reading item is only there to reach {CFG.reading_count}, leaving it out makes the digest strictly better. Padding is the failure that kills this product — it trains the reader to stop opening it. Returning an empty worth_reading list is valid and correct.
+
+WRITING
+- note: one line. For needs_action, name the concrete action the reader must take. For worth_reading, say why it's worth a glance. No hedging, no "this could mean big things".
+- Copy each message's bracketed integer id EXACTLY as given. Never invent an id, and never address a message by anything other than its bracketed integer."""
+
+
+def test_build_system_default_config_is_byte_identical_to_pre_accounts_snapshot():
+    assert CFG.accounts == {}
+    assert triage.build_system(CFG) == _BUILD_SYSTEM_SNAPSHOT
+
+
+def test_build_system_omits_per_account_section_by_default():
+    assert "PER-ACCOUNT" not in triage.build_system(CFG)
+
+
+def test_build_system_adds_per_account_context_section():
+    cfg = Config(
+        delivery="email",
+        interests="rockets and clocks",
+        accounts={"work@corp.com": {"interests": "eng-leads mailing list", "avoid": "internal memes"}},
+    )
+    system = triage.build_system(cfg)
+    assert "PER-ACCOUNT CONTEXT" in system
+    assert '<account addr="work@corp.com">' in system
+    assert "eng-leads mailing list" in system
+    assert "internal memes" in system
+    # base prompt content must still be present, verbatim
+    assert "rockets and clocks" in system
+    assert "needs_action" in system
+
+
+def test_build_system_per_account_omits_empty_subblocks():
+    cfg = Config(delivery="email", accounts={"work@corp.com": {"interests": "eng-leads"}})
+    system = triage.build_system(cfg)
+    account_block = system.split('<account addr="work@corp.com">', 1)[1]
+    assert "<interests>" in account_block
+    assert "<avoid>" not in account_block
+
+
+def test_build_system_per_account_skips_account_with_nothing_to_add():
+    cfg = Config(delivery="email", accounts={"work@corp.com": {}})
+    system = triage.build_system(cfg)
+    assert "PER-ACCOUNT" not in system
 
 
 def test_build_user_has_bracketed_index():

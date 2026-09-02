@@ -1,19 +1,26 @@
 name: digest
 
-# Two runs a day, evenly split at 12h apart (00:00 and 12:00 UTC). config.yaml's
-# window_hours is 13, so this leaves an hour of slack for scheduler drift.
+# Runs HOURLY, on the hour's :17 rather than :00 -- GitHub's own docs warn
+# that load spikes right at the top of every hour and queued jobs can get
+# dropped there, so :17 dodges the crowd. The actual digest times are picked
+# per-fork in config.yaml (`run_at` + `timezone`), not here: the "Is it
+# time?" step below asks `mailtriage --due`, which is the only thing that
+# knows the user's local schedule, and skips the rest of the job when it's
+# not one of their slots. Rewriting this file's cron per-fork from the setup
+# wizard would mean every user granting it the `workflow` PAT scope just to
+# pick a time, so instead this file stays fixed and the gate does the work.
 #
 # Two things about GitHub's scheduler you should know before filing a bug:
-#  1. It drifts. A run can fire 5-20 minutes late, occasionally more, and
-#     under heavy load it can be skipped entirely.
+#  1. It drifts (a run can fire 5-30 minutes late, occasionally more) and
+#     under heavy load it can skip an hour entirely. Either way nothing is
+#     lost -- a skipped hour's digest arrives at the next slot instead,
+#     because config.yaml's window_hours overlaps between runs.
 #  2. Scheduled workflows are auto-disabled after 60 days with no commits to
 #     the repo. GitHub emails you first. Push anything, or hit "Run workflow",
 #     to wake it back up.
-# Both are why config.yaml's window_hours has slack built in.
 on:
   schedule:
-    - cron: "0 0 * * *"    # 00:00 UTC
-    - cron: "0 12 * * *"   # 12:00 UTC
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -35,6 +42,7 @@ jobs:
     env:
       HAS_SUBSCRIPTION: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
       HAS_CODEX: ${{ secrets.CODEX_AUTH_JSON != '' }}
+      HAS_GEMINI_CLI: ${{ secrets.GEMINI_OAUTH_JSON != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,28 +55,61 @@ jobs:
       # pins here cannot drift from the ones a contributor installs locally.
       - run: pip install .
 
+      # The hourly trigger fires every run; this decides whether *this* hour
+      # is actually one of the user's run_at/weekly_review slots, and which
+      # kind ("digest" or "weekly") it is. `--due` only evaluates the
+      # schedule (no network, no IMAP): exit 0 with the mode printed on
+      # stdout when due, exit 3 when not due, exit 1 on a real failure (e.g.
+      # a broken config.yaml, which must fail the job loudly rather than
+      # silently look like "not due"). GITHUB_EVENT_NAME lets a manual "Run
+      # workflow" click bypass the gate.
+      #
+      # Deliberately not `mailtriage --due && A || { [ $? -eq 3 ] && B; }`:
+      # actionlint/shellcheck flags that shape (SC2015, "A && B || C is not
+      # if-then-else") because B failing would fall through to C. The `case`
+      # below captures the exit code once and branches on it explicitly, so
+      # there's no A/B/C ambiguity to flag.
+      - name: Is it time?
+        id: gate
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set +e
+          mode=$(mailtriage --due)
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "due=true" >> "$GITHUB_OUTPUT"; echo "mode=$mode" >> "$GITHUB_OUTPUT" ;;
+            3) echo "due=false" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$rc" ;;
+          esac
+
       # Its own step on purpose: a logic regression fails here, loudly and
       # before any API spend, instead of quietly producing a strange digest.
       - name: Self-check
+        if: steps.gate.outputs.due == 'true'
         run: mailtriage --self-check
 
-      # AI auth: config.yaml's `provider` (default "auto") picks one of five
+      # AI auth: config.yaml's `provider` (default "auto") picks one of six
       # backends by which secret is set -- see README.md for the full matrix.
-      # The two subscription CLIs (claude, codex) need Node on the runner;
-      # installed once below, only when one of those secrets is set.
+      # The three subscription CLIs (claude, codex, gemini) need Node on the
+      # runner; installed once below, only when one of those secrets is set.
       - name: Install Node (subscription CLIs)
-        if: env.HAS_SUBSCRIPTION == 'true' || env.HAS_CODEX == 'true'
+        if: steps.gate.outputs.due == 'true' && (env.HAS_SUBSCRIPTION == 'true' || env.HAS_CODEX == 'true' || env.HAS_GEMINI_CLI == 'true')
         uses: actions/setup-node@v4
         with:
           node-version: "20"
       - name: Install claude
-        if: env.HAS_SUBSCRIPTION == 'true'
+        if: steps.gate.outputs.due == 'true' && env.HAS_SUBSCRIPTION == 'true'
         run: npm install -g @anthropic-ai/claude-code
       - name: Install codex
-        if: env.HAS_CODEX == 'true'
+        if: steps.gate.outputs.due == 'true' && env.HAS_CODEX == 'true'
         run: npm install -g @openai/codex
+      - name: Install gemini
+        if: steps.gate.outputs.due == 'true' && env.HAS_GEMINI_CLI == 'true'
+        run: npm install -g @google/gemini-cli
 
-      # Secrets a forker sets: ONE of the five AI-auth secrets (see above),
+      # Secrets a forker sets: ONE of the six AI-auth secrets (see above),
       # plus RESEND_API_KEY, MAIL_ACCOUNTS, and one MAIL_PW_<SLUG> per Gmail
       # address (imap_pull.py derives the slug from the address). The
       # MAIL_PW_* names are per-account and per-fork, so a static YAML step
@@ -76,9 +117,15 @@ jobs:
       # environment instead. This is also how CODEX_AUTH_JSON reaches
       # codex_cli.py -- it reads the env var directly, no separate step needed.
       - name: Send digest
+        if: steps.gate.outputs.due == 'true'
         env:
           ALL_SECRETS: ${{ toJSON(secrets) }}
+          MODE: ${{ steps.gate.outputs.mode }}
         run: |
           # Values stay masked in logs; shlex.quote prevents shell injection.
           eval "$(python -c 'import json,os,shlex; print("\n".join(f"export {k}={shlex.quote(v)}" for k,v in json.loads(os.environ["ALL_SECRETS"]).items() if k!="github_token"))')"
-          mailtriage
+          if [ "$MODE" = "weekly" ]; then
+            mailtriage --weekly
+          else
+            mailtriage
+          fi

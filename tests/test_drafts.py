@@ -29,6 +29,7 @@ def make_email(i: int) -> Email:
         "link": f"https://real.example.com/{i}",
         "message_id": f"<real-{i}@example.com>",
         "reply_to": f"sender{i}@example.com",
+        "uid": f"{i}",
     }
 
 
@@ -133,3 +134,80 @@ def test_build_draft_user_includes_body_and_note():
     assert "[0]" in user
     assert "please confirm the meeting time" in user  # from the email body
     assert "confirm the meeting time" in user  # the triage note
+
+
+# Snapshot of build_draft_system's output for CFG, captured from the source
+# BEFORE draft_style/accounts existed. A default config (draft_style at its
+# defaults, no accounts) must keep producing exactly this.
+_BUILD_DRAFT_SYSTEM_SNAPSHOT = f"""You are drafting reply emails on behalf of one person, for the messages below that need a reply from them.
+
+<about-the-reader>
+{CFG.interests}
+</about-the-reader>
+
+RULES
+- Write in plain text, ready to send after a quick human read.
+- Match the sender's language and register -- formal stays formal, casual stays casual.
+- NEVER invent facts, dates, prices, commitments, or attachments that are not present in the source email. When a required detail is unknown, leave a bracketed [like this] placeholder instead of guessing.
+- Keep it short: a few sentences, unless the email genuinely demands more.
+- No signature block beyond a simple sign-off -- omit the reader's first name, end with "Thanks," (or the language-appropriate equivalent) on its own line.
+- Reply only to messages by their bracketed integer id, copied exactly. Never invent an id.
+- You may return fewer items than given: skip any message where a reply obviously isn't the right action (e.g. "pay this bill") by omitting it."""
+
+
+def test_build_draft_system_default_config_is_byte_identical_to_pre_style_snapshot():
+    assert CFG.draft_style == {"tone": "friendly", "sign_off": "", "language": "auto", "max_sentences": 5}
+    assert CFG.accounts == {}
+    assert build_draft_system(CFG) == _BUILD_DRAFT_SYSTEM_SNAPSHOT
+
+
+def test_build_draft_system_omits_style_section_by_default():
+    system = build_draft_system(CFG)
+    assert "STYLE" not in system
+
+
+def test_build_draft_system_adds_style_section_when_tone_changed():
+    cfg = Config(
+        delivery="email",
+        interests="rockets and clocks",
+        draft_style={"tone": "formal", "sign_off": "", "language": "auto", "max_sentences": 5},
+    )
+    system = build_draft_system(cfg)
+    assert "STYLE" in system
+    assert "formal" in system.split("STYLE", 1)[1]
+    assert "At most 5 sentences unless the email demands more." in system
+    # existing rules stay verbatim
+    assert "NEVER invent" in system
+    assert 'end with "Thanks,"' in system
+
+
+def test_build_draft_system_style_sign_off_and_language():
+    cfg = Config(
+        delivery="email",
+        draft_style={"tone": "friendly", "sign_off": "Best, Alex", "language": "French", "max_sentences": 3},
+    )
+    system = build_draft_system(cfg)
+    assert "Sign off as: Best, Alex" in system
+    assert "Write in French." in system
+    assert "At most 3 sentences unless the email demands more." in system
+
+
+def test_build_draft_system_per_account_style_section():
+    cfg = Config(
+        delivery="email",
+        draft_style={"tone": "friendly", "sign_off": "", "language": "auto", "max_sentences": 5},
+        accounts={
+            "work@corp.com": {"draft_style": {"tone": "formal", "sign_off": "", "language": "auto", "max_sentences": 5}}
+        },
+    )
+    system = build_draft_system(cfg)
+    assert "PER-ACCOUNT STYLE" in system
+    assert '<account addr="work@corp.com">' in system
+    block = system.split('<account addr="work@corp.com">', 1)[1]
+    assert "formal" in block.lower() or "Tone: formal" in block
+
+
+def test_build_draft_system_no_per_account_style_when_account_has_no_override():
+    cfg = Config(delivery="email", accounts={"work@corp.com": {"interests": "eng leads"}})
+    system = build_draft_system(cfg)
+    assert "PER-ACCOUNT STYLE" not in system
