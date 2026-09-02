@@ -210,3 +210,21 @@ def test_triage_end_to_end_uses_selected_backend(monkeypatch):
     assert result[0]["note"] == "via stub backend"
     assert "rockets and clocks" in seen["system"]
     assert "[0]" in seen["user"]
+
+
+def test_triage_logs_counts_and_rejected_shape_but_never_content(monkeypatch: Any, capsys: Any) -> None:
+    """A quiet run must be diagnosable from a public Actions log: how many
+    items came back and how many pick() kept -- never subjects, notes, or ids."""
+    import mailtriage.triage as triage_module
+
+    hostile = {"items": [{"id": "0", "bucket": "needs_action", "note": "SECRET NOTE"}]}
+    monkeypatch.setattr(triage_module, "select_backend", lambda cfg, env: ("stub", lambda *a: hostile))
+
+    kept = triage_module.triage(Config(delivery="email"), [make_email(0)], datetime(2026, 9, 2, tzinfo=timezone.utc))
+
+    assert kept == []
+    err = capsys.readouterr().err
+    assert "triaging with stub (default model)" in err
+    assert "model returned 1 item(s); 0 passed validation" in err
+    assert "shape={'id': 'str', 'bucket': 'str', 'note': 'str'} bucket=needs_action" in err
+    assert "SECRET NOTE" not in err and "real subject" not in err
