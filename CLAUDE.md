@@ -102,11 +102,15 @@ failure). `worth_reading` caps at `reading_count`, enforced client-side in
 sender/subject/link from the real Email, never from the model.
 
 Model: `claude-sonnet-5` (API path). This is headline triage on the user's
-bill; don't upgrade to Opus without a reason.
+bill; don't upgrade to Opus without a reason. **The CLI backends (claude,
+codex, gemini) pass no `--model` unless `model:` is set** — subscriptions
+are flat-rate so the CLI default costs nothing extra, and pinning
+`claude-sonnet-5` on the claude CLI coincided with three live runs that
+returned 0 items from 37 candidates (2026-09-02, CLI 2.1.259). Don't re-pin.
 
 ## Things that look wrong but are deliberate
 
-- **No state, no seen-list.** `window_hours` (13) is the dedupe; it must stay ≥
+- **No state, no seen-list.** `window_hours` (15 shipped) is the dedupe; it must stay ≥
   the largest cron gap (12h) or mail is skipped forever.
 - **Empty digest sends nothing and exits 0.** "Nothing today" mails train users
   to unsubscribe.

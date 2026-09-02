@@ -10,30 +10,41 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from typing import Any
 
 from mailtriage.config import Config
 from mailtriage.errors import MailError
 
-# cfg.model overrides this when non-empty.
-MODEL = "claude-sonnet-5"
+# The CLI's own default model is used unless cfg.model is set -- see call().
+MODEL = ""
 
 
 def call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
-    prompt = system + "\n\n" + user
+    # `--system-prompt` replaces Claude Code's own agent persona with ours, so
+    # the model is a triager, not a coding agent handed a list of emails.
+    # `--model` is passed ONLY when the user set one: the subscription is
+    # flat-rate, so the CLI's default model costs nothing extra, and the
+    # working v1 invocation never pinned one. Pinning claude-sonnet-5 here
+    # coincided with runs that returned zero items from 37 candidates on CLI
+    # 2.1.259 (live, 2026-09-02) -- see the diagnostics line below.
+    argv = [
+        "claude",
+        "-p",
+        user,
+        "--system-prompt",
+        system,
+        "--output-format",
+        "json",
+        "--json-schema",
+        json.dumps(schema),
+        "--no-session-persistence",
+    ]
+    if cfg.model:
+        argv += ["--model", cfg.model]
     try:
         proc = subprocess.run(
-            [
-                "claude",
-                "-p",
-                prompt,
-                "--output-format",
-                "json",
-                "--json-schema",
-                json.dumps(schema),
-                "--model",
-                cfg.model or MODEL,
-            ],
+            argv,
             capture_output=True,
             text=True,
             timeout=300,
@@ -57,6 +68,20 @@ def call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[st
             f"`claude` CLI exited with status {proc.returncode} and unparseable output: {detail} — "
             "check that CLAUDE_CODE_OAUTH_TOKEN is a valid token (regenerate with `claude setup-token`)."
         ) from e
+
+    # Envelope metadata only -- which model actually answered, how it stopped,
+    # whether a structured object came back. Never the result text: Actions
+    # logs on a public fork are public. This is what turns "0 items" from a
+    # mystery into a diagnosis.
+    meta = {
+        "models": sorted((parsed.get("modelUsage") or {}).keys()),
+        "turns": parsed.get("num_turns"),
+        "stop": parsed.get("stop_reason"),
+        "terminal": parsed.get("terminal_reason"),
+        "structured": isinstance(parsed.get("structured_output"), dict),
+        "result_type": type(parsed.get("result")).__name__,
+    }
+    print(f"mailtriage: claude CLI envelope {meta}", file=sys.stderr)
 
     if parsed.get("is_error") or proc.returncode != 0:
         reason = parsed.get("result") or proc.stderr.strip() or "unknown error"

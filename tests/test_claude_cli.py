@@ -97,3 +97,37 @@ def test_call_honors_model_override(monkeypatch):
     cfg = Config(delivery="email", model="claude-custom-9000")
     claude_cli.call(cfg, "system prompt", "user prompt", SCHEMA)
     assert "claude-custom-9000" in seen["args"]
+
+
+def test_call_uses_system_prompt_flag_and_no_model_by_default(monkeypatch, capsys):
+    """v1's working invocation never pinned a model; --system-prompt keeps the
+    model a triager rather than Claude Code's coding persona."""
+    fake = _StubCompletedProcess(
+        0,
+        stdout=json.dumps(
+            {
+                "result": "SECRET RESULT TEXT",
+                "structured_output": {"items": []},
+                "modelUsage": {"claude-x": {}},
+                "num_turns": 1,
+                "stop_reason": "end_turn",
+            }
+        ),
+    )
+    seen = {}
+
+    def fake_run(args, **kwargs):
+        seen["args"] = args
+        return fake
+
+    monkeypatch.setattr("mailtriage.triage.claude_cli.subprocess.run", fake_run)
+    claude_cli.call(CFG, "SYSTEM TEXT", "USER TEXT", SCHEMA)
+    args = seen["args"]
+    assert "--model" not in args
+    assert args[args.index("--system-prompt") + 1] == "SYSTEM TEXT"
+    assert args[args.index("-p") + 1] == "USER TEXT"
+    assert "--no-session-persistence" in args
+
+    err = capsys.readouterr().err
+    assert "claude CLI envelope" in err and "'models': ['claude-x']" in err and "'structured': True" in err
+    assert "SECRET RESULT TEXT" not in err
