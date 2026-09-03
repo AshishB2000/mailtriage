@@ -133,8 +133,10 @@ jobs:
         run: npm install -g @google/gemini-cli
 
       # Secrets a forker sets: ONE of the six AI-auth secrets (see above),
-      # plus RESEND_API_KEY, MAIL_ACCOUNTS, and one MAIL_PW_<SLUG> per Gmail
-      # address (imap_pull.py derives the slug from the address). The
+      # MAIL_ACCOUNTS, one MAIL_PW_<HASH> per Gmail address (imap_pull.py
+      # derives the hash from the address), and the chosen delivery's one
+      # secret (RESEND_API_KEY / TELEGRAM_BOT_TOKEN / SLACK_WEBHOOK_URL /
+      # DISCORD_WEBHOOK_URL / NTFY_TOPIC_URL; gmail needs none). The
       # MAIL_PW_* names are per-account and per-fork, so a static YAML step
       # can't enumerate them -- export the whole secrets bag into the
       # environment instead. This is also how CODEX_AUTH_JSON reaches
