@@ -130,6 +130,10 @@ class Config:
     # A carried item open for at least this many days is flagged "still open"
     # (bold row + badge) in the digest's "Still waiting on you" section.
     nag_after_days: int = 3
+    # Show the model up to 2 earlier messages of a candidate's Gmail thread
+    # (read from All Mail, newest 15 candidates per run) so it can tell a
+    # live conversation from a stale one. Read-only, a few extra fetches.
+    thread_context: bool = True
 
     # Named digests, each over a subset of MAIL_ACCOUNTS with its own
     # overrides for any key above (delivery, run_at, interests, ...). Empty =
@@ -176,11 +180,10 @@ class Config:
         if not isinstance(cu, int) or isinstance(cu, bool) or not 60 <= cu <= 360:
             raise MailError(f"'catch_up_minutes' in {origin} must be a whole number from 60 to 360 (got {cu!r}).")
 
-        if not isinstance(cfg.draft_replies, bool):
-            raise MailError(f"'draft_replies' in {origin} must be true or false (got {cfg.draft_replies!r}).")
-
-        if not isinstance(cfg.carry_over, bool):
-            raise MailError(f"'carry_over' in {origin} must be true or false (got {cfg.carry_over!r}).")
+        for name in ("draft_replies", "carry_over", "thread_context"):
+            value = getattr(cfg, name)
+            if not isinstance(value, bool):
+                raise MailError(f"'{name}' in {origin} must be true or false (got {value!r}).")
 
         # str() rather than a type error: YAML turns a bare value into whatever
         # type it looks like (e.g. an unquoted prefix or address).

@@ -143,9 +143,11 @@ def build_user(emails: list[Email], now: datetime) -> str:
         else:
             age = f"{age_minutes // (24 * 60)}d ago"
         status = "UNREAD" if em["unread"] else "read"
-        blocks.append(
+        block = (
             f"[{i}] {em['subject']}\n    from: {em['from']} · {em['account']} · {age} · {status}\n    {em['snippet']}"
         )
+        block += _context_lines(em)
+        blocks.append(block)
     # Today's date lets the model resolve "by Friday" into a `due` date.
     return f"Today is {now:%A %Y-%m-%d}.\n\nEmails:\n\n" + "\n\n".join(blocks)
 
@@ -161,6 +163,17 @@ def clean_due(value: Any, today: date | None = None) -> str:
         return ""
     today = today or datetime.now(timezone.utc).date()
     return d.isoformat() if d >= today - timedelta(days=365) else ""
+
+
+def _context_lines(em: Email) -> str:
+    """The optional context keys imap_pull.enrich fills in, rendered under the
+    candidate. Empty string when there is none, so a fork without enrichment
+    gets the exact block it always got."""
+    out = ""
+    thread = em.get("thread") or []
+    if thread:
+        out += "\n    earlier in this thread:\n" + "\n".join(f"      {ln}" for ln in thread)
+    return out
 
 
 def pick(cfg: Config, emails: list[Email], reply: dict[str, Any]) -> list[Triaged]:

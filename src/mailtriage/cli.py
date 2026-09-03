@@ -14,6 +14,7 @@ from mailtriage.errors import MailError
 from mailtriage.imap_pull import (
     already_delivered,
     check_login,
+    enrich,
     label_actions,
     pull,
     pull_open_actions,
@@ -320,6 +321,16 @@ def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> Non
     if not emails:
         print("mailtriage: nothing recent — sending nothing.", file=sys.stderr)
         return
+
+    if cfg.thread_context:
+        # Read-only lookups that give the model more to go on. Counts only.
+        ctx = enrich(os.environ, emails, now, thread_context=cfg.thread_context)
+        for w in ctx["warnings"]:
+            print(f"mailtriage: context lookup failed, skipping: {w}", file=sys.stderr)
+        print(
+            f"mailtriage: thread context on {ctx['threads']} message(s) ({ctx['fetches']} extra fetch(es)).",
+            file=sys.stderr,
+        )
 
     kept = triage(cfg, emails, now)
     kept = enforce(cfg, emails, kept)  # rule-forced items must survive even if the model returned none

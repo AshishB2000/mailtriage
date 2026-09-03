@@ -464,3 +464,16 @@ def test_profile_unknown_key_warns_and_is_dropped(capsys):
     err = capsys.readouterr().err
     assert "made_up" in err and "profiles.w" in err
     assert "made_up" not in cfg.profiles["w"] and "profiles" not in cfg.profiles["w"]
+
+# --- inbox intelligence -------------------------------------------------------
+
+
+def test_intelligence_defaults_are_on():
+    cfg = Config.from_mapping(MINIMAL)
+    assert cfg.thread_context is True
+
+
+@pytest.mark.parametrize("name", ["thread_context"])
+def test_intelligence_bools_reject_non_bool(name):
+    with pytest.raises(MailError, match=name):
+        Config.from_mapping({**MINIMAL, name: "yes"})

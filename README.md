@@ -615,6 +615,20 @@ items you closed via the `done` label separately, since those have lost the
 
 ---
 
+## Inbox intelligence
+
+Read-only lookups that give the model more to go on than a subject line and
+a snippet. Everything here stays between your Gmail and the AI provider you
+picked; the Actions log only ever shows counts.
+
+- **Thread context** (`thread_context: true`, default) — for a message that
+  isn't the first in its thread, the model also sees up to 2 earlier messages
+  of that thread (sender, age, a short snippet), read from All Mail. Capped
+  at the newest 15 candidates per run so a busy inbox stays a handful of extra
+  fetches.
+
+---
+
 ## The 60-day caveat
 
 GitHub automatically disables scheduled workflows on a repo after **60 days

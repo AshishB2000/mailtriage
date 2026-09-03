@@ -213,6 +213,25 @@ def test_triage_schema_requires_due():
     assert "due" in item["properties"] and "due" in item["required"]
 
 
+def test_build_user_renders_thread_context_indented_under_candidate():
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+    em = make_email(0)
+    em["thread"] = ["2d ago · Bob <bob@x.com>: first ask", "5h ago · Me <me@x.com>: my reply"]
+    user = triage.build_user([em, make_email(1)], now)
+    block = user.split("[1]")[0]
+    assert "    earlier in this thread:\n      2d ago · Bob <bob@x.com>: first ask\n      5h ago · Me" in block
+    assert "earlier in this thread" not in user.split("[1]")[1]  # only under the candidate that has it
+
+
+def test_build_user_without_context_is_unchanged():
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+    user = triage.build_user([make_email(0)], now)
+    assert (
+        user
+        == "Emails:\n\n[0] real subject 0\n    from: sender0@example.com · acct0 · 2h ago · UNREAD\n    real snippet 0"
+    )
+
+
 def test_triage_end_to_end_uses_selected_backend(monkeypatch):
     """triage() must call select_backend(), pass it build_system/build_user/
     TRIAGE_SCHEMA, and run the reply through pick() -- wired together, not

@@ -175,3 +175,8 @@ nag_after_days: 3
 #     accounts: ["you@gmail.com"]
 #     run_at: ["19:00"]
 profiles: {}
+
+# Show the model up to 2 earlier messages of a candidate's thread (from All
+# Mail, for the newest 15 candidates each run) so it can tell a live
+# conversation from a stale one. Read-only; a few extra IMAP fetches.
+thread_context: true

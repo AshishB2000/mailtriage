@@ -3,8 +3,8 @@
 from typing import TypedDict
 
 # The record imap_pull emits per message. `from` is a keyword → functional form.
-Email = TypedDict(
-    "Email",
+_EmailBase = TypedDict(
+    "_EmailBase",
     {
         "account": str,
         "from": str,
@@ -21,10 +21,28 @@ Email = TypedDict(
 )
 
 
+class Email(_EmailBase, total=False):
+    """Context added on top of the fetch. Optional keys (total=False) so a
+    synthetic Email in a test, or one from a stage that never enriches, stays
+    valid -- readers use .get() with a falsy default."""
+
+    thrid: str  # Gmail X-GM-THRID from the fetch; "" when the server didn't return one
+    thread: list[str]  # imap_pull.enrich: "<age> · <from>: <snippet>" for up to 2 earlier thread messages, oldest first
+
+
 class PullResult(TypedDict):
     """Return shape of `imap_pull.pull`: collected messages plus per-account warnings."""
 
     messages: list["Email"]
+    warnings: list[dict[str, str]]
+
+
+class EnrichResult(TypedDict):
+    """Return shape of `imap_pull.enrich`: counts only (they get printed to a
+    public Actions log) plus the same per-account warnings as PullResult."""
+
+    threads: int  # candidates that got earlier-thread context
+    fetches: int  # extra IMAP FETCH round trips spent on it
     warnings: list[dict[str, str]]
 
 

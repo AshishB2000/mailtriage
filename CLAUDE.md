@@ -77,6 +77,7 @@ draft_replies: bool                draft_style: {tone, sign_off, language,
 rules: {always_ignore, always_surface, always_action}   accounts: {addr: {…}}
 carry_over: bool                   label: str
 nag_after_days: int
+thread_context: bool
 ```
 
 **Label names** are fixed literals in `commands.py`, quoted in the digest
@@ -87,11 +88,6 @@ together:
 mailtriage/done   mailtriage/snooze-<N>d (1..90) | -1w | -2w   mailtriage/until-YYYY-MM-DD
 mailtriage/never  mailtriage/vip                                mailtriage/handled
 ```
-
-A sibling branch adds `carry_over: bool` and `label: str` with those exact
-names — the wizard already writes both (forward-compat) even though
-`Config` on this branch doesn't parse them yet (they show up as a harmless
-"ignoring unknown key" warning until that branch lands).
 
 **Secret names** — used by the wizard (writes), the workflow (exports all via
 `toJSON(secrets)`), and the engine (reads env):
