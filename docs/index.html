@@ -368,6 +368,39 @@ details.ovr .ovr-body{padding:2px 13px 14px}
 .center{text-align:center}
 .links{display:grid;gap:8px;margin-top:24px}
 
+/* ============================================================ preview + dashboard */
+details.preview{margin-top:14px;border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+details.preview summary{cursor:pointer;list-style:none;padding:10px 13px;font-size:13px;font-weight:600;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+details.preview summary::-webkit-details-marker{display:none}
+details.preview summary::before{content:"▸";font-size:11px;color:var(--faint);transition:transform .18s var(--e)}
+details.preview[open] summary::before{transform:rotate(90deg)}
+details.preview iframe{display:block;width:100%;height:560px;border:0;border-top:1px solid var(--hair);background:#faf9f7}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:10px}
+.stat{background:var(--sunk);border-radius:10px;padding:11px 13px;min-width:0}
+.stat .k{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:600}
+.stat .v{font-size:14px;font-weight:600;color:var(--ink);margin-top:3px;line-height:1.35;word-break:break-word}
+.stat .s{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.45}
+.stat.warn .v{color:var(--warn)}
+.stat.bad .v{color:var(--bad)}
+
+.runtbl{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+.runtbl th{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:600;text-align:left;padding:6px 8px 6px 0;border-bottom:1px solid var(--hair)}
+.runtbl td{padding:8px 8px 8px 0;border-bottom:1px solid var(--hair);vertical-align:top;color:var(--ink-2)}
+.runtbl td.n{white-space:nowrap;font-variant-numeric:tabular-nums}
+.runtbl .pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--hair);color:var(--ink-2);white-space:nowrap}
+.runtbl .pill.ok{background:var(--ok-wash);color:var(--ok)}
+.runtbl .pill.bad{background:var(--bad-wash);color:var(--bad)}
+.runtbl .pill.warn{background:var(--wash);color:var(--accent)}
+.runtbl .pill.run::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;border:1.5px solid var(--accent);border-top-color:transparent;animation:spin .8s linear infinite;vertical-align:-1px}
+.tblwrap{overflow-x:auto}
+@media (max-width:520px){ .runtbl .hide-sm{display:none} }
+
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.actions .btn{flex:1 1 160px;font-size:14px;padding:10px 14px}
+.status{font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.5;min-height:1.2em}
+.status.bad{color:var(--bad)}
+
 footer{
   text-align:center;margin-top:38px;font-size:12px;color:var(--faint);line-height:1.7;
 }
@@ -437,6 +470,10 @@ footer a{color:var(--muted)}
     <div class="sect" id="repoSect" style="display:none">
       <h3>Your fork</h3>
       <div id="repoBox"></div>
+      <div class="note" id="dashEntry" style="display:none;margin-top:12px">
+        <span class="ic">◆</span>
+        <span>Already set up? <a href="#" id="openDash1">Open the dashboard</a> — recent runs, secrets, next slot, run-now and upgrade buttons — without changing any settings.</span>
+      </div>
     </div>
 
     <div class="nav">
@@ -448,6 +485,11 @@ footer a{color:var(--muted)}
   <section class="card panel" id="p2" aria-labelledby="h2t">
     <h2 id="h2t">What needs your attention?</h2>
     <p class="lede">This is the part that decides whether the triage is any good. The text below is handed to the model word for word, so be specific — say what a message has to look like to need a reply from you, and what's safe to drop.</p>
+
+    <details class="preview" data-preview>
+      <summary>What the digest looks like</summary>
+      <iframe title="Sample digest" data-src="sample-digest.html"></iframe>
+    </details>
 
     <div class="sect">
       <h3>Your brief</h3>
@@ -785,6 +827,57 @@ footer a{color:var(--muted)}
     </div>
   </section>
 
+  <!-- ================================================= DASHBOARD -->
+  <section class="card panel" id="p4" aria-labelledby="h4t">
+    <h2 id="h4t">Dashboard</h2>
+    <p class="lede" id="dashLede"></p>
+
+    <div class="sect">
+      <h3>Health</h3>
+      <div id="dashState"></div>
+      <div class="stats" id="dashStats"></div>
+      <div class="tblwrap"><table class="runtbl" id="dashRuns" aria-live="polite"></table></div>
+    </div>
+
+    <div class="sect">
+      <h3>Run</h3>
+      <div class="actions">
+        <button class="btn btn-accent" data-mode="digest">Run now</button>
+        <button class="btn btn-ghost" data-mode="doctor">Run doctor</button>
+        <button class="btn btn-ghost" data-mode="weekly">Send weekly review</button>
+      </div>
+      <p class="status" id="dashRunStatus"></p>
+    </div>
+
+    <div class="sect">
+      <h3>Upgrade</h3>
+      <div class="stats" id="dashUpgrade"></div>
+      <div class="actions">
+        <button class="btn btn-ghost" id="dashSync">Sync with upstream</button>
+        <a class="btn btn-ghost" target="_blank" rel="noopener" href="https://github.com/AshishB2000/mailtriage/blob/main/CHANGELOG.md">What changed</a>
+      </div>
+      <p class="status" id="dashSyncStatus"></p>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn btn-ghost" id="dashExport">Download config.yaml</button>
+        <button class="btn btn-ghost" id="dashImport">Import config.yaml…</button>
+        <input type="file" id="dashImportFile" accept=".yaml,.yml,text/yaml" class="sr" tabindex="-1">
+      </div>
+      <p class="status" id="dashImportStatus"></p>
+    </div>
+
+    <div class="sect">
+      <details class="preview" data-preview>
+        <summary>What the digest looks like</summary>
+        <iframe title="Sample digest" data-src="sample-digest.html"></iframe>
+      </details>
+    </div>
+
+    <div class="nav">
+      <button class="btn btn-ghost back" id="dashBack">← Settings</button>
+      <button class="btn btn-ghost" id="dashRefresh">Refresh</button>
+    </div>
+  </section>
+
   <footer>
     mailtriage · MIT licensed · <a href="https://github.com/AshishB2000/mailtriage" target="_blank" rel="noopener">source</a><br>
     No server, no analytics, no account. Everything above happened in this tab.
@@ -799,6 +892,12 @@ footer a{color:var(--muted)}
 const API = "https://api.github.com";
 const UPSTREAM = "AshishB2000/mailtriage";
 const WORKFLOW = "digest.yml";
+// The dashboard's other dispatch target -- forks only; see README "Keeping
+// your fork current". Pinned by tests/test_contracts.py.
+const SYNC_WORKFLOW = "upstream-sync.yml";
+// digest.yml's workflow_dispatch `mode` input, in its declared order. Pinned
+// against the workflow file by tests/test_contracts.py.
+const MODES = ["digest", "weekly", "doctor"];
 
 // carry_over/label aren't exposed in the wizard UI yet -- written as fixed
 // defaults, same precedent as draft_replies below. Change by hand later.
@@ -874,12 +973,15 @@ async function gh(method, path, body) {
   if (r.ok) return data;
 
   const m = (data && data.message) || r.statusText || ("HTTP " + r.status);
-  if (r.status === 401) throw new Error("GitHub rejected the token. It may be mistyped, expired, or already revoked — generate a fresh one and paste it again.");
-  if (r.status === 403 && /rate limit/i.test(m)) throw new Error("GitHub rate limit reached. Wait a minute and try again.");
-  if (r.status === 403) throw new Error("GitHub refused: " + m + " — the token is probably missing the 'repo' scope. Generate a new one using the button on step 1, which ticks it.");
-  if (r.status === 404) throw new Error("Not found (404): " + m + " — usually a token without the 'repo' scope, since GitHub hides what it won't let you touch.");
-  if (r.status === 422) throw new Error("GitHub rejected the contents of the request: " + m);
-  throw new Error("GitHub returned " + r.status + ": " + m);
+  let msg = "GitHub returned " + r.status + ": " + m;
+  if (r.status === 401) msg = "GitHub rejected the token. It may be mistyped, expired, or already revoked — generate a fresh one and paste it again.";
+  else if (r.status === 403 && /rate limit/i.test(m)) msg = "GitHub rate limit reached. Wait a minute and try again.";
+  else if (r.status === 403) msg = "GitHub refused: " + m + " — the token is probably missing the 'repo' scope. Generate a new one using the button on step 1, which ticks it.";
+  else if (r.status === 404) msg = "Not found (404): " + m + " — usually a token without the 'repo' scope, since GitHub hides what it won't let you touch.";
+  else if (r.status === 422) msg = "GitHub rejected the contents of the request: " + m;
+  const err = new Error(msg);
+  err.status = r.status; // callers that branch on the code (dispatch fallback) read this
+  throw err;
 }
 
 /* ------------------------------------------------------------ base64 (utf-8 safe) */
@@ -1227,6 +1329,7 @@ function pickRepo(i) {
   S.repo = S.repos[i];
   $$(".repo").forEach((b) => b.classList.toggle("sel", +b.dataset.i === i));
   $("#go2").disabled = false;
+  $("#dashEntry").style.display = "flex";
   prefillFromConfig(S.repo.full_name);
 }
 
@@ -1240,48 +1343,54 @@ async function prefillFromConfig(fullName) {
     const cur = await gh("GET", "/repos/" + fullName + "/contents/config.yaml");
     if (fullName !== S.repo.full_name) return; // repo changed while this was in flight
     if (S.step !== 1) return; // user already moved past connect -- don't clobber typed input
-    const cfg = parseConfig(b64decode(cur.content));
-    if (cfg.interests != null) $("#interests").value = cfg.interests;
-    if (cfg.avoid != null) $("#avoid").value = cfg.avoid;
-    // email_to/email_from are never prefilled -- they live in secrets now,
-    // config.yaml only ever has "" for them, and GitHub never returns a
-    // secret's value anyway.
-    if (cfg.reading_count != null) { $("#count").value = cfg.reading_count; $("#countOut").textContent = cfg.reading_count; }
-    if (cfg.provider && PROV_FIELD[cfg.provider]) {
-      const r = $('input[name=provider][value="' + cfg.provider + '"]');
-      if (r) { r.checked = true; updateAuthFields(); }
-    }
-    if (cfg.delivery === "gmail" || cfg.delivery === "email") {
-      const r = $('input[name=delivery][value="' + cfg.delivery + '"]');
-      if (r) { r.checked = true; updateDeliveryFields(); }
-      if (cfg.delivery === "email") $("#resendPrefillNote").style.display = "flex";
-    }
-    if (Array.isArray(cfg.run_at) && cfg.run_at.length) setRunAtRows(cfg.run_at);
-    if (cfg.timezone && $('#timezone option[value="' + cfg.timezone + '"]')) $("#timezone").value = cfg.timezone;
-    if (cfg.weekly_review) {
-      const m = /^(mon|tue|wed|thu|fri|sat|sun) (\d{2}:\d{2})$/i.exec(cfg.weekly_review);
-      if (m) {
-        $("#weeklyOn").checked = true;
-        $("#weeklyDay").value = m[1].toLowerCase();
-        $("#weeklyTime").value = m[2];
-        $("#weeklyRow").style.display = "flex";
-      }
-    }
-    if (typeof cfg.draft_replies === "boolean") $("#draftReplies").checked = cfg.draft_replies;
-    if (cfg.draft_style) applyDraftStyle(cfg.draft_style);
-    if (cfg.rules) {
-      if (Array.isArray(cfg.rules.always_ignore)) $("#rulesIgnore").value = cfg.rules.always_ignore.join("\n");
-      if (Array.isArray(cfg.rules.always_surface)) $("#rulesSurface").value = cfg.rules.always_surface.join("\n");
-      if (Array.isArray(cfg.rules.always_action)) $("#rulesAction").value = cfg.rules.always_action.join("\n");
-    }
-    if (typeof cfg.carry_over === "boolean") $("#carryOver").checked = cfg.carry_over;
-    if (cfg.label != null && cfg.label !== "") $("#label").value = cfg.label;
-    if (typeof cfg.nag_after_days === "number") $("#nagAfterDays").value = cfg.nag_after_days;
-    if (cfg.accounts && typeof cfg.accounts === "object") S.acctOverrides = cfg.accounts;
-    updateWindowNote();
+    applyConfig(parseConfig(b64decode(cur.content)));
   } catch (e) {
     // no config.yaml yet, or unreadable -- defaults stand
   }
+}
+
+// Fill the form from a parsed config.yaml -- shared by the prefill above and
+// the dashboard's "Import config.yaml". Only keys the parser understood are
+// touched; everything else keeps whatever the form already holds.
+function applyConfig(cfg) {
+  if (cfg.interests != null) $("#interests").value = cfg.interests;
+  if (cfg.avoid != null) $("#avoid").value = cfg.avoid;
+  // email_to/email_from are never prefilled -- they live in secrets now,
+  // config.yaml only ever has "" for them, and GitHub never returns a
+  // secret's value anyway.
+  if (cfg.reading_count != null) { $("#count").value = cfg.reading_count; $("#countOut").textContent = cfg.reading_count; }
+  if (cfg.provider && PROV_FIELD[cfg.provider]) {
+    const r = $('input[name=provider][value="' + cfg.provider + '"]');
+    if (r) { r.checked = true; updateAuthFields(); }
+  }
+  if (cfg.delivery === "gmail" || cfg.delivery === "email") {
+    const r = $('input[name=delivery][value="' + cfg.delivery + '"]');
+    if (r) { r.checked = true; updateDeliveryFields(); }
+    if (cfg.delivery === "email") $("#resendPrefillNote").style.display = "flex";
+  }
+  if (Array.isArray(cfg.run_at) && cfg.run_at.length) setRunAtRows(cfg.run_at);
+  if (cfg.timezone && $('#timezone option[value="' + cfg.timezone + '"]')) $("#timezone").value = cfg.timezone;
+  if (cfg.weekly_review) {
+    const m = /^(mon|tue|wed|thu|fri|sat|sun) (\d{2}:\d{2})$/i.exec(cfg.weekly_review);
+    if (m) {
+      $("#weeklyOn").checked = true;
+      $("#weeklyDay").value = m[1].toLowerCase();
+      $("#weeklyTime").value = m[2];
+      $("#weeklyRow").style.display = "flex";
+    }
+  }
+  if (typeof cfg.draft_replies === "boolean") $("#draftReplies").checked = cfg.draft_replies;
+  if (cfg.draft_style) applyDraftStyle(cfg.draft_style);
+  if (cfg.rules) {
+    if (Array.isArray(cfg.rules.always_ignore)) $("#rulesIgnore").value = cfg.rules.always_ignore.join("\n");
+    if (Array.isArray(cfg.rules.always_surface)) $("#rulesSurface").value = cfg.rules.always_surface.join("\n");
+    if (Array.isArray(cfg.rules.always_action)) $("#rulesAction").value = cfg.rules.always_action.join("\n");
+  }
+  if (typeof cfg.carry_over === "boolean") $("#carryOver").checked = cfg.carry_over;
+  if (cfg.label != null && cfg.label !== "") $("#label").value = cfg.label;
+  if (typeof cfg.nag_after_days === "number") $("#nagAfterDays").value = cfg.nag_after_days;
+  if (cfg.accounts && typeof cfg.accounts === "object") S.acctOverrides = cfg.accounts;
+  updateWindowNote();
 }
 
 tokenEl.addEventListener("blur", checkToken);
@@ -1814,13 +1923,340 @@ function succeed(run) {
     "It repeats at " + esc(S.cfg.run_at.join(", ")) + " (" + esc(S.cfg.timezone) + ").";
   const base = "https://github.com/" + S.repo.full_name;
   $("#doneLinks").innerHTML =
+    '<button class="btn btn-primary" id="openDash3">Open the dashboard <span class="arr">→</span></button>' +
     (run ? '<a class="btn btn-ghost" target="_blank" rel="noopener" href="' + esc(run.html_url) + '">See the run log</a>' : "") +
     '<a class="btn btn-ghost" target="_blank" rel="noopener" href="' + base + '/edit/' + encodeURIComponent(S.repo.default_branch) + '/config.yaml">Edit config.yaml later</a>' +
     '<a class="btn btn-ghost" target="_blank" rel="noopener" href="' + base + '/actions">All runs</a>';
+  $("#openDash3").addEventListener("click", openDash);
   window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" });
 }
 
 $("#fire").addEventListener("click", launch);
+
+/* ------------------------------------------------------------ sample digest preview */
+// Both "What the digest looks like" panels point at the sibling file
+// docs/sample-digest.html (rendered by scripts/render_sample.py through the
+// real email template). The iframe gets its src only when opened, so a page
+// load never fetches it.
+$$("details[data-preview]").forEach((d) => d.addEventListener("toggle", () => {
+  const f = $("iframe", d);
+  if (d.open && !f.src) f.src = f.dataset.src;
+}));
+
+/* ------------------------------------------------------------ dashboard */
+// Read-only view of the fork through the same REST API the launch flow
+// writes with, plus the four dispatch buttons. Everything here is fetched
+// fresh on open/refresh; nothing is cached across visits.
+const fmtTime = (iso) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+function fmtDuration(run) {
+  const ms = new Date(run.updated_at) - new Date(run.run_started_at || run.created_at);
+  if (!(ms > 0)) return "—";
+  const s = Math.round(ms / 1000);
+  return s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60) + "s";
+}
+
+// Wall-clock (y, m, d, hh, mm) in IANA zone `tz` -> UTC instant. Guess the
+// UTC value, measure how far the zone's wall clock is from it, correct; twice
+// to settle a DST edge. Intl only -- no tz library.
+function zonedToUtc(tz, y, m, d, hh, mm) {
+  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric" });
+  const wall = (t) => {
+    const p = {};
+    fmt.formatToParts(t).forEach((x) => { p[x.type] = x.value; });
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute);
+  };
+  const want = Date.UTC(y, m, d, hh, mm);
+  let t = want;
+  for (let i = 0; i < 2; i++) t += want - wall(t);
+  return t;
+}
+// Next slot after `now` -- the "next slot" half of schedule.due(): the first
+// run_at time in cfg.timezone after now (today or tomorrow), or the weekly
+// slot if that lands sooner. No catch-up logic; that's the engine's job.
+function nextSlot(cfg, now) {
+  const tz = cfg.timezone || "UTC";
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "numeric", day: "numeric", weekday: "short" })
+    .formatToParts(now).forEach((x) => { parts[x.type] = x.value; });
+  const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  const todayIdx = days.indexOf(parts.weekday.toLowerCase().slice(0, 3));
+  const at = (offset, hhmm) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return zonedToUtc(tz, +parts.year, +parts.month - 1, +parts.day + offset, h, m);
+  };
+  const cands = [];
+  (Array.isArray(cfg.run_at) ? cfg.run_at : []).forEach((s) => {
+    if (!/^\d{2}:\d{2}$/.test(s)) return;
+    for (let off = 0; off <= 1; off++) cands.push({ t: at(off, s), kind: "digest" });
+  });
+  const wk = /^(mon|tue|wed|thu|fri|sat|sun) (\d{2}:\d{2})$/i.exec(cfg.weekly_review || "");
+  if (wk) {
+    const off = (days.indexOf(wk[1].toLowerCase()) - todayIdx + 7) % 7;
+    for (let k = 0; k < 2; k++) cands.push({ t: at(off + 7 * k, wk[2]), kind: "weekly" });
+  }
+  const future = cands.filter((c) => c.t > now.getTime()).sort((a, b) => a.t - b.t);
+  return future[0] || null;
+}
+
+function openDash() {
+  if (!S.repo) return;
+  show(4);
+  loadDash();
+}
+$("#openDash1").addEventListener("click", (e) => { e.preventDefault(); openDash(); });
+$("#dashBack").addEventListener("click", () => show(2));
+$("#dashRefresh").addEventListener("click", loadDash);
+
+const stat = (k, v, s, cls) =>
+  '<div class="stat ' + (cls || "") + '"><div class="k">' + esc(k) + '</div><div class="v">' + v + '</div>' + (s ? '<div class="s">' + s + "</div>" : "") + "</div>";
+const note = (kind, html) => '<div class="note ' + kind + '"><span class="ic">◆</span><span>' + html + "</span></div>";
+
+let dashSeq = 0;
+async function loadDash() {
+  const seq = ++dashSeq;
+  const repo = "/repos/" + S.repo.full_name;
+  const base = "https://github.com/" + S.repo.full_name;
+  $("#dashLede").innerHTML = "<strong>" + esc(S.repo.full_name) + "</strong> · <a target=\"_blank\" rel=\"noopener\" href=\"" + esc(base) + "/actions\">Actions on GitHub</a>";
+  $("#dashState").innerHTML = "";
+  $("#dashStats").innerHTML = '<p class="hint"><span class="spin-inline"></span>Reading your fork…</p>';
+  $("#dashRuns").innerHTML = "";
+  $("#dashUpgrade").innerHTML = "";
+
+  // Independent reads, in parallel; each one degrades to its own message.
+  const safe = (p) => p.then((v) => ({ ok: true, v }), (e) => ({ ok: false, e }));
+  const [wf, commits, secrets, cfgFile, cmp] = await Promise.all([
+    safe(gh("GET", repo + "/actions/workflows/" + WORKFLOW)),
+    safe(gh("GET", repo + "/commits?per_page=1&sha=" + encodeURIComponent(S.repo.default_branch))),
+    safe(gh("GET", repo + "/actions/secrets?per_page=100")),
+    safe(gh("GET", repo + "/contents/config.yaml?ref=" + encodeURIComponent(S.repo.default_branch))),
+    safe(gh("GET", "/repos/" + UPSTREAM + "/compare/main..." + encodeURIComponent(S.repo.owner.login) + ":" + encodeURIComponent(S.repo.default_branch)))
+  ]);
+  if (seq !== dashSeq) return;
+
+  /* workflow state */
+  if (wf.ok && /^disabled/.test(wf.v.state)) {
+    $("#dashState").innerHTML = note("caution",
+      "<strong>The schedule is switched off</strong> (" + esc(wf.v.state.replace(/_/g, " ")) + ")" +
+      (wf.v.state === "disabled_inactivity" ? " — GitHub pauses scheduled workflows after 60 days without a commit. " : ". ") +
+      "Nothing will run until it's enabled again. " +
+      '<button class="btn btn-accent" id="dashEnable" style="margin-top:8px;padding:8px 14px;font-size:13px">Enable</button>');
+    $("#dashEnable").addEventListener("click", async () => {
+      const b = $("#dashEnable");
+      b.disabled = true;
+      try {
+        await gh("PUT", repo + "/actions/workflows/" + WORKFLOW + "/enable");
+        $("#dashState").innerHTML = note("safe", "<strong>Enabled.</strong> The hourly schedule is back on.");
+      } catch (e) {
+        b.disabled = false;
+        $("#dashState").insertAdjacentHTML("beforeend", note("caution", esc(e.message)));
+      }
+    });
+  } else if (!wf.ok) {
+    $("#dashState").innerHTML = note("caution", "Couldn't read the workflow: " + esc(wf.e.message));
+  }
+
+  /* config + secrets */
+  let cfg = null, cfgText = "";
+  if (cfgFile.ok) {
+    cfgText = b64decode(cfgFile.v.content);
+    cfg = parseConfig(cfgText);
+  }
+  S.dashCfgText = cfgText;
+  const names = secrets.ok ? secrets.v.secrets.map((s) => s.name) : [];
+  const has = (n) => names.includes(n);
+
+  const cards = [];
+  if (cfg) {
+    const nx = nextSlot(cfg, new Date());
+    cards.push(nx
+      ? stat("Next " + nx.kind, esc(fmtTime(nx.t)), "in your local time · " + esc(cfg.timezone || "UTC") + " in config.yaml. GitHub fires within the hour after.")
+      : stat("Next digest", "No slot found", "config.yaml's run_at has no valid \"HH:MM\" entries.", "bad"));
+  } else {
+    cards.push(stat("Next digest", "No config.yaml yet", "Run the setup to write one.", "warn"));
+  }
+
+  if (commits.ok && commits.v[0]) {
+    const last = new Date(commits.v[0].commit.committer.date);
+    const left = 60 - Math.floor((Date.now() - last) / 86400000);
+    cards.push(stat("60-day timer", left > 0 ? left + " day" + (left === 1 ? "" : "s") + " left" : "Expired",
+      "GitHub pauses the schedule after 60 days without a commit. Last commit " + esc(fmtTime(last)) + " · saving settings here or merging a sync PR resets it.",
+      left <= 7 ? "warn" : ""));
+  }
+
+  if (secrets.ok) {
+    const ai = Object.keys(PROV_SECRET).filter((p) => has(PROV_SECRET[p]));
+    cards.push(stat("AI secret", ai.length ? ai.map((p) => esc(PROV_SECRET[p])).join(", ") : "None set",
+      ai.length > 1 ? "More than one is set — config.yaml's provider decides which runs." : (cfg && cfg.provider ? "provider: " + esc(cfg.provider) : ""),
+      ai.length === 1 ? "" : (ai.length ? "warn" : "bad")));
+    const pw = names.filter((n) => /^MAIL_PW_/.test(n)).length;
+    // Override keys in config.yaml are addresses -- each must have its
+    // MAIL_PW_ secret, hashed the same way the wizard writes them.
+    const ovr = cfg && cfg.accounts && typeof cfg.accounts === "object" ? Object.keys(cfg.accounts) : [];
+    const missing = ovr.filter((a) => !has(mailPwSlug(a)));
+    cards.push(stat("Gmail accounts", (has("MAIL_ACCOUNTS") ? "MAIL_ACCOUNTS set" : "MAIL_ACCOUNTS missing") + " · " + pw + " app password" + (pw === 1 ? "" : "s"),
+      missing.length ? "No MAIL_PW_ secret for " + missing.map(esc).join(", ") + " (listed under accounts: in config.yaml)." :
+        (ovr.length ? ovr.length + " per-account override" + (ovr.length === 1 ? "" : "s") + " in config.yaml, all with a password secret." : "The address list itself is a secret and can't be read back."),
+      !has("MAIL_ACCOUNTS") || !pw || missing.length ? "bad" : ""));
+    const delivery = cfg ? cfg.delivery : "";
+    if (delivery === "email") {
+      cards.push(stat("Delivery", "Resend · " + (has("RESEND_API_KEY") ? "key set" : "RESEND_API_KEY missing"),
+        (has("EMAIL_TO") ? "EMAIL_TO" : "<s>EMAIL_TO</s>") + " · " + (has("EMAIL_FROM") ? "EMAIL_FROM" : "<s>EMAIL_FROM</s>"),
+        has("RESEND_API_KEY") && has("EMAIL_TO") && has("EMAIL_FROM") ? "" : "bad"));
+    } else {
+      cards.push(stat("Delivery", "Gmail · " + (pw ? "via your app password" : "needs an app password"),
+        has("EMAIL_TO") ? "To the EMAIL_TO secret." : "To your first Gmail account.", pw ? "" : "bad"));
+    }
+  } else {
+    cards.push(stat("Secrets", "Couldn't list", esc(secrets.e.message), "bad"));
+  }
+  $("#dashStats").innerHTML = cards.join("");
+
+  /* upgrade */
+  if (cmp.ok) {
+    const b = cmp.v.behind_by;
+    $("#dashUpgrade").innerHTML = stat("Upstream", b ? b + " commit" + (b === 1 ? "" : "s") + " behind" : "Up to date",
+      b ? "Sync opens a pull request on your fork; review and merge it. Your config.yaml is kept." : "Nothing new in " + esc(UPSTREAM) + ".",
+      b ? "warn" : "");
+  } else {
+    $("#dashUpgrade").innerHTML = stat("Upstream", "Couldn't compare", esc(cmp.e.message), "warn");
+  }
+
+  await loadRuns(seq);
+}
+
+const OUTCOME = {
+  success: ["ok", "success"], failure: ["bad", "failure"], cancelled: ["", "cancelled"], skipped: ["", "skipped"],
+  timed_out: ["bad", "timed out"], action_required: ["warn", "waiting for approval"], startup_failure: ["bad", "startup failure"]
+};
+async function loadRuns(seq) {
+  const repo = "/repos/" + S.repo.full_name;
+  let d;
+  try {
+    d = await gh("GET", repo + "/actions/workflows/" + WORKFLOW + "/runs?per_page=10");
+  } catch (e) {
+    if (seq === dashSeq) $("#dashRuns").innerHTML = "<tr><td>" + esc(e.message) + "</td></tr>";
+    return;
+  }
+  if (seq !== dashSeq) return;
+  const runs = d.workflow_runs || [];
+  if (!runs.length) {
+    $("#dashRuns").innerHTML = "<tr><td>No runs yet.</td></tr>";
+    return;
+  }
+  // The workflow fires hourly and usually exits at the "Is it time?" gate;
+  // read each finished run's steps so a no-op hour isn't shown as a digest.
+  const jobs = await Promise.all(runs.map((r) =>
+    r.status === "completed" && r.conclusion === "success"
+      ? gh("GET", repo + "/actions/runs/" + r.id + "/jobs").catch(() => null)
+      : Promise.resolve(null)));
+  if (seq !== dashSeq) return;
+  const rows = runs.map((r, i) => {
+    let cls, txt;
+    if (r.status !== "completed") { cls = "run"; txt = r.status.replace(/_/g, " "); }
+    else { [cls, txt] = OUTCOME[r.conclusion] || ["", r.conclusion || "incomplete"]; }
+    const j = jobs[i] && jobs[i].jobs && jobs[i].jobs[0];
+    const send = j && (j.steps || []).find((s) => s.name === "Send digest");
+    if (send && send.conclusion === "skipped") { cls = ""; txt = "not a slot"; }
+    return "<tr>" +
+      '<td class="n"><a target="_blank" rel="noopener" href="' + esc(r.html_url) + '">' + esc(fmtTime(r.created_at)) + "</a></td>" +
+      "<td>" + (r.event === "schedule" ? "schedule" : "manual") + "</td>" +
+      '<td><span class="pill ' + cls + '">' + esc(txt) + "</span></td>" +
+      '<td class="n hide-sm">' + esc(fmtDuration(r)) + "</td></tr>";
+  });
+  $("#dashRuns").innerHTML = "<thead><tr><th>Started</th><th>Trigger</th><th>Outcome</th><th class=\"hide-sm\">Took</th></tr></thead><tbody>" + rows.join("") + "</tbody>";
+}
+
+// Dispatch digest.yml with a mode, or upstream-sync.yml with none. A 422
+// means the fork's digest.yml predates the `mode` input: retry input-less
+// (which that workflow treats as a plain digest) and say so.
+async function dispatch(workflow, mode, statusEl) {
+  const repo = "/repos/" + S.repo.full_name;
+  const path = repo + "/actions/workflows/" + workflow + "/dispatches";
+  let noteText = "";
+  try {
+    if (mode) {
+      try {
+        await gh("POST", path, { ref: S.repo.default_branch, inputs: { mode: mode } });
+      } catch (e) {
+        if (e.status !== 422) throw e;
+        await gh("POST", path, { ref: S.repo.default_branch });
+        noteText = mode === "digest"
+          ? " (This fork's workflow has no mode input yet, so it was started the old way — a plain digest. Sync with upstream to get the newer workflow.)"
+          : " (This fork's workflow has no mode input yet, so a plain digest was started instead of " + mode + ". Sync with upstream to get the newer workflow.)";
+      }
+    } else {
+      await gh("POST", path, { ref: S.repo.default_branch });
+    }
+  } catch (e) {
+    statusEl.className = "status bad";
+    statusEl.textContent = e.message;
+    return false;
+  }
+  statusEl.className = "status";
+  statusEl.textContent = "Dispatched on " + S.repo.default_branch + "." + noteText + " Watching the runs list…";
+  return true;
+}
+
+// After a dispatch: refresh the runs table every 10 s for two minutes.
+let pollSeq = 0;
+async function pollRuns() {
+  const my = ++pollSeq;
+  const until = Date.now() + 120000;
+  while (Date.now() < until && my === pollSeq && S.step === 4) {
+    await new Promise((r) => setTimeout(r, 10000));
+    if (my !== pollSeq || S.step !== 4) return;
+    await loadRuns(dashSeq);
+  }
+}
+
+$$("#p4 [data-mode]").forEach((b) => b.addEventListener("click", async () => {
+  const mode = b.dataset.mode;
+  if (!MODES.includes(mode)) return;
+  $$("#p4 [data-mode]").forEach((x) => { x.disabled = true; });
+  const ok = await dispatch(WORKFLOW, mode, $("#dashRunStatus"));
+  $$("#p4 [data-mode]").forEach((x) => { x.disabled = false; });
+  if (ok) pollRuns();
+}));
+$("#dashSync").addEventListener("click", async () => {
+  const b = $("#dashSync");
+  b.disabled = true;
+  const st = $("#dashSyncStatus");
+  const ok = await dispatch(SYNC_WORKFLOW, null, st);
+  b.disabled = false;
+  if (ok) {
+    st.innerHTML = "Dispatched on " + esc(S.repo.default_branch) + ". If upstream has moved, a pull request appears on " +
+      '<a target="_blank" rel="noopener" href="https://github.com/' + esc(S.repo.full_name) + '/pulls">your fork</a> in a minute — merge it there. ' +
+      "(Needs Settings → Actions → General → “Allow GitHub Actions to create and approve pull requests”.)";
+  }
+});
+
+/* config export / import -- plain conveniences */
+$("#dashExport").addEventListener("click", () => {
+  const text = S.dashCfgText || buildYaml(collect());
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/yaml" }));
+  a.download = "config.yaml";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+$("#dashImport").addEventListener("click", () => $("#dashImportFile").click());
+$("#dashImportFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const st = $("#dashImportStatus");
+  try {
+    const cfg = parseConfig(await f.text());
+    if (!Object.keys(cfg).length) throw new Error("That file has no top-level keys this page recognizes.");
+    applyConfig(cfg);
+    st.className = "status";
+    st.textContent = "Loaded " + f.name + " into the settings form — review it, then launch to write it to your fork.";
+    show(2);
+  } catch (err) {
+    st.className = "status bad";
+    st.textContent = "Couldn't read " + f.name + ": " + err.message;
+  }
+  e.target.value = "";
+});
 
 /* ------------------------------------------------------------ remember prefs (never secrets/token/accounts) */
 // window_hours ("win") is derived from run_at, not saved directly.
