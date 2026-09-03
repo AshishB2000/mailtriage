@@ -80,6 +80,18 @@ def _next_slot(cfg: Config, now_local: datetime) -> str:
     return ordered[0]  # nothing left today -- wraps to tomorrow's first slot
 
 
+def _due_any(cfg: Config, now: datetime, event: str) -> str | None:
+    """schedule.due() over the base config -- or, with profiles, over each
+    resolved profile: due if ANY of them is. "digest" beats "weekly" the same
+    way due() itself ranks them; _run_profiles then runs each profile in its
+    own due mode, so a profile whose weekly slot shares the hour with another
+    profile's daily slot still gets its review."""
+    if not cfg.profiles:
+        return due(cfg, now, event)
+    modes = {due(cfg.profile(name), now, event) for name in cfg.profiles}
+    return "digest" if "digest" in modes else "weekly" if "weekly" in modes else None
+
+
 def _handle_due(cfg: Config, now: datetime, event: str) -> int:
     """Print the due mode ('digest'/'weekly') to STDOUT and return the
     exit-code contract (0 due / 3 not due). All human-readable status lines
@@ -87,7 +99,7 @@ def _handle_due(cfg: Config, now: datetime, event: str) -> int:
     see the "Is it time?" step in .github/workflows/digest.yml, which
     captures this to pick which of `mailtriage`/`mailtriage --weekly` to
     run next."""
-    result = due(cfg, now, event)
+    result = _due_any(cfg, now, event)
     if result == "digest":
         print("digest")
         return 0
@@ -167,7 +179,7 @@ def _slot_already_delivered(cfg: Config, stamp: str, now: datetime) -> bool:
     return False
 
 
-def run_weekly(cfg: Config, dry_run: bool = False) -> None:
+def run_weekly(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> None:
     # Imported here, not at module scope: mirrors run()'s lazy delivery
     # import (weekly_html lives in delivery.mail, alongside the Resend
     # HTTP client) so --self-check keeps working the same way.
@@ -178,7 +190,7 @@ def run_weekly(cfg: Config, dry_run: bool = False) -> None:
     stamp = _slot_stamp(cfg, now, dry_run)
     if _slot_already_delivered(cfg, stamp, now):
         return
-    week = pull_week(os.environ, now, cfg.label)
+    week = pull_week(os.environ, now, cfg.label, only=only)
 
     for w in week["warnings"]:
         print(f"mailtriage: account failed, skipping: {w}", file=sys.stderr)
@@ -228,7 +240,7 @@ def _carried_triaged(em: Email) -> Triaged:
     }
 
 
-def run(cfg: Config, dry_run: bool = False) -> None:
+def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> None:
     # Imported here, not at module scope: --self-check must work on a machine
     # where `anthropic` failed to install, and this is the only path that needs it.
     from mailtriage.delivery import send
@@ -240,7 +252,7 @@ def run(cfg: Config, dry_run: bool = False) -> None:
     stamp = _slot_stamp(cfg, now, dry_run)
     if _slot_already_delivered(cfg, stamp, now):
         return
-    result = pull(os.environ, now, cfg.window_hours)
+    result = pull(os.environ, now, cfg.window_hours, only=only)
 
     # A dead account must not fail the run: a red X for one broken account
     # trains you to ignore red X's. Report and carry on with the rest.
@@ -325,7 +337,7 @@ def run(cfg: Config, dry_run: bool = False) -> None:
                 print(f"mailtriage: label failed, skipping: {w}", file=sys.stderr)
 
         # Reading is fine on a dry run -- only writes are skipped above.
-        carried = pull_open_actions(os.environ, now, cfg.window_hours, cfg.label)
+        carried = pull_open_actions(os.environ, now, cfg.window_hours, cfg.label, only=only)
         for w in carried["warnings"]:
             print(f"mailtriage: carried-mail lookup failed, skipping: {w}", file=sys.stderr)
         kept = kept + [_carried_triaged(em) for em in carried["messages"]]
@@ -443,6 +455,37 @@ def run_doctor(config_path: str) -> int:
     return 0 if ok else 1
 
 
+def _run_profiles(cfg: Config, weekly: bool, dry_run: bool) -> int:
+    """One run per profile, over just that profile's accounts. On a scheduled
+    run the gate only said *some* profile is due, so each profile is
+    re-checked here and runs in its own due mode (or not at all); a manual
+    "Run workflow" click or a local run does all of them in the asked mode.
+    One failing profile is reported and the rest still run -- exit 1 at the
+    end if any failed, same warn-and-continue spirit as a dead account."""
+    now = _now()
+    scheduled = os.environ.get("GITHUB_EVENT_NAME") == "schedule"
+    failed: list[str] = []
+    for name, spec in cfg.profiles.items():
+        pcfg = cfg.profile(name)
+        mode = due(pcfg, now, "schedule") if scheduled else ("weekly" if weekly else "digest")
+        if mode is None:
+            print(f"mailtriage: profile {name}: not due this hour — skipping.", file=sys.stderr)
+            continue
+        accounts = set(spec["accounts"])
+        print(
+            f"mailtriage: profile {name}: {mode} over {len(accounts)} account(s) via {pcfg.delivery}.", file=sys.stderr
+        )
+        try:
+            (run_weekly if mode == "weekly" else run)(pcfg, dry_run=dry_run, only=accounts)
+        except MailError as e:
+            print(f"mailtriage: profile {name}: {e}", file=sys.stderr)
+            failed.append(name)
+    if failed:
+        print(f"mailtriage: {len(failed)} profile(s) failed: {', '.join(failed)}.", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
@@ -461,10 +504,14 @@ def main(argv: list[str] | None = None) -> int:
             return _handle_due(load_config(args.config), _now(), event)
         if args.doctor:
             return run_doctor(args.config)
+
+        cfg = load_config(args.config)
+        if cfg.profiles:
+            return _run_profiles(cfg, weekly=args.weekly, dry_run=args.dry_run)
         if args.weekly:
-            run_weekly(load_config(args.config), dry_run=args.dry_run)
+            run_weekly(cfg, dry_run=args.dry_run)
         else:
-            run(load_config(args.config), dry_run=args.dry_run)
+            run(cfg, dry_run=args.dry_run)
     except MailError as e:
         print(f"mailtriage: {e}", file=sys.stderr)
         return 1

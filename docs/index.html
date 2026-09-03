@@ -603,7 +603,7 @@ footer a{color:var(--muted)}
     </div>
 
     <div class="sect">
-      <h3>Email delivery</h3>
+      <h3>Delivery</h3>
       <div class="f">
         <span class="lgnd" id="deliverylbl">How you get the digest</span>
         <div class="provs" role="radiogroup" aria-labelledby="deliverylbl">
@@ -615,7 +615,30 @@ footer a{color:var(--muted)}
             <input type="radio" name="delivery" value="email" id="delivery-email">
             <span><span class="pname">Resend</span><span class="pdesc">Send from a custom domain via resend.com — needs an API key and a verified sending domain.</span></span>
           </label>
+          <label class="prov">
+            <input type="radio" name="delivery" value="telegram" id="delivery-telegram">
+            <span><span class="pname">Telegram</span><span class="pdesc">A bot you create with @BotFather messages you the digest. Needs the bot token and your chat id.</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="delivery" value="slack" id="delivery-slack">
+            <span><span class="pname">Slack</span><span class="pdesc">Posts to a channel through an incoming webhook you create in your workspace.</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="delivery" value="discord" id="delivery-discord">
+            <span><span class="pname">Discord</span><span class="pdesc">Posts to a channel through a webhook from the channel's Integrations settings.</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="delivery" value="ntfy" id="delivery-ntfy">
+            <span><span class="pname">ntfy</span><span class="pdesc">A push notification to the ntfy app on your phone. Needs only a topic URL.</span></span>
+          </label>
         </div>
+      </div>
+
+      <div class="f" id="f-digestText" style="margin-top:12px">
+        <label class="toggle">
+          <input type="checkbox" id="digestText">
+          <span>Plain-text email instead of HTML</span>
+        </label>
       </div>
 
       <details class="ovr" id="gmailAdvanced" style="margin-top:14px">
@@ -657,6 +680,60 @@ footer a{color:var(--muted)}
         <div class="note caution">
           <span class="ic">◆</span>
           <span><strong>The from-address must be on a domain you've verified in Resend</strong> at <a href="https://resend.com/domains" target="_blank" rel="noopener">resend.com/domains</a> — an unverified domain is the single most common reason the first digest never arrives, and returns a 403 that looks like a bad API key but isn't. Resend's shared <code>onboarding@resend.dev</code> sender works with no domain setup, but can only deliver to your own Resend-account email.</span>
+        </div>
+      </div>
+
+      <div id="telegramFields" style="display:none">
+        <div class="f" id="f-tgToken">
+          <label for="tgToken">Telegram bot token</label>
+          <p class="hint">Message <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>, send <code>/newbot</code>, and copy the token it gives you. Then open your new bot and press <strong>Start</strong> — a bot can't message you until you do. Stored as the <code>TELEGRAM_BOT_TOKEN</code> secret.</p>
+          <div class="reveal">
+            <input type="password" id="tgToken" class="mono" placeholder="123456789:AA••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="tgToken">Show</button>
+          </div>
+          <div class="msg"></div>
+        </div>
+        <div class="f" id="f-tgChatId">
+          <label for="tgChatId">Chat id</label>
+          <p class="hint">After pressing Start, open <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser and copy <code>result[0].message.chat.id</code>. Written to <code>config.yaml</code> as <code>telegram_chat_id</code> — it isn't a secret on its own.</p>
+          <input type="text" id="tgChatId" class="mono" placeholder="123456789" autocomplete="off" spellcheck="false">
+          <div class="msg"></div>
+        </div>
+      </div>
+
+      <div id="slackFields" style="display:none">
+        <div class="f" id="f-slackHook">
+          <label for="slackHook">Slack incoming webhook URL</label>
+          <p class="hint">At <a href="https://api.slack.com/apps" target="_blank" rel="noopener">api.slack.com/apps</a> create an app (from scratch), open <strong>Incoming Webhooks</strong>, switch it on, <strong>Add New Webhook to Workspace</strong>, pick the channel, copy the URL. Stored as the <code>SLACK_WEBHOOK_URL</code> secret.</p>
+          <div class="reveal">
+            <input type="password" id="slackHook" class="mono" placeholder="https://hooks.slack.com/services/••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="slackHook">Show</button>
+          </div>
+          <div class="msg"></div>
+        </div>
+      </div>
+
+      <div id="discordFields" style="display:none">
+        <div class="f" id="f-discordHook">
+          <label for="discordHook">Discord webhook URL</label>
+          <p class="hint">In Discord, open the channel's settings → <strong>Integrations</strong> → <strong>Webhooks</strong> → <strong>New Webhook</strong> → <strong>Copy Webhook URL</strong>. Stored as the <code>DISCORD_WEBHOOK_URL</code> secret.</p>
+          <div class="reveal">
+            <input type="password" id="discordHook" class="mono" placeholder="https://discord.com/api/webhooks/••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="discordHook">Show</button>
+          </div>
+          <div class="msg"></div>
+        </div>
+      </div>
+
+      <div id="ntfyFields" style="display:none">
+        <div class="f" id="f-ntfyTopic">
+          <label for="ntfyTopic">ntfy topic URL</label>
+          <p class="hint">Install the <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a> app, subscribe to a topic with a name nobody could guess (e.g. <code>mailtriage-k3j9x2</code>), and paste its full URL. Anyone who knows the topic can read it, so it is stored as the <code>NTFY_TOPIC_URL</code> secret.</p>
+          <div class="reveal">
+            <input type="password" id="ntfyTopic" class="mono" placeholder="https://ntfy.sh/mailtriage-••••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="ntfyTopic">Show</button>
+          </div>
+          <div class="msg"></div>
         </div>
       </div>
 
@@ -1102,8 +1179,9 @@ function buildYaml(v) {
     "# covers hours GitHub's scheduler skips. A slot never sends twice.",
     "catch_up_minutes: 120",
     "",
-    "# Valid values: delivery: gmail (recommended, via your own Gmail SMTP)",
-    "# or delivery: email (via Resend). Picked in the wizard's delivery step.",
+    "# Valid values: delivery: gmail (recommended, via your own Gmail SMTP),",
+    "# delivery: email (via Resend), telegram, slack, discord or ntfy. Picked",
+    "# in the wizard's delivery step; see README.md \"Delivery options\".",
     "delivery: " + v.delivery,
     "",
     "# Addresses go in the EMAIL_TO / EMAIL_FROM repo secrets, not here --",
@@ -1112,6 +1190,12 @@ function buildYaml(v) {
     "# delivery: email (Resend) both are required and RESEND_API_KEY must be set.",
     "email_to: " + yamlStr(""),
     "email_from: " + yamlStr(""),
+    "",
+    "# delivery: telegram only -- the chat the bot posts to.",
+    "telegram_chat_id: " + yamlStr(v.telegram_chat_id || ""),
+    "",
+    "# delivery: email / gmail only. \"html\" or \"text\" (plain-text email).",
+    "digest_format: " + yamlStr(v.digest_format || "html"),
     "",
     "subject_prefix: " + yamlStr("mailtriage"),
     "",
@@ -1146,8 +1230,31 @@ function buildYaml(v) {
     "# A carried item open for at least this many days is flagged in bold",
     "# with a \"still open\" badge.",
     "nag_after_days: " + v.nag_after_days,
+    "",
+    "# Optional named digests over subsets of MAIL_ACCOUNTS, each with its",
+    "# own overrides -- hand-edited; the wizard carries this block through",
+    "# untouched. See README.md \"Two digests: work and personal\".",
+    ...(v.profiles_raw ? String(v.profiles_raw).split("\n") : ["profiles: {}"]),
     ""
   ].join("\n");
+}
+
+// The wizard has no UI for `profiles:` (hand-edited, advanced), so a save
+// carries the block through VERBATIM -- comments and all -- rather than
+// re-serializing a parse of it: the subset parser below would drop any
+// shape it doesn't know, and a dropped profile is a digest that silently
+// stops arriving. The block is `profiles:` plus every following line that
+// is blank, indented, or a comment, minus trailing blanks/comments (those
+// belong to whatever key comes next). "" when the file has no profiles key.
+function profilesBlock(text) {
+  const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+  const start = lines.findIndex((l) => /^profiles:/.test(l));
+  if (start < 0) return "";
+  let end = start + 1;
+  while (end < lines.length && (lines[end].trim() === "" || /^[ \t#]/.test(lines[end]))) end++;
+  const block = lines.slice(start, end);
+  while (block.length > 1 && (block[block.length - 1].trim() === "" || /^#/.test(block[block.length - 1]))) block.pop();
+  return block.join("\n");
 }
 
 // Tailored reader for exactly what buildYaml above writes -- not a general
@@ -1343,7 +1450,9 @@ async function prefillFromConfig(fullName) {
     const cur = await gh("GET", "/repos/" + fullName + "/contents/config.yaml");
     if (fullName !== S.repo.full_name) return; // repo changed while this was in flight
     if (S.step !== 1) return; // user already moved past connect -- don't clobber typed input
-    applyConfig(parseConfig(b64decode(cur.content)));
+    const text = b64decode(cur.content);
+    S.profilesRaw = profilesBlock(text);
+    applyConfig(parseConfig(text));
   } catch (e) {
     // no config.yaml yet, or unreadable -- defaults stand
   }
@@ -1363,11 +1472,13 @@ function applyConfig(cfg) {
     const r = $('input[name=provider][value="' + cfg.provider + '"]');
     if (r) { r.checked = true; updateAuthFields(); }
   }
-  if (cfg.delivery === "gmail" || cfg.delivery === "email") {
+  if (DELIVERY_FIELDS[cfg.delivery]) {
     const r = $('input[name=delivery][value="' + cfg.delivery + '"]');
     if (r) { r.checked = true; updateDeliveryFields(); }
     if (cfg.delivery === "email") $("#resendPrefillNote").style.display = "flex";
   }
+  if (cfg.telegram_chat_id != null && cfg.telegram_chat_id !== "") $("#tgChatId").value = cfg.telegram_chat_id;
+  if (cfg.digest_format === "text") $("#digestText").checked = true;
   if (Array.isArray(cfg.run_at) && cfg.run_at.length) setRunAtRows(cfg.run_at);
   if (cfg.timezone && $('#timezone option[value="' + cfg.timezone + '"]')) $("#timezone").value = cfg.timezone;
   if (cfg.weekly_review) {
@@ -1431,11 +1542,29 @@ function updateAuthFields() {
 $$('input[name=provider]').forEach((r) => r.addEventListener("change", updateAuthFields));
 
 /* ------------------------------------------------------------ step 2: delivery picker */
+// Per delivery: the block of fields to show, and (field id, repo-secret
+// name) for its one credential. mailtriage.config.DELIVERIES keys, mirrored
+// here -- update both sides together. gmail reuses the MAIL_PW_* secret.
+const DELIVERY_FIELDS = {
+  gmail: "gmailAdvanced",
+  email: "resendFields",
+  telegram: "telegramFields",
+  slack: "slackFields",
+  discord: "discordFields",
+  ntfy: "ntfyFields"
+};
+const DELIVERY_SECRET = {
+  email: ["resend", "RESEND_API_KEY"],
+  telegram: ["tgToken", "TELEGRAM_BOT_TOKEN"],
+  slack: ["slackHook", "SLACK_WEBHOOK_URL"],
+  discord: ["discordHook", "DISCORD_WEBHOOK_URL"],
+  ntfy: ["ntfyTopic", "NTFY_TOPIC_URL"]
+};
 const selectedDelivery = () => $('input[name=delivery]:checked').value;
 function updateDeliveryFields() {
-  const gmail = selectedDelivery() === "gmail";
-  $("#gmailAdvanced").style.display = gmail ? "block" : "none";
-  $("#resendFields").style.display = gmail ? "none" : "block";
+  const sel = selectedDelivery();
+  Object.keys(DELIVERY_FIELDS).forEach((d) => { $("#" + DELIVERY_FIELDS[d]).style.display = d === sel ? "block" : "none"; });
+  $("#f-digestText").style.display = sel === "gmail" || sel === "email" ? "block" : "none";
 }
 $$('input[name=delivery]').forEach((r) => r.addEventListener("change", updateDeliveryFields));
 
@@ -1661,8 +1790,11 @@ function collect() {
     timezone: $("#timezone").value,
     weekly_review: $("#weeklyOn").checked ? $("#weeklyDay").value + " " + $("#weeklyTime").value : "",
     delivery: delivery,
-    email_to: (delivery === "gmail" ? $("#emailToGmail").value : $("#emailTo").value).trim(),
-    email_from: delivery === "gmail" ? "" : $("#emailFrom").value.trim(),
+    email_to: (delivery === "gmail" ? $("#emailToGmail").value : delivery === "email" ? $("#emailTo").value : "").trim(),
+    email_from: delivery === "email" ? $("#emailFrom").value.trim() : "",
+    telegram_chat_id: $("#tgChatId").value.trim(),
+    digest_format: $("#digestText").checked ? "text" : "html",
+    profiles_raw: S.profilesRaw || "",
     provider: selectedProvider(),
     draft_replies: $("#draftReplies").checked,
     draft_style: collectDraftStyle(),
@@ -1700,9 +1832,15 @@ function validate() {
     if (!$("#resend").value.trim()) fail("resend", "Needed to send the email.");
     if (!/^\S+@\S+\.\S+$/.test(v.email_to)) fail("emailTo", "Enter the address the digest should arrive at.");
     if (!/^\S+@\S+\.\S+$/.test(v.email_from)) fail("emailFrom", "Enter the address it should be sent from.");
-  } else if (v.email_to && !/^\S+@\S+\.\S+$/.test(v.email_to)) {
+  } else if (v.delivery === "gmail" && v.email_to && !/^\S+@\S+\.\S+$/.test(v.email_to)) {
     $("#gmailAdvanced").open = true;
     fail("emailToGmail", "This doesn't look like an email address.");
+  } else if (DELIVERY_SECRET[v.delivery]) {
+    const [fid, name] = DELIVERY_SECRET[v.delivery];
+    const val = $("#" + fid).value.trim();
+    if (!val) fail(fid, "Needed — this is where the digest gets delivered (" + name + ").");
+    else if (v.delivery !== "telegram" && !/^https:\/\/\S+\/\S+$/.test(val)) fail(fid, "Paste the full https:// URL.");
+    if (v.delivery === "telegram" && !/^-?\d+$/.test(v.telegram_chat_id)) fail("tgChatId", "Enter the numeric chat id from getUpdates.");
   }
 
   if ($$(".run-at-time").some((i) => !i.value)) fail("runAt", "Every digest time needs a value.");
@@ -1744,12 +1882,15 @@ $("#go3").addEventListener("click", async () => {
   S.secrets[PROV_SECRET[prov]] = isJsonSecret ? provRaw.trim() : provRaw.replace(/\s+/g, "");
   // Addresses are sensitive on a public fork -- secrets, not config.yaml.
   // Only PUT a secret whose field is non-empty: an empty field means "leave
-  // whatever's already in the repo alone", not "erase it". For delivery:
-  // email, validate() above already forced all three non-empty; for
-  // delivery: gmail, EMAIL_TO is the one optional field and RESEND_API_KEY /
-  // EMAIL_FROM are never touched at all.
-  const resendKey = $("#resend").value.trim();
-  if (resendKey) S.secrets.RESEND_API_KEY = resendKey;
+  // whatever's already in the repo alone", not "erase it". Exactly ONE
+  // delivery secret is written -- the chosen delivery's (validate() forced
+  // it non-empty); the others are never touched. For delivery: gmail,
+  // EMAIL_TO is the one optional field and no delivery secret exists at all.
+  if (DELIVERY_SECRET[v.delivery]) {
+    const [fid, name] = DELIVERY_SECRET[v.delivery];
+    const val = $("#" + fid).value.trim();
+    if (val) S.secrets[name] = val;
+  }
   if (v.email_to) S.secrets.EMAIL_TO = v.email_to;
   if (v.email_from) S.secrets.EMAIL_FROM = v.email_from;
   const accounts = collectAccounts();
@@ -1917,9 +2058,10 @@ function succeed(run) {
   $("#launchView").style.display = "none";
   $("#doneView").style.display = "block";
   $$("#stepper li").forEach((li) => { li.classList.remove("on"); li.classList.add("done"); });
-  const dest = S.cfg.email_to ? "<strong>" + esc(S.cfg.email_to) + "</strong>" : "your own Gmail inbox";
+  const CHAT_DEST = { telegram: "your Telegram chat", slack: "your Slack channel", discord: "your Discord channel", ntfy: "the ntfy app" };
+  const dest = CHAT_DEST[S.cfg.delivery] || (S.cfg.email_to ? "<strong>" + esc(S.cfg.email_to) + "</strong>" : "your own Gmail inbox");
   $("#doneMsg").innerHTML =
-    "Check " + dest + ", including the spam folder for the first one. " +
+    "Check " + dest + (CHAT_DEST[S.cfg.delivery] ? ". " : ", including the spam folder for the first one. ") +
     "It repeats at " + esc(S.cfg.run_at.join(", ")) + " (" + esc(S.cfg.timezone) + ").";
   const base = "https://github.com/" + S.repo.full_name;
   $("#doneLinks").innerHTML =
@@ -2060,6 +2202,7 @@ async function loadDash() {
   if (cfgFile.ok) {
     cfgText = b64decode(cfgFile.v.content);
     cfg = parseConfig(cfgText);
+    S.profilesRaw = profilesBlock(cfgText);
   }
   S.dashCfgText = cfgText;
   const names = secrets.ok ? secrets.v.secrets.map((s) => s.name) : [];
@@ -2245,8 +2388,10 @@ $("#dashImportFile").addEventListener("change", async (e) => {
   if (!f) return;
   const st = $("#dashImportStatus");
   try {
-    const cfg = parseConfig(await f.text());
+    const text = await f.text();
+    const cfg = parseConfig(text);
     if (!Object.keys(cfg).length) throw new Error("That file has no top-level keys this page recognizes.");
+    S.profilesRaw = profilesBlock(text);
     applyConfig(cfg);
     st.className = "status";
     st.textContent = "Loaded " + f.name + " into the settings form — review it, then launch to write it to your fork.";

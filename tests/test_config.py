@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from mailtriage.config import Config, load_config
+from mailtriage.config import DELIVERIES, Config, load_config
 from mailtriage.errors import MailError
 
 MINIMAL = {"delivery": "email"}
@@ -42,8 +42,10 @@ def test_shipped_config_yaml_loads():
     """The committed config.yaml must parse — the wizard writes this shape."""
     cfg = load_config("config.yaml")
     # Don't pin the shipped delivery choice — it's user-editable; just require a valid one.
-    assert cfg.delivery in ("email", "gmail")
+    assert cfg.delivery in DELIVERIES
     assert cfg.window_hours == 15
+    assert cfg.digest_format == "html"
+    assert cfg.profiles == {}
 
 
 def test_shipped_config_yaml_is_loadable_via_from_mapping():
@@ -61,7 +63,7 @@ def test_unknown_key_warns_but_does_not_fail(capsys):
     "bad, fragment",
     [
         ({}, "delivery"),
-        ({"delivery": "telegram"}, "delivery"),
+        ({"delivery": "carrier-pigeon"}, "delivery"),
         ({"delivery": None}, "delivery"),
         ({**MINIMAL, "reading_count": 0}, "reading_count"),
         ({**MINIMAL, "reading_count": "eight"}, "reading_count"),
@@ -359,3 +361,106 @@ def test_catch_up_minutes_out_of_range_or_wrong_type_raises(bad):
 def test_catch_up_minutes_bounds_accepted():
     assert Config.from_mapping({**MINIMAL, "catch_up_minutes": 60}).catch_up_minutes == 60
     assert Config.from_mapping({**MINIMAL, "catch_up_minutes": 360}).catch_up_minutes == 360
+
+
+# --- delivery / digest_format / telegram_chat_id ------------------------------
+
+
+@pytest.mark.parametrize("delivery", DELIVERIES)
+def test_every_delivery_value_loads(delivery):
+    assert Config.from_mapping({"delivery": delivery}).delivery == delivery
+
+
+def test_digest_format_default_and_validation():
+    assert Config.from_mapping(MINIMAL).digest_format == "html"
+    assert Config.from_mapping({**MINIMAL, "digest_format": "text"}).digest_format == "text"
+    with pytest.raises(MailError, match="digest_format"):
+        Config.from_mapping({**MINIMAL, "digest_format": "pdf"})
+
+
+def test_telegram_chat_id_coerced_to_str():
+    """YAML reads a bare chat id as an int; the Bot API wants a string."""
+    assert Config.from_mapping({**MINIMAL, "telegram_chat_id": 123456}).telegram_chat_id == "123456"
+
+
+# --- profiles ------------------------------------------------------------
+
+PROFILED = {
+    **MINIMAL,
+    "subject_prefix": "mt",
+    "run_at": ["08:00"],
+    "rules": {"always_action": ["boss@corp.com"]},
+    "profiles": {
+        "work": {"accounts": ["Me@Corp.com"], "delivery": "slack", "run_at": ["09:00", "17:00"], "interests": "eng"},
+        "home": {"accounts": ["me@gmail.com"]},
+    },
+}
+
+
+def test_profiles_default_empty():
+    assert Config.from_mapping(MINIMAL).profiles == {}
+
+
+def test_profile_accounts_are_normalized():
+    assert Config.from_mapping(PROFILED).profiles["work"]["accounts"] == ["me@corp.com"]
+
+
+def test_profile_resolves_overrides_over_the_base():
+    cfg = Config.from_mapping(PROFILED)
+    work = cfg.profile("work")
+    assert work.delivery == "slack"
+    assert work.run_at == ["09:00", "17:00"]
+    assert work.interests == "eng"
+    assert work.subject_prefix == "mt · work"
+    assert work.rules["always_action"] == ["boss@corp.com"]  # inherited
+    assert work.profiles == {}  # a resolved profile never re-expands
+
+    home = cfg.profile("home")
+    assert home.delivery == "email"
+    assert home.run_at == ["08:00"]
+    assert home.subject_prefix == "mt · home"
+
+
+def test_profile_explicit_subject_prefix_wins():
+    cfg = Config.from_mapping({**PROFILED, "profiles": {"w": {"accounts": ["a@b.com"], "subject_prefix": "Work"}}})
+    assert cfg.profile("w").subject_prefix == "Work"
+
+
+def test_profile_does_not_mutate_the_base():
+    cfg = Config.from_mapping(
+        {**PROFILED, "profiles": {"w": {"accounts": ["a@b.com"], "rules": {"always_ignore": ["x@y.com"]}}}}
+    )
+    assert cfg.profile("w").rules["always_ignore"] == ["x@y.com"]
+    assert cfg.rules["always_ignore"] == []
+    assert cfg.delivery == "email"
+
+
+def test_profile_bad_override_names_the_profile():
+    cfg = Config.from_mapping({**MINIMAL, "profiles": {"work": {"accounts": ["a@b.com"], "run_at": ["9am"]}}})
+    with pytest.raises(MailError, match="profiles.work"):
+        cfg.profile("work")
+
+
+@pytest.mark.parametrize(
+    "profiles, fragment",
+    [
+        (["work"], "profiles"),
+        ({"work": "slack"}, "profiles.work"),
+        ({"work": {"delivery": "slack"}}, "profiles.work.accounts"),
+        ({"work": {"accounts": []}}, "profiles.work.accounts"),
+        ({"work": {"accounts": "a@b.com"}}, "profiles.work.accounts"),
+        ({"work": {"accounts": [1]}}, "profiles.work.accounts"),
+        ({"work": {"accounts": [""]}}, "profiles.work.accounts"),
+    ],
+)
+def test_invalid_profiles_raise(profiles, fragment):
+    with pytest.raises(MailError) as e:
+        Config.from_mapping({**MINIMAL, "profiles": profiles})
+    assert fragment in str(e.value)
+
+
+def test_profile_unknown_key_warns_and_is_dropped(capsys):
+    cfg = Config.from_mapping({**MINIMAL, "profiles": {"w": {"accounts": ["a@b.com"], "made_up": 1, "profiles": {}}}})
+    err = capsys.readouterr().err
+    assert "made_up" in err and "profiles.w" in err
+    assert "made_up" not in cfg.profiles["w"] and "profiles" not in cfg.profiles["w"]

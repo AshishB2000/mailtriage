@@ -57,12 +57,25 @@ def app_password(environ: Mapping[str, str], addr: str) -> str | None:
     return environ.get(pw_env_var(addr)) or environ.get(legacy_pw_env_var(addr))
 
 
-def accounts_from_env(environ: Mapping[str, str]) -> list[tuple[str, str]]:
+def accounts_from_env(environ: Mapping[str, str], only: set[str] | None = None) -> list[tuple[str, str]]:
+    """(address, app password) for every MAIL_ACCOUNTS entry -- or, with
+    `only`, just those addresses (a profile's `accounts`), which must all be
+    listed in MAIL_ACCOUNTS."""
     raw = (environ.get("MAIL_ACCOUNTS") or "").strip()
     if not raw:
         raise MailError("MAIL_ACCOUNTS is empty — set it to a comma-separated list of Gmail addresses.")
+    addrs = [a.strip() for a in raw.split(",") if a.strip()]
+    if only is not None:
+        wanted = {a.strip().lower() for a in only}
+        missing = sorted(wanted - {a.lower() for a in addrs})
+        if missing:
+            raise MailError(
+                f"{', '.join(missing)}: not in MAIL_ACCOUNTS. A profile's `accounts` in config.yaml may only "
+                "name addresses that are in the MAIL_ACCOUNTS secret."
+            )
+        addrs = [a for a in addrs if a.lower() in wanted]
     out = []
-    for addr in (a.strip() for a in raw.split(",") if a.strip()):
+    for addr in addrs:
         pw = app_password(environ, addr)
         if not pw:
             raise MailError(
@@ -192,10 +205,16 @@ def fetch_account(addr: str, pw: str, now: datetime, hours: int, host: str = "im
 FetchFn = Callable[[str, str, datetime, int], list[Email]]
 
 
-def pull(environ: Mapping[str, str], now: datetime, hours: int, fetch: FetchFn = fetch_account) -> PullResult:
+def pull(
+    environ: Mapping[str, str],
+    now: datetime,
+    hours: int,
+    fetch: FetchFn = fetch_account,
+    only: set[str] | None = None,
+) -> PullResult:
     messages: list[Email] = []
     warnings: list[dict[str, str]] = []
-    for addr, pw in accounts_from_env(environ):
+    for addr, pw in accounts_from_env(environ, only):
         try:
             messages.extend(fetch(addr, pw, now, hours))
         except Exception as e:  # imaplib raises many unrelated types — catch broadly, per account
@@ -452,6 +471,7 @@ def pull_open_actions(
     window_hours: int,
     label: str,
     host: str = "imap.gmail.com",
+    only: set[str] | None = None,
 ) -> PullResult:
     """Re-surface needs_action mail `label_actions` labeled on a prior run
     and that's still open: still carrying the label, older than the current
@@ -463,7 +483,7 @@ def pull_open_actions(
     messages: list[Email] = []
     warnings: list[dict[str, str]] = []
     quoted_label = _quote_mailbox(label)
-    for addr, pw in accounts_from_env(environ):
+    for addr, pw in accounts_from_env(environ, only):
         try:
             M = imaplib.IMAP4_SSL(host, 993)
             try:
@@ -561,6 +581,7 @@ def pull_week(
     label: str,
     days: int = 7,
     host: str = "imap.gmail.com",
+    only: set[str] | None = None,
 ) -> WeekResult:
     """Weekly roll-up: everything carrying `label` in the last `days` days,
     per account, classified replied / archived / open by pure IMAP
@@ -584,7 +605,7 @@ def pull_week(
     accounts: dict[str, dict[str, list[WeekItem]]] = {}
     warnings: list[dict[str, str]] = []
 
-    for addr, pw in accounts_from_env(environ):
+    for addr, pw in accounts_from_env(environ, only):
         try:
             M = imaplib.IMAP4_SSL(host, 993)
             try:

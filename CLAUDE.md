@@ -37,7 +37,9 @@ src/mailtriage/
   drafts.py     reply-drafting prompt + hostile-input-safe id mapping
   commands.py   Gmail as the control plane: done/snooze/never/vip labels,
                 replies to the digest ("done 3"), never/vip sender derivation
-  delivery/     dispatch, http.py, mail.py (Resend), gmail.py (own-Gmail SMTP)
+  delivery/     dispatch, http.py, text.py (the one plain-text renderer),
+                mail.py (Resend), gmail.py (own-Gmail SMTP),
+                telegram.py slack.py discord.py ntfy.py (chat/push channels)
   selfcheck.py  pre-flight assertions, run before any API spend
   cli.py        argparse; the only module that prints and exits
 docs/index.html the zero-backend setup wizard (+ vendored sodium.js)
@@ -58,7 +60,10 @@ have UI for should still get an explicit default in `buildYaml()`, never be
 left out of the file.
 
 ```
-delivery: "email" | "gmail"        interests: str (multiline)
+delivery: "email" | "gmail" | "telegram" | "slack" | "discord" | "ntfy"
+telegram_chat_id: str              digest_format: "html" | "text"
+profiles: {name: {accounts: [addr, …], <any key here as an override>}}
+interests: str (multiline)
 avoid: str (multiline)             reading_count: int
 window_hours: int                  run_at: list[str] ("HH:MM", wizard
                                       auto-derives this from run_at — see
@@ -96,7 +101,31 @@ one of: CLAUDE_CODE_OAUTH_TOKEN  ANTHROPIC_API_KEY  CODEX_AUTH_JSON
         OPENAI_API_KEY           GEMINI_API_KEY      GEMINI_OAUTH_JSON
                                                        (exactly one AI secret)
 RESEND_API_KEY      MAIL_ACCOUNTS      MAIL_PW_<HASH> (one per address)
+one of, by delivery: TELEGRAM_BOT_TOKEN  SLACK_WEBHOOK_URL  DISCORD_WEBHOOK_URL
+                     NTFY_TOPIC_URL   (the wizard PUTs exactly the chosen one)
 ```
+
+**Delivery contract**: every module in `delivery/` exposes
+`send(cfg, kept, stamp="")` and `send_html(cfg, subject, html)`, and is
+registered in BOTH dicts in `delivery/__init__.py`
+(`tests/test_contracts.py` pins `BACKENDS == BACKENDS_HTML == DELIVERIES`).
+The chat channels render `text.render()` with their own bold/link
+spellings -- escaping runs BEFORE wrapping, always -- and carry a prebuilt
+HTML (the weekly review) as `text.html_to_text()`. Chunk limits: Telegram
+3900 (hard cap 4096, `parse_mode: HTML`, never MarkdownV2), Slack 3000,
+Discord 1900 (cap 2000, `flags: 4` suppresses embeds). `NTFY_TOPIC_URL` is
+a secret because the topic name IS the credential.
+
+**Profiles**: `Config.profile(name)` re-runs `from_mapping` over the base's
+fields plus the overrides, so an override is validated by the same rules as
+the top level (errors say `profiles.<name>`). With profiles, `cli.main`
+loops `_run_profiles`: `--due` is due if ANY profile is, and on a scheduled
+run each profile is re-checked and runs in its own due mode; a manual
+dispatch or local run does all of them. `only=` on
+`imap_pull.accounts_from_env` (forwarded by `pull`/`pull_open_actions`/
+`pull_week`) is the account filter; an address outside MAIL_ACCOUNTS raises.
+`window_hours` stays global -- the wizard derives it from the top-level
+`run_at` only (documented in README).
 
 The wizard's provider picker writes an explicit `provider:` (never `"auto"`)
 and PUTs exactly the one secret for that provider — the other four are never
@@ -176,6 +205,10 @@ are flat-rate, the default costs nothing extra.
 - **`triage/` never imports `anthropic` at module top.** `--self-check` must
   pass with the SDK uninstalled; the import lives inside `claude_api.call` only.
 - **`delivery/mail.py` is named `mail`, never `email`** — shadows stdlib.
+- **The wizard carries `profiles:` through verbatim** (`profilesBlock` in
+  docs/index.html slices the raw text; `buildYaml` writes it back). It has
+  no UI for profiles on purpose, and re-serializing a parse of the block
+  would drop any YAML shape the subset parser doesn't know.
 - **docs/sodium.js is vendored, not CDN** — the wizard must work from `file://`.
 - **Provider auto-order is user-visible behavior, not an implementation
   detail.** `triage.PROVIDERS`' order — `claude-subscription` →

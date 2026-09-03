@@ -10,9 +10,15 @@ refactor and that outcome.
 
 import dataclasses
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
-from mailtriage.config import Config
+import pytest
+import yaml
+
+from mailtriage.config import DELIVERIES, Config
+from mailtriage.delivery import BACKENDS, BACKENDS_HTML
 from mailtriage.imap_pull import legacy_pw_env_var, pw_env_var
 from mailtriage.schedule import max_gap_hours
 from mailtriage.triage import PROVIDERS
@@ -165,6 +171,96 @@ def test_all_engine_providers_appear_in_wizard():
         )
 
 
+# --- delivery channels ---------------------------------------------------
+
+DELIVERY_SECRETS = ("TELEGRAM_BOT_TOKEN", "SLACK_WEBHOOK_URL", "DISCORD_WEBHOOK_URL", "NTFY_TOPIC_URL")
+
+
+def test_every_delivery_value_has_both_backends_and_a_wizard_radio():
+    # Config validates against the Literal; the dispatch tables and the
+    # wizard's picker must agree, or a delivery can be half-added.
+    assert set(BACKENDS) == set(BACKENDS_HTML) == set(DELIVERIES)
+    for name in DELIVERIES:
+        assert f'name="delivery" value="{name}"' in WIZARD, f"wizard delivery picker is missing '{name}'"
+
+
+def test_delivery_secret_names_appear_in_wizard_readme_and_claude_md():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    claude_md = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    for name in DELIVERY_SECRETS:
+        assert name in WIZARD, f"secret '{name}' missing from the wizard"
+        assert name in readme, f"secret '{name}' missing from README"
+        assert name in claude_md, f"secret '{name}' missing from CLAUDE.md"
+
+
+# --- profiles survive the wizard -----------------------------------------
+
+YAML_SECTION = "/* ------------------------------------------------------------ yaml */"
+YAML_SECTION_END = "/* ------------------------------------------------------------ step 1 */"
+
+PROFILES_BLOCK = """profiles:
+  # the work one goes to Slack
+  work:
+    accounts: ["me@corp.com"]
+    delivery: slack
+    run_at: ["09:00", "17:00"]
+    interests: |
+      Anything from the eng-leads list.
+  home:
+    accounts: ["me@gmail.com"]
+"""
+
+
+def test_wizard_carries_profiles_block_by_string_inspection():
+    # The wizard has no UI for profiles; buildYaml must still write the
+    # block back (verbatim, from profilesBlock) or a save silently drops it.
+    assert "function profilesBlock(" in WIZARD
+    assert "profiles_raw" in WIZARD
+    assert "S.profilesRaw = profilesBlock(" in WIZARD
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_wizard_round_trips_profiles_through_node(tmp_path):
+    """Run the wizard's own (pure) YAML helpers under node: parse the shipped
+    config.yaml with a hand-edited profiles block, rebuild it the way a save
+    does, and check the engine reads the same profiles back."""
+    js = WIZARD[WIZARD.index(YAML_SECTION) : WIZARD.index(YAML_SECTION_END)]
+    shipped = (ROOT / "config.yaml").read_text(encoding="utf-8")
+    assert "profiles: {}" in shipped
+    sample = tmp_path / "config.yaml"
+    sample.write_text(shipped.replace("profiles: {}\n", PROFILES_BLOCK), encoding="utf-8")
+    driver = tmp_path / "driver.js"
+    driver.write_text(
+        js
+        + """
+const text = require("fs").readFileSync(process.argv[2], "utf8");
+const cfg = parseConfig(text);
+process.stdout.write(buildYaml({
+  interests: cfg.interests, avoid: cfg.avoid, reading_count: cfg.reading_count, window_hours: cfg.window_hours,
+  run_at: cfg.run_at, timezone: cfg.timezone, weekly_review: cfg.weekly_review, delivery: cfg.delivery,
+  provider: "claude-api", draft_replies: cfg.draft_replies, draft_style: cfg.draft_style, rules: cfg.rules,
+  accounts: {}, carry_over: cfg.carry_over, label: cfg.label, telegram_chat_id: cfg.telegram_chat_id,
+  digest_format: cfg.digest_format, nag_after_days: cfg.nag_after_days, profiles_raw: profilesBlock(text)
+}));
+""",
+        encoding="utf-8",
+    )
+    out = subprocess.run(["node", str(driver), str(sample)], capture_output=True, text=True, check=True).stdout
+
+    rebuilt = yaml.safe_load(out)
+    assert rebuilt["profiles"] == yaml.safe_load(PROFILES_BLOCK)["profiles"]
+    assert "# the work one goes to Slack" in out  # verbatim, comments included
+    cfg = Config.from_mapping(rebuilt)
+    assert cfg.profile("work").delivery == "slack"
+    assert cfg.profile("work").run_at == ["09:00", "17:00"]
+    assert cfg.profile("home").delivery == cfg.delivery
+
+    # and a config with no profiles rebuilds as the empty mapping
+    sample.write_text(shipped, encoding="utf-8")
+    out = subprocess.run(["node", str(driver), str(sample)], capture_output=True, text=True, check=True).stdout
+    assert yaml.safe_load(out)["profiles"] == {}
+
+
 # --- wizard hygiene ------------------------------------------------------
 
 
@@ -180,7 +276,20 @@ def test_wizard_never_persists_secrets_to_localstorage():
     # token field ids must never appear in it -- email addresses count now too,
     # since they live in EMAIL_TO/EMAIL_FROM secrets, not config.yaml.
     keep_line = next(line for line in WIZARD.splitlines() if "const KEEP" in line)
-    for forbidden in ("token", "anthropic", "oauth", "resend", "pw", "email", "codex", "openai", "gemini"):
+    for forbidden in (
+        "token",
+        "anthropic",
+        "oauth",
+        "resend",
+        "pw",
+        "email",
+        "codex",
+        "openai",
+        "gemini",
+        "hook",
+        "ntfy",
+        "tg",
+    ):
         assert forbidden not in keep_line.lower(), (
             f"localStorage KEEP list appears to persist a secret field ('{forbidden}' found in: {keep_line.strip()})"
         )

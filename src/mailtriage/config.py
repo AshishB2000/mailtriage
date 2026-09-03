@@ -9,6 +9,7 @@ field names on :class:`Config` are now that contract, and
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 import sys
@@ -31,8 +32,13 @@ def _valid_time(hhmm: str) -> bool:
     return 0 <= int(h) <= 23 and 0 <= int(m) <= 59
 
 
-Delivery = Literal["email", "gmail"]
+Delivery = Literal["email", "gmail", "telegram", "slack", "discord", "ntfy"]
 DELIVERIES: tuple[str, ...] = get_args(Delivery)
+# The two email deliveries; the chat channels are text-only by nature.
+EMAIL_DELIVERIES: tuple[str, ...] = ("email", "gmail")
+
+DigestFormat = Literal["html", "text"]
+DIGEST_FORMATS: tuple[str, ...] = get_args(DigestFormat)
 
 # The valid values of Config.provider. Kept here rather than imported from
 # mailtriage.triage.PROVIDERS -- config.py must not import triage -- so
@@ -89,6 +95,12 @@ class Config:
     subject_prefix: str = "mailtriage"
     email_to: str = ""
     email_from: str = ""
+    # delivery: telegram only. The numeric chat id the bot posts to -- see
+    # README "Delivery options" for how to read it off getUpdates.
+    telegram_chat_id: str = ""
+    # delivery: email/gmail only. "text" sends a plain-text digest (the same
+    # rendering the chat channels get) instead of the HTML one.
+    digest_format: str = "html"
     # "auto" picks the first provider whose secret is set (see
     # mailtriage.triage.PROVIDERS for the order); any other value forces
     # that one backend and lets its own missing-secret error fire instead.
@@ -118,6 +130,23 @@ class Config:
     # A carried item open for at least this many days is flagged "still open"
     # (bold row + badge) in the digest's "Still waiting on you" section.
     nag_after_days: int = 3
+
+    # Named digests, each over a subset of MAIL_ACCOUNTS with its own
+    # overrides for any key above (delivery, run_at, interests, ...). Empty =
+    # one digest over every account, i.e. everything above as-is. See
+    # `profile()` and README "Two digests: work and personal".
+    profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def profile(self, name: str) -> Config:
+        """This config with `profiles[name]`'s overrides applied, validated
+        the same way the top level is. `subject_prefix` defaults to
+        "<base prefix> · <name>" so two digests are told apart at a glance.
+        The result has no profiles of its own."""
+        spec = self.profiles[name]
+        base = {f.name: copy.deepcopy(getattr(self, f.name)) for f in fields(self) if f.name != "profiles"}
+        base["subject_prefix"] = f"{self.subject_prefix} · {name}"
+        overrides = {k: v for k, v in spec.items() if k != "accounts"}
+        return Config.from_mapping({**base, **overrides}, origin=f"profiles.{name}")
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any], origin: str = "config.yaml") -> Config:
@@ -166,11 +195,16 @@ class Config:
             "timezone",
             "weekly_review",
             "label",
+            "telegram_chat_id",
+            "digest_format",
         ):
             setattr(cfg, name, str(getattr(cfg, name)))
 
         if not cfg.label.strip():
             raise MailError(f"'label' in {origin} must not be empty.")
+
+        if cfg.digest_format not in DIGEST_FORMATS:
+            raise MailError(f"'digest_format' in {origin} must be one of {DIGEST_FORMATS} (got {cfg.digest_format!r}).")
 
         if cfg.provider not in PROVIDERS:
             raise MailError(f"'provider' in {origin} must be one of {PROVIDERS} (got {cfg.provider!r}).")
@@ -178,6 +212,7 @@ class Config:
         cfg.draft_style = _validate_draft_style(cfg.draft_style, DRAFT_STYLE_DEFAULTS, origin, "draft_style")
         cfg.rules = _validate_rules(cfg.rules, origin)
         cfg.accounts = _validate_accounts(cfg.accounts, cfg.draft_style, origin)
+        cfg.profiles = _validate_profiles(cfg.profiles, known, origin)
         if not isinstance(cfg.run_at, list) or not cfg.run_at:
             raise MailError(f"'run_at' in {origin} must be a non-empty list of \"HH:MM\" times (got {cfg.run_at!r}).")
         deduped: list[str] = []
@@ -288,6 +323,38 @@ def _validate_accounts(data: Any, global_style: dict[str, Any], origin: str) -> 
                 val["draft_style"], global_style, origin, f"accounts.{addr}.draft_style"
             )
         out[str(addr).lower()] = entry
+    return out
+
+
+def _validate_profiles(data: Any, known: set[str], origin: str) -> dict[str, dict[str, Any]]:
+    """Shape only: each profile is a mapping with a non-empty `accounts` list
+    plus overrides for known top-level keys (unknown ones warn, like the top
+    level). The override VALUES are validated when `Config.profile()`
+    resolves the profile -- the same from_mapping rules, no second copy."""
+    if not isinstance(data, dict):
+        raise MailError(f"'profiles' in {origin} must be a mapping of profile name -> settings.")
+    out: dict[str, dict[str, Any]] = {}
+    for name, spec in data.items():
+        where = f"profiles.{name}"
+        if not isinstance(spec, dict):
+            raise MailError(f"'{where}' in {origin} must be a mapping (got {type(spec).__name__}).")
+        accounts = spec.get("accounts")
+        if (
+            not isinstance(accounts, list)
+            or not accounts
+            or not all(isinstance(a, str) and a.strip() for a in accounts)
+        ):
+            raise MailError(
+                f"'{where}.accounts' in {origin} must be a non-empty list of addresses from MAIL_ACCOUNTS "
+                f"(got {accounts!r})."
+            )
+        # In a profile, `accounts` is the address list (not the top level's
+        # per-account overrides map) and `profiles` can't nest.
+        allowed = (known - {"profiles"}) | {"accounts"}
+        for key in sorted(set(spec) - allowed):
+            print(f"mailtriage: ignoring unknown key {key!r} in {where} in {origin}", file=sys.stderr)
+        out[str(name)] = {k: v for k, v in spec.items() if k in allowed}
+        out[str(name)]["accounts"] = [a.strip().lower() for a in accounts]
     return out
 
 

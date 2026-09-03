@@ -275,7 +275,22 @@ run. Check the log if nothing arrives — see Troubleshooting below.
 
 ## Delivery options
 
-`delivery` in `config.yaml` picks one of two backends:
+`delivery` in `config.yaml` picks where the digest goes. Two email backends
+and four chat/push channels; each chat channel needs exactly one secret,
+which the setup wizard writes for you (or add it by hand under Settings →
+Secrets and variables → Actions):
+
+| `delivery` | secret | also needs |
+|---|---|---|
+| `gmail` | (reuses `MAIL_PW_*`) | — |
+| `email` | `RESEND_API_KEY` | `EMAIL_TO`, `EMAIL_FROM` secrets |
+| `telegram` | `TELEGRAM_BOT_TOKEN` | `telegram_chat_id` in config.yaml |
+| `slack` | `SLACK_WEBHOOK_URL` | — |
+| `discord` | `DISCORD_WEBHOOK_URL` | — |
+| `ntfy` | `NTFY_TOPIC_URL` | — |
+
+The workflow needs no change for any of them — it exports every repository
+secret into the run already.
 
 - **`email`** (default) — sends via [Resend](https://resend.com). Needs the
   `RESEND_API_KEY` secret and `EMAIL_FROM` on a domain you've verified at
@@ -291,6 +306,39 @@ run. Check the log if nothing arrives — see Troubleshooting below.
   mail from your Gmail to your Gmail lands straight in the inbox. Leave
   `EMAIL_TO` / `EMAIL_FROM` unset entirely to self-mail: both default to the
   first `MAIL_ACCOUNTS` address.
+- **`telegram`** — a bot messages you. In Telegram, talk to
+  [@BotFather](https://t.me/BotFather), send `/newbot`, and copy the token
+  into the `TELEGRAM_BOT_TOKEN` secret. Open your new bot and press
+  **Start** (a bot cannot message you first), then load
+  `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and copy
+  `result[0].message.chat.id` into `telegram_chat_id` in `config.yaml`. For a
+  group, add the bot to it and use the group's (negative) id instead. Long
+  digests arrive as several messages (Telegram caps one at 4096 chars).
+- **`slack`** — an incoming webhook posts to a channel. At
+  [api.slack.com/apps](https://api.slack.com/apps) create an app (from
+  scratch), open **Incoming Webhooks**, switch it on, **Add New Webhook to
+  Workspace**, pick the channel, and copy the URL into the
+  `SLACK_WEBHOOK_URL` secret. Items link straight to the Gmail message.
+- **`discord`** — a channel webhook. Channel settings → **Integrations** →
+  **Webhooks** → **New Webhook** → **Copy Webhook URL**, into the
+  `DISCORD_WEBHOOK_URL` secret. Link previews are suppressed so the digest
+  stays compact; long ones are split under Discord's 2000-char cap.
+- **`ntfy`** — a push notification to your phone via [ntfy](https://ntfy.sh).
+  Install the app, subscribe to a topic with a name nobody could guess
+  (`mailtriage-k3j9x2`, not `mailtriage`), and put its full URL
+  (`https://ntfy.sh/mailtriage-k3j9x2`, or your own server) in the
+  `NTFY_TOPIC_URL` secret — the topic name is the credential, which is why
+  it's a secret and not a config key. The notification's title is the
+  digest subject, tapping it opens the first needs-action email, and it's
+  sent at high priority when anything needs action.
+
+The chat channels get a plain-text rendering of the same three sections
+(Needs action / Still waiting on you / Worth reading): one line per item —
+subject, sender, the model's note — with the Gmail link and the first 200
+characters of any AI draft. The two email backends send HTML by default;
+set `digest_format: text` in `config.yaml` to get that same plain-text
+version as the whole email instead (the HTML email always carries it as
+its plain-text part anyway, for clients that prefer it).
 
 ---
 
@@ -342,8 +390,9 @@ project.
    `draft_style` (see [Draft style](#draft-style)). Drafts are appended to
    the source account's Gmail Drafts mailbox — never sent — and shown in the
    digest.
-7. **Send** — one HTML email via Resend, or nothing if both buckets came
-   back empty.
+7. **Send** — one digest to wherever `delivery` points (see [Delivery
+   options](#delivery-options)), or nothing if both buckets came back
+   empty.
 
 **No state, anywhere** — there's no database and no record of what was
 already sent. `window_hours` is the dedupe: it must be at least as long as
@@ -454,6 +503,56 @@ accounts:
 
 Leave a key out of a per-account entry and it inherits the global value —
 only what you actually set here overrides it.
+
+---
+
+## Two digests: work and personal
+
+One inbox at a time is a per-account setting (above). Two *separate
+digests* — different times, different places, different priorities — is a
+**profile**. Each profile names a subset of your `MAIL_ACCOUNTS` addresses
+and may override any top-level key in `config.yaml`:
+
+```yaml
+profiles:
+  work:
+    accounts: ["you@corp.com"]
+    delivery: slack             # SLACK_WEBHOOK_URL secret
+    run_at: ["08:30", "13:00", "17:30"]
+    timezone: "Europe/London"
+    weekly_review: "fri 16:00"
+    interests: |
+      Anything from a colleague that needs a reply, meeting requests,
+      and anything from the eng-leads list.
+    rules:
+      always_action: ["boss@corp.com"]
+  personal:
+    accounts: ["you@gmail.com", "you.too@gmail.com"]
+    delivery: telegram          # TELEGRAM_BOT_TOKEN secret
+    telegram_chat_id: "123456789"
+    run_at: ["19:00"]
+    draft_style:
+      tone: casual
+```
+
+With profiles set, every run happens once per profile, over only that
+profile's accounts, and `subject_prefix` defaults to `mailtriage · work` /
+`mailtriage · personal` so you can tell them apart. Anything a profile
+doesn't override comes from the top level, so the keys above the block are
+your shared defaults. The hourly gate fires when *any* profile is due and
+each profile then runs only if its own slot is — a manual **Run workflow**
+click runs all of them.
+
+Two things stay global. `window_hours` is one number for the whole file, so
+keep it at least as large as the biggest gap between two consecutive
+`run_at` slots in *any* profile (the wizard derives it from the top-level
+`run_at` only — check it by hand when a profile's schedule is sparser). And
+the label carry-over (`carry_over`, `label`) is per Gmail account, which
+already lines up with profiles naming disjoint accounts.
+
+Profiles are hand-edited: the setup wizard has no screen for them, but it
+carries the `profiles:` block through untouched every time it rewrites
+`config.yaml`, so re-running the wizard never drops them.
 
 ---
 

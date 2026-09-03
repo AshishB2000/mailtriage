@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 
 from mailtriage.config import Config
 from mailtriage.delivery.http import post_json
+from mailtriage.delivery.text import digest_text, html_to_text
 from mailtriage.errors import MailError
 from mailtriage.models import Triaged, WeekItem, WeekResult
 from mailtriage.schedule import local_zone
@@ -274,11 +275,11 @@ def weekly_html(cfg: Config, week: WeekResult, done_count: int = 0) -> str:
 </td></tr></table></body></html>"""
 
 
-def send_html(cfg: Config, subject: str, html_body: str) -> None:
-    """Post a prebuilt subject+HTML to Resend. Shared transport for both the
-    normal digest (`send`, which builds the html itself) and the weekly
-    review (delivery.send_html -> here), so the auth/validation/HTTP logic
-    lives in exactly one place."""
+def _send(cfg: Config, subject: str, text: str, html_body: str | None) -> None:
+    """Post to Resend. Shared transport for the normal digest (`send`) and
+    the weekly review (delivery.send_html -> `send_html`), so the
+    auth/validation/HTTP logic lives in exactly one place. Always carries a
+    plain-text part; the HTML part is skipped for `digest_format: text`."""
     key = os.environ.get("RESEND_API_KEY")
     if not key:
         raise MailError(
@@ -300,7 +301,8 @@ def send_html(cfg: Config, subject: str, html_body: str) -> None:
                 "from": sender,
                 "to": [to],  # must be a list — a bare string 422s
                 "subject": subject,
-                "html": html_body,
+                "text": text,
+                **({"html": html_body} if html_body else {}),
             },
             {"Authorization": f"Bearer {key}"},
         )
@@ -327,5 +329,10 @@ def digest_subject(cfg: Config, triaged: list[Triaged], stamp: str = "") -> str:
     return f"{head} · {a} to act · {r} to read"
 
 
+def send_html(cfg: Config, subject: str, html_body: str) -> None:
+    _send(cfg, subject, html_to_text(html_body), html_body)
+
+
 def send(cfg: Config, triaged: list[Triaged], stamp: str = "") -> None:
-    send_html(cfg, digest_subject(cfg, triaged, stamp), email_html(cfg, triaged))
+    html_body = None if cfg.digest_format == "text" else email_html(cfg, triaged)
+    _send(cfg, digest_subject(cfg, triaged, stamp), digest_text(triaged), html_body)
