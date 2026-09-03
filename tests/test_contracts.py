@@ -202,3 +202,45 @@ def test_no_personal_email_address_anywhere_in_tracked_files():
             if path.is_file() and needle in path.read_text(encoding="utf-8"):
                 hits.append(str(path.relative_to(ROOT)))
     assert not hits, f"personal address found in tracked files: {hits}"
+
+
+# --- dashboard: dispatch modes + workflow filenames ------------------------
+
+
+def _wizard_const_list(name: str) -> list[str]:
+    m = re.search(rf"^const {name} = \[([^\]]*)\];", WIZARD, re.MULTILINE)
+    assert m, f"docs/index.html is missing `const {name} = [...]`"
+    return re.findall(r'"([^"]+)"', m.group(1))
+
+
+def test_wizard_modes_match_digest_yml_dispatch_input():
+    # The dashboard's Run now / Send weekly review / Run doctor buttons send
+    # `inputs: {mode}` to digest.yml. Both sides must list the same values in
+    # the same order, or a button dispatches a mode the workflow rejects (422).
+    workflow = (ROOT / ".github" / "workflows" / "digest.yml").read_text(encoding="utf-8")
+    m = re.search(r"^\s+mode:\n(?:.*\n)*?\s+options: \[([^\]]*)\]", workflow, re.MULTILINE)
+    assert m, "digest.yml has no workflow_dispatch `mode` input with an options list"
+    assert [o.strip() for o in m.group(1).split(",")] == _wizard_const_list("MODES") == ["digest", "weekly", "doctor"]
+    for mode in ("digest", "weekly", "doctor"):
+        assert f'data-mode="{mode}"' in WIZARD, f"dashboard has no button for mode {mode!r}"
+
+
+def test_sync_workflow_lives_at_the_literal_path_the_dashboard_dispatches():
+    assert (ROOT / ".github" / "workflows" / "upstream-sync.yml").is_file()
+    assert 'const SYNC_WORKFLOW = "upstream-sync.yml";' in WIZARD
+
+
+def test_dashboard_reads_the_sample_digest_as_a_sibling_file():
+    # The preview iframe must stay a relative sibling so it works from file://
+    # and GitHub Pages alike; tests/test_sample.py keeps the file itself fresh.
+    assert 'data-src="sample-digest.html"' in WIZARD
+    assert (ROOT / "docs" / "sample-digest.html").is_file()
+
+
+def test_dashboard_never_hardcodes_main_for_the_fork():
+    # Every ref the page sends for the user's fork must be the fork's default
+    # branch. The one literal "main" allowed is upstream's, in the compare URL
+    # and the CHANGELOG link.
+    for line in WIZARD.splitlines():
+        if "ref:" in line and "default_branch" not in line:
+            raise AssertionError(f"dispatch/commit ref not using S.repo.default_branch: {line.strip()}")

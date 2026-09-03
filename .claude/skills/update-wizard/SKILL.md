@@ -24,7 +24,10 @@ Know the invariants before editing; verify all of them after.
 | Exactly ONE AI secret written, per the user's provider picker (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `CODEX_AUTH_JSON`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`) | Writing more than one lets a stale credential shadow the one the user chose |
 | `buildYaml()` writes `provider:` to the picker's explicit choice, never `"auto"` | The user made a choice in the UI; "auto" would silently defer to `triage.PROVIDERS`' auto-detect order instead |
 | `sk-ant-…`, `sk-proj-…` strings appear only as input `placeholder` attributes | Never a real value in the page |
-| Async prefill must not clobber user input (`S.step !== 1` guard) | Race fixed once already — don't reintroduce |
+| Async prefill must not clobber user input (`S.step !== 1` guard) | Race fixed once already — don't reintroduce || `MODES` === digest.yml's `workflow_dispatch` `inputs.mode.options`, same order; `SYNC_WORKFLOW = "upstream-sync.yml"` literal | The dashboard's Run now / doctor / weekly buttons send `inputs: {mode}`; a value the workflow doesn't list is a 422. Pinned by `tests/test_contracts.py` |
+| The dashboard only ever *reads* secrets by name (`GET .../actions/secrets`) and never renders, stores, or compares a value | Its trust story is the same as the launch flow's: this tab never holds a plaintext it didn't just get from the user |
+| The sample preview is `data-src="sample-digest.html"` — a relative sibling, loaded only when the `<details>` opens | Must work from `file://` and Pages; `tests/test_sample.py` regenerates it from the real template, never hand-edit it |
+
 
 ## After ANY edit, run all of this
 
@@ -37,6 +40,8 @@ grep -n 'src="http' docs/index.html                     # must be empty (no CDN)
 ```
 
 Then open the page from `file://` and click through step 1 rendering.
+If you touched `delivery/mail.py`'s template, also run
+`.venv/bin/python scripts/render_sample.py` and commit `docs/sample-digest.html`.
 
 ## Common mistakes
 
