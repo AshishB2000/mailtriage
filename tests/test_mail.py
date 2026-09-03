@@ -328,6 +328,7 @@ def test_weekly_html_shows_done_count_only_when_nonzero():
     assert "marked done" not in mail.weekly_html(_cfg(), week)
     assert "4 marked done" in mail.weekly_html(_cfg(), week, done_count=4)
 
+
 # --- digest_format ---------------------------------------------------------
 
 

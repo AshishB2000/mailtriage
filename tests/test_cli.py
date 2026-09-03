@@ -67,7 +67,9 @@ def test_dry_run_prints_not_sends(monkeypatch: Any, capsys: Any) -> None:
     import mailtriage.delivery as delivery_module
     import mailtriage.triage as triage_module
 
-    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(
+        cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []}
+    )
     monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [_triaged(0)])
     monkeypatch.setattr(
         triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
@@ -97,7 +99,9 @@ def test_dry_run_prints_drafts(monkeypatch: Any, capsys: Any) -> None:
     import mailtriage.delivery as delivery_module
     import mailtriage.triage as triage_module
 
-    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(
+        cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []}
+    )
     monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [_triaged(0)])
 
     def fake_call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
@@ -123,7 +127,9 @@ def test_run_pushes_drafts_and_prints_push_warnings_then_still_delivers(monkeypa
     import mailtriage.delivery as delivery_module
     import mailtriage.triage as triage_module
 
-    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(
+        cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []}
+    )
     monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [_triaged(0)])
 
     def fake_call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
@@ -175,7 +181,9 @@ def test_carried_alone_never_triggers_a_digest(monkeypatch: Any, capsys: Any) ->
     import mailtriage.delivery as delivery_module
     import mailtriage.triage as triage_module
 
-    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(
+        cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []}
+    )
     monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [])  # nothing new kept
 
     def _boom_open_actions(*a: Any, **k: Any) -> Any:
@@ -195,7 +203,9 @@ def test_new_and_carried_both_appear_in_the_digest(monkeypatch: Any, capsys: Any
     import mailtriage.delivery as delivery_module
     import mailtriage.triage as triage_module
 
-    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(
+        cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []}
+    )
     monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [_triaged(0)])
     monkeypatch.setattr(
         triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
@@ -220,7 +230,9 @@ def test_dry_run_reads_carried_but_never_labels(monkeypatch: Any, capsys: Any) -
     import mailtriage.delivery as delivery_module
     import mailtriage.triage as triage_module
 
-    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(
+        cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []}
+    )
     monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [_triaged(0)])
     monkeypatch.setattr(
         triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
@@ -254,7 +266,9 @@ def test_rule_forced_item_produces_a_digest_even_when_model_kept_nothing(monkeyp
     import mailtriage.triage as triage_module
 
     boss_email = {**_email(0), "from": "boss@corp.com"}
-    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [boss_email], "warnings": []})
+    monkeypatch.setattr(
+        cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [boss_email], "warnings": []}
+    )
     monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [])  # model kept nothing
     monkeypatch.setattr(
         triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
@@ -560,7 +574,9 @@ def test_dry_run_skips_label_writes_and_reply_handling_but_still_derives_senders
     import mailtriage.cli as cli_module
     import mailtriage.triage as triage_module
 
-    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(
+        cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []}
+    )
     monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [])
 
     def boom(*a: Any, **k: Any) -> Any:
@@ -586,7 +602,9 @@ def test_dry_run_prints_numbered_items_with_due_and_waiting(monkeypatch: Any, ca
     import mailtriage.delivery as delivery_module
     import mailtriage.triage as triage_module
 
-    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(
+        cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []}
+    )
     monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [{**_triaged(0), "due": "2099-01-05"}])
     monkeypatch.setattr(
         triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})

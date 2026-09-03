@@ -240,7 +240,7 @@ process.stdout.write(buildYaml({
   run_at: cfg.run_at, timezone: cfg.timezone, weekly_review: cfg.weekly_review, delivery: cfg.delivery,
   provider: "claude-api", draft_replies: cfg.draft_replies, draft_style: cfg.draft_style, rules: cfg.rules,
   accounts: {}, carry_over: cfg.carry_over, label: cfg.label, telegram_chat_id: cfg.telegram_chat_id,
-  digest_format: cfg.digest_format, profiles_raw: profilesBlock(text)
+  digest_format: cfg.digest_format, nag_after_days: cfg.nag_after_days, profiles_raw: profilesBlock(text)
 }));
 """,
         encoding="utf-8",
