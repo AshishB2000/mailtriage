@@ -498,9 +498,10 @@ def test_intelligence_defaults_are_on():
     cfg = Config.from_mapping(MINIMAL)
     assert cfg.thread_context is True
     assert cfg.sender_memory is True
+    assert cfg.show_unsubscribe is True
 
 
-@pytest.mark.parametrize("name", ["thread_context", "sender_memory"])
+@pytest.mark.parametrize("name", ["thread_context", "sender_memory", "show_unsubscribe"])
 def test_intelligence_bools_reject_non_bool(name):
     with pytest.raises(MailError, match=name):
         Config.from_mapping({**MINIMAL, name: "yes"})

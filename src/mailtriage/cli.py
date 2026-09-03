@@ -6,6 +6,7 @@ import argparse
 import os
 import sys
 from datetime import date, datetime, timezone
+from email.utils import parseaddr
 
 from mailtriage import __version__
 from mailtriage.commands import apply_label_commands, count_done, derive_sender_rules, handle_replies, with_sender_rules
@@ -24,6 +25,8 @@ from mailtriage.imap_pull import (
 )
 from mailtriage.models import Email, Triaged, WeekResult
 from mailtriage.schedule import current_slot, due, local_zone
+
+UNSUBSCRIBE_CAP = 20  # senders in the digest's noise footer
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -143,6 +146,11 @@ def _print_digest(cfg: Config, kept: list[Triaged], today: date) -> None:
                 if it.get("draft_full"):
                     print("    (a fuller version is in Drafts)")
             n += 1
+    noise = [t for t in kept if t["bucket"] == "noise"]
+    if noise:  # unnumbered: not addressable by a reply, just links
+        print("Noise this week (unsubscribe links)")
+        for it in noise:
+            print(f"  {it['sender']} · {it['link']}")
 
 
 def _print_weekly(week: WeekResult, done_count: int = 0) -> None:
@@ -244,12 +252,30 @@ def _carried_triaged(em: Email) -> Triaged:
     }
 
 
+def _noise_triaged(em: Email) -> Triaged:
+    # idx=-1 like carried items: nothing downstream keys a noise row back to
+    # the pulled list. link is the unsubscribe target, sender the display name.
+    name, addr = parseaddr(em["from"])
+    return {
+        "bucket": "noise",
+        "note": "",
+        "account": em["account"],
+        "sender": name or addr or em["from"],
+        "subject": em["subject"],
+        "link": em.get("unsubscribe", ""),
+        "date": em["date"],
+        "unread": em["unread"],
+        "idx": -1,
+        "draft": "",
+    }
+
+
 def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> None:
     # Imported here, not at module scope: --self-check must work on a machine
     # where `anthropic` failed to install, and this is the only path that needs it.
     from mailtriage.delivery import send
     from mailtriage.drafts import generate_drafts
-    from mailtriage.rules import apply_ignore, enforce
+    from mailtriage.rules import apply_ignore, enforce, omitted
     from mailtriage.triage import select_backend, triage
 
     now = _now()
@@ -376,6 +402,24 @@ def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> Non
             # No mailbox writes on a dry run: push only when actually delivering.
             for w in push_drafts(os.environ, kept, emails):
                 print(f"mailtriage: draft push failed, skipping: {w}", file=sys.stderr)
+
+    if cfg.show_unsubscribe:
+        # One footer row per omitted sender that offered an unsubscribe link,
+        # newest first, capped. Appended last: nothing above this line
+        # (labels, drafts, the "kept none" check) ever sees these rows.
+        seen_senders: set[str] = set()
+        noise: list[Triaged] = []
+        for i in omitted(cfg, emails, kept):
+            em = emails[i]
+            sender = parseaddr(em["from"])[1].lower()
+            if not em.get("unsubscribe") or sender in seen_senders:
+                continue
+            seen_senders.add(sender)
+            noise.append(_noise_triaged(em))
+            if len(noise) == UNSUBSCRIBE_CAP:
+                break
+        print(f"mailtriage: {len(noise)} unsubscribe link(s) in the noise footer.", file=sys.stderr)
+        kept = kept + noise
 
     if dry_run:
         _print_digest(cfg, kept, today)

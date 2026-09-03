@@ -171,6 +171,26 @@ def test_parse_message_lists_attachments_and_named_inline_parts():
     assert rec["attachments"] == ["invoice-42.pdf (application/pdf)", "logo.png (image/png)"]
 
 
+def test_parse_message_prefers_https_unsubscribe_then_mailto_never_http():
+    def with_header(value: bytes) -> bytes:
+        return RAW.replace(
+            b"Subject: Lunch tomorrow?\r\n", b"Subject: Lunch tomorrow?\r\nList-Unsubscribe: " + value + b"\r\n"
+        )
+
+    both = parse_message(
+        with_header(b"<mailto:u@x.com>, <https://x.com/u?id=1>"), "me@gmail.com", "1 (FLAGS ()", NOW, 13
+    )
+    assert both is not None and both["unsubscribe"] == "https://x.com/u?id=1"
+    mailto = parse_message(with_header(b"<mailto:u@x.com>"), "me@gmail.com", "1 (FLAGS ()", NOW, 13)
+    assert mailto is not None and mailto["unsubscribe"] == "mailto:u@x.com"
+    http = parse_message(
+        with_header(b"<http://x.com/u>, <javascript:alert(1)>"), "me@gmail.com", "1 (FLAGS ()", NOW, 13
+    )
+    assert http is not None and http["unsubscribe"] == ""
+    plain = parse_message(RAW, "me@gmail.com", "1 (FLAGS ()", NOW, 13)
+    assert plain is not None and plain["unsubscribe"] == ""
+
+
 def test_parse_message_out_of_window_returns_none():
     old = RAW.replace(b"28 Aug 2026", b"20 Aug 2026")
     assert parse_message(old, "me@gmail.com", "1 (FLAGS () BODY[]", NOW, 13) is None

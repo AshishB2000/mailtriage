@@ -8,7 +8,7 @@ import pytest
 
 from mailtriage.config import Config
 from mailtriage.models import Email, Triaged
-from mailtriage.rules import apply_ignore, enforce, matches
+from mailtriage.rules import apply_ignore, enforce, matches, omitted
 
 
 def make_email(i: int, from_: str | None = None) -> Email:
@@ -200,3 +200,16 @@ def test_enforce_forced_item_produces_a_digest_even_when_pick_returned_nothing()
     cfg = cfg_with_rules(always_action=["boss@corp.com"])
     result = enforce(cfg, emails, [])
     assert len(result) == 1
+
+
+def test_omitted_is_everything_not_kept_minus_rule_protected_senders():
+    cfg = cfg_with_rules(always_surface=["@vip.com"], always_action=["boss@corp.com"])
+    emails = [
+        make_email(0),  # kept by the model
+        make_email(1),  # omitted -> noise
+        make_email(2, "news@vip.com"),  # rule-protected, even though not in kept
+        make_email(3, "Boss <boss@corp.com>"),  # rule-protected
+        make_email(4),  # omitted -> noise
+    ]
+    assert omitted(cfg, emails, [make_triaged(0)]) == [1, 4]
+    assert omitted(Config(delivery="email"), emails, []) == [0, 1, 2, 3, 4]

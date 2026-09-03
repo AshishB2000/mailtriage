@@ -30,6 +30,7 @@ class Email(_EmailBase, total=False):
     thread: list[str]  # imap_pull.enrich: "<age> · <from>: <snippet>" for up to 2 earlier thread messages, oldest first
     attachments: list[str]  # "invoice.pdf (application/pdf)" per attached or named part, from the fetch itself
     replied_before: int  # imap_pull.enrich: messages the reader sent to this sender in the last 180 days
+    unsubscribe: str  # https URL or mailto: from List-Unsubscribe, "" when absent -- never any other scheme
 
 
 class PullResult(TypedDict):
@@ -65,6 +66,9 @@ class Triaged(_TriagedOptional):
     # client-authored only, by imap_pull.pull_open_actions re-surfacing a prior
     # run's still-open needs_action mail -- the model's own bucket enum
     # (triage.BUCKETS) is unchanged, so triage.pick() keeps rejecting it.
+    # "noise" is likewise client-authored (cli.run, from rules.omitted): an
+    # omitted candidate with an unsubscribe link, rendered as the digest's
+    # folded footer. `link` is then the unsubscribe URL, `sender` the display name.
     note: str  # the single model-authored line
     account: str
     sender: str

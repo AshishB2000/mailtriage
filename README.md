@@ -650,6 +650,12 @@ picked; the Actions log only ever shows counts.
   Sent Mail, newest 40 senders per run; your own addresses and noreply-style
   senders are skipped). Senders you've replied to before get the benefit of
   the doubt; senders you never reply to need a stronger reason to surface.
+- **Unsubscribe links** (`show_unsubscribe: true`, default) — the digest ends
+  with a folded "Noise this week" footer: one line per sender the run left
+  out whose mail carried a `List-Unsubscribe` header, with its Unsubscribe
+  link (https or mailto only, at most 20). Nothing is ever clicked for you;
+  senders named in your `always_surface` / `always_action` rules never
+  appear there.
 
 ---
 

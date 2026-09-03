@@ -178,6 +178,17 @@ def attachments_of(msg: EmailMessage, limit: int = 10) -> list[str]:
     return out
 
 
+def unsubscribe_of(header: str) -> str:
+    """The https URL from a List-Unsubscribe header, else its mailto:, else
+    "". Nothing else -- an http: or javascript: entry never becomes a link."""
+    targets = [t.strip() for t in re.findall(r"<([^>]+)>", header or "")]
+    for scheme in ("https://", "mailto:"):
+        for t in targets:
+            if t.lower().startswith(scheme):
+                return str(t)
+    return ""
+
+
 def _email_from_msg(msg: EmailMessage, addr: str, flags: str, dt: datetime, uid: str) -> Email:
     return {
         "account": addr,
@@ -193,6 +204,7 @@ def _email_from_msg(msg: EmailMessage, addr: str, flags: str, dt: datetime, uid:
         "uid": uid,
         "thrid": _extract_thrid(flags),
         "attachments": attachments_of(msg),
+        "unsubscribe": unsubscribe_of(str(msg.get("List-Unsubscribe", ""))),
     }
 
 

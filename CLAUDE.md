@@ -78,6 +78,7 @@ rules: {always_ignore, always_surface, always_action}   accounts: {addr: {…}}
 carry_over: bool                   label: str
 nag_after_days: int
 thread_context: bool               sender_memory: bool
+show_unsubscribe: bool
 ```
 
 **Label names** are fixed literals in `commands.py`, quoted in the digest

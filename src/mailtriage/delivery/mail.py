@@ -170,6 +170,28 @@ def _carried_footer(cfg: Config) -> str:
     <tr><td class="muted" style="font:400 12px/1.5 {SANS};color:{DIM};padding-top:2px;">Clears when you reply, archive, or remove the {html.escape(cfg.label)} label in Gmail.</td></tr>"""
 
 
+def _noise_section(items: list[Triaged]) -> str:
+    """Folded footer: one line per omitted sender with an Unsubscribe link.
+    Only https and mailto targets are rendered -- anything else is dropped
+    here too, not just at parse time -- and nothing is ever clicked for you."""
+    rows = ""
+    for it in items:
+        link = it["link"]
+        if not link.lower().startswith(("https://", "mailto:")):
+            continue
+        rows += f"""
+        <div style="font:400 13px/1.6 {SANS};color:{DIM};">{html.escape(it["sender"])} &nbsp;·&nbsp; <a href="{html.escape(link, quote=True)}" style="color:{DIM};">Unsubscribe</a></div>"""
+    if not rows:
+        return ""
+    return f"""
+    <tr><td class="muted" style="padding-top:26px;">
+      <details><summary style="cursor:pointer;font:700 13px/1 {SANS};letter-spacing:.1em;color:{DIM};text-transform:uppercase;">Noise this week</summary>
+        <div style="padding-top:10px;">{rows}
+        </div>
+      </details>
+    </td></tr>"""
+
+
 COMMANDS_HINT = (
     'Reply to this email with e.g. "done 2", "snooze 3 for a week", "draft 1 shorter", "never 4" or "vip 5" '
     "— or label a message mailtriage/done, mailtriage/snooze-3d (1w, 2w), mailtriage/never or mailtriage/vip "
@@ -190,6 +212,7 @@ def email_html(cfg: Config, triaged: list[Triaged], today: date | None = None) -
         else:
             sections += _section(heading, _rows(items, n))
         n += len(items)
+    sections += _noise_section([t for t in triaged if t["bucket"] == "noise"])
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">

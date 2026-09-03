@@ -148,6 +148,10 @@ class Config:
     # Count how often the reader has written to each candidate's sender in
     # the last 180 days (\Sent, newest 40 senders per run) and tell the model.
     sender_memory: bool = True
+    # Folded "Noise this week" footer in the digest: one Unsubscribe link per
+    # omitted sender that offered one (https or mailto only). Never clicked
+    # for you.
+    show_unsubscribe: bool = True
 
     # Named digests, each over a subset of MAIL_ACCOUNTS with its own
     # overrides for any key above (delivery, run_at, interests, ...). Empty =
@@ -194,7 +198,7 @@ class Config:
         if not isinstance(cu, int) or isinstance(cu, bool) or not 60 <= cu <= 360:
             raise MailError(f"'catch_up_minutes' in {origin} must be a whole number from 60 to 360 (got {cu!r}).")
 
-        for name in ("draft_replies", "carry_over", "thread_context", "sender_memory"):
+        for name in ("draft_replies", "carry_over", "thread_context", "sender_memory", "show_unsubscribe"):
             value = getattr(cfg, name)
             if not isinstance(value, bool):
                 raise MailError(f"'{name}' in {origin} must be true or false (got {value!r}).")

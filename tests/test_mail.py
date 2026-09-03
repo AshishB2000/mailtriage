@@ -210,6 +210,27 @@ def test_email_html_notes_fuller_draft_only_when_present():
     assert "fuller version" not in without
 
 
+def test_email_html_noise_footer_is_folded_and_only_https_or_mailto():
+    items = [
+        _item("needs_action"),
+        _item("noise", sender="Deals <deals@shop.com>", link="https://shop.com/unsub?u=1"),
+        _item("noise", sender="List", link="mailto:leave@list.org"),
+        _item("noise", sender="Bad", link="http://insecure.example/unsub"),
+        _item("noise", sender="Worse", link="javascript:alert(1)"),
+    ]
+    html = mail.email_html(_cfg(), items)
+    assert "<details>" in html and "Noise this week" in html
+    assert 'href="https://shop.com/unsub?u=1"' in html and "Deals &lt;deals@shop.com&gt;" in html
+    assert 'href="mailto:leave@list.org"' in html
+    assert "insecure.example" not in html and "javascript:" not in html
+    assert html.count(">Unsubscribe</a>") == 2
+
+
+def test_email_html_no_noise_footer_when_no_noise():
+    html = mail.email_html(_cfg(), [_item("needs_action")])
+    assert "Noise this week" not in html and "<details>" not in html
+
+
 def test_email_html_omits_draft_block_when_no_draft():
     html = mail.email_html(_cfg(), [_item("needs_action", draft="")])
     assert "Draft reply" not in html
