@@ -99,6 +99,10 @@ BUCKETS
 - worth_reading: a real human or real content worth a glance, with nothing the reader needs to do about it.
 - Anything else — newsletters, promotions, receipts, automated notifications — is noise. Do not return noise at all. There is no third bucket for it; simply omit it.
 
+SIGNALS
+- attachments: invoices, contracts, e-sign requests and forms in attachments usually mean needs_action even when the body is short.
+- "you've replied to this sender N times": senders the reader has replied to before deserve the benefit of the doubt; senders they never reply to need a stronger reason to surface.
+
 HOW MANY TO RETURN
 - needs_action has no cap. Never drop a message that genuinely needs action just to keep the list short.
 - worth_reading: return at most {cfg.reading_count}, and you are explicitly permitted — and expected — to return fewer. Most windows do not contain {cfg.reading_count} things worth reading; feeds and mailing lists post on their own schedule, not this reader's. An honest short list beats a padded one: if a worth_reading item is only there to reach {cfg.reading_count}, leaving it out makes the digest strictly better. Padding is the failure that kills this product — it trains the reader to stop opening it. Returning an empty worth_reading list is valid and correct.
@@ -143,9 +147,11 @@ def build_user(emails: list[Email], now: datetime) -> str:
         else:
             age = f"{age_minutes // (24 * 60)}d ago"
         status = "UNREAD" if em["unread"] else "read"
-        blocks.append(
+        block = (
             f"[{i}] {em['subject']}\n    from: {em['from']} · {em['account']} · {age} · {status}\n    {em['snippet']}"
         )
+        block += _context_lines(em)
+        blocks.append(block)
     # Today's date lets the model resolve "by Friday" into a `due` date.
     return f"Today is {now:%A %Y-%m-%d}.\n\nEmails:\n\n" + "\n\n".join(blocks)
 
@@ -161,6 +167,23 @@ def clean_due(value: Any, today: date | None = None) -> str:
         return ""
     today = today or datetime.now(timezone.utc).date()
     return d.isoformat() if d >= today - timedelta(days=365) else ""
+
+
+def _context_lines(em: Email) -> str:
+    """The optional context keys imap_pull.enrich fills in, rendered under the
+    candidate. Empty string when there is none, so a fork without enrichment
+    gets the exact block it always got."""
+    out = ""
+    attachments = em.get("attachments") or []
+    if attachments:
+        out += "\n    attachments: " + ", ".join(attachments)
+    replied = em.get("replied_before") or 0
+    if replied:
+        out += f"\n    you've replied to this sender {replied} time{'s' if replied != 1 else ''}"
+    thread = em.get("thread") or []
+    if thread:
+        out += "\n    earlier in this thread:\n" + "\n".join(f"      {ln}" for ln in thread)
+    return out
 
 
 def pick(cfg: Config, emails: list[Email], reply: dict[str, Any]) -> list[Triaged]:

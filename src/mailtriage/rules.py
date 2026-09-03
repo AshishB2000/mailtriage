@@ -66,6 +66,16 @@ def _forced(em: Email, i: int, bucket: str, note: str) -> Triaged:
     )
 
 
+def omitted(cfg: Config, emails: list[Email], kept: list[Triaged]) -> list[int]:
+    """Indices of candidates the run left out -- the noise -- excluding any
+    sender an always_surface / always_action rule names (enforce() already
+    keeps those, but the noise stages must never touch a rule-matched sender
+    even if that ever changes). Input order preserved."""
+    in_kept = {t["idx"] for t in kept}
+    protected = cfg.rules.get("always_surface", []) + cfg.rules.get("always_action", [])
+    return [i for i, em in enumerate(emails) if i not in in_kept and not any(matches(e, em["from"]) for e in protected)]
+
+
 def enforce(cfg: Config, emails: list[Email], kept: list[Triaged]) -> list[Triaged]:
     """Apply always_action / always_surface after pick(). Keeps pick()'s
     ordering contract: needs_action first, then worth_reading. Deduplicates

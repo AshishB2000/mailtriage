@@ -133,6 +133,10 @@ BUCKETS
 - worth_reading: a real human or real content worth a glance, with nothing the reader needs to do about it.
 - Anything else — newsletters, promotions, receipts, automated notifications — is noise. Do not return noise at all. There is no third bucket for it; simply omit it.
 
+SIGNALS
+- attachments: invoices, contracts, e-sign requests and forms in attachments usually mean needs_action even when the body is short.
+- "you've replied to this sender N times": senders the reader has replied to before deserve the benefit of the doubt; senders they never reply to need a stronger reason to surface.
+
 HOW MANY TO RETURN
 - needs_action has no cap. Never drop a message that genuinely needs action just to keep the list short.
 - worth_reading: return at most {CFG.reading_count}, and you are explicitly permitted — and expected — to return fewer. Most windows do not contain {CFG.reading_count} things worth reading; feeds and mailing lists post on their own schedule, not this reader's. An honest short list beats a padded one: if a worth_reading item is only there to reach {CFG.reading_count}, leaving it out makes the digest strictly better. Padding is the failure that kills this product — it trains the reader to stop opening it. Returning an empty worth_reading list is valid and correct.
@@ -211,6 +215,44 @@ def test_pick_validates_due_like_everything_else():
 def test_triage_schema_requires_due():
     item = triage.TRIAGE_SCHEMA["properties"]["items"]["items"]
     assert "due" in item["properties"] and "due" in item["required"]
+
+
+def test_build_user_renders_thread_context_indented_under_candidate():
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+    em = make_email(0)
+    em["thread"] = ["2d ago · Bob <bob@x.com>: first ask", "5h ago · Me <me@x.com>: my reply"]
+    user = triage.build_user([em, make_email(1)], now)
+    block = user.split("[1]")[0]
+    assert "    earlier in this thread:\n      2d ago · Bob <bob@x.com>: first ask\n      5h ago · Me" in block
+    assert "earlier in this thread" not in user.split("[1]")[1]  # only under the candidate that has it
+
+
+def test_build_user_lists_attachments_under_candidate():
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+    em = make_email(0)
+    em["attachments"] = ["invoice.pdf (application/pdf)", "sign-here.docx (application/msword)"]
+    user = triage.build_user([em], now)
+    assert "\n    attachments: invoice.pdf (application/pdf), sign-here.docx (application/msword)" in user
+
+
+def test_build_user_shows_reply_history_only_when_nonzero():
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+    a, b, c = make_email(0), make_email(1), make_email(2)
+    a["replied_before"] = 3
+    b["replied_before"] = 1
+    user = triage.build_user([a, b, c], now)
+    assert "\n    you've replied to this sender 3 times" in user.split("[1]")[0]
+    assert "you've replied to this sender 1 time\n" in user.split("[1]")[1] + "\n"
+    assert "replied" not in user.split("[2]")[1]
+
+
+def test_build_user_without_context_is_unchanged():
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+    user = triage.build_user([make_email(0)], now)
+    assert user == (
+        "Today is Friday 2026-08-28.\n\nEmails:\n\n[0] real subject 0\n"
+        "    from: sender0@example.com · acct0 · 2h ago · UNREAD\n    real snippet 0"
+    )
 
 
 def test_triage_end_to_end_uses_selected_backend(monkeypatch):

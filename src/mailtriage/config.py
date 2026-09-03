@@ -60,9 +60,19 @@ DRAFT_TONES: tuple[str, ...] = get_args(DraftTone)
 
 # Shared by the global draft_style default and every unset sub-key of a
 # per-account draft_style override.
-DRAFT_STYLE_DEFAULTS: dict[str, Any] = {"tone": "friendly", "sign_off": "", "language": "auto", "max_sentences": 5}
+DRAFT_STYLE_DEFAULTS: dict[str, Any] = {
+    "tone": "friendly",
+    "sign_off": "",
+    "language": "auto",
+    "max_sentences": 5,
+    # Show the drafting model up to 3 of the reader's own recent Sent
+    # messages to the same recipient (or domain) so drafts sound like them.
+    "learn_voice": True,
+}
 
 RULE_KEYS: tuple[str, ...] = ("always_ignore", "always_surface", "always_action")
+
+NOISE_DEFAULTS: dict[str, bool] = {"label": False, "archive": False}
 
 
 @dataclass(slots=True)
@@ -113,6 +123,9 @@ class Config:
     # tone/sign_off/language/max_sentences for AI-drafted replies. Partial
     # mappings merge over DRAFT_STYLE_DEFAULTS.
     draft_style: dict[str, Any] = field(default_factory=lambda: dict(DRAFT_STYLE_DEFAULTS))
+    # 1 = one draft per needs_action item. 2 = a short and a full variant,
+    # both pushed to Gmail Drafts; the digest shows the short one.
+    draft_variants: int = 1
     # Hard VIP-sender rules, checked deterministically -- see rules.py.
     rules: dict[str, list[str]] = field(default_factory=lambda: {k: [] for k in RULE_KEYS})
     # Per-account overrides keyed by lowercased address: interests/avoid
@@ -130,6 +143,23 @@ class Config:
     # A carried item open for at least this many days is flagged "still open"
     # (bold row + badge) in the digest's "Still waiting on you" section.
     nag_after_days: int = 3
+    # Show the model up to 2 earlier messages of a candidate's Gmail thread
+    # (read from All Mail, newest 15 candidates per run) so it can tell a
+    # live conversation from a stale one. Read-only, a few extra fetches.
+    thread_context: bool = True
+    # Count how often the reader has written to each candidate's sender in
+    # the last 180 days (\Sent, newest 40 senders per run) and tell the model.
+    sender_memory: bool = True
+    # Folded "Noise this week" footer in the digest: one Unsubscribe link per
+    # omitted sender that offered one (https or mailto only). Never clicked
+    # for you.
+    show_unsubscribe: bool = True
+    # Opt-in, both off. label: apply "mailtriage/noise" to the candidates a
+    # run left out (never a sender your always_surface/always_action rules
+    # name). archive (requires label): also take them out of the inbox by
+    # removing the \Inbox label -- they stay in All Mail, searchable, never
+    # deleted. Skipped on --dry-run.
+    noise: dict[str, bool] = field(default_factory=lambda: dict(NOISE_DEFAULTS))
 
     # Named digests, each over a subset of MAIL_ACCOUNTS with its own
     # overrides for any key above (delivery, run_at, interests, ...). Empty =
@@ -176,11 +206,13 @@ class Config:
         if not isinstance(cu, int) or isinstance(cu, bool) or not 60 <= cu <= 360:
             raise MailError(f"'catch_up_minutes' in {origin} must be a whole number from 60 to 360 (got {cu!r}).")
 
-        if not isinstance(cfg.draft_replies, bool):
-            raise MailError(f"'draft_replies' in {origin} must be true or false (got {cfg.draft_replies!r}).")
+        for name in ("draft_replies", "carry_over", "thread_context", "sender_memory", "show_unsubscribe"):
+            value = getattr(cfg, name)
+            if not isinstance(value, bool):
+                raise MailError(f"'{name}' in {origin} must be true or false (got {value!r}).")
 
-        if not isinstance(cfg.carry_over, bool):
-            raise MailError(f"'carry_over' in {origin} must be true or false (got {cfg.carry_over!r}).")
+        if cfg.draft_variants not in (1, 2) or isinstance(cfg.draft_variants, bool):
+            raise MailError(f"'draft_variants' in {origin} must be 1 or 2 (got {cfg.draft_variants!r}).")
 
         # str() rather than a type error: YAML turns a bare value into whatever
         # type it looks like (e.g. an unquoted prefix or address).
@@ -211,6 +243,7 @@ class Config:
 
         cfg.draft_style = _validate_draft_style(cfg.draft_style, DRAFT_STYLE_DEFAULTS, origin, "draft_style")
         cfg.rules = _validate_rules(cfg.rules, origin)
+        cfg.noise = _validate_noise(cfg.noise, origin)
         cfg.accounts = _validate_accounts(cfg.accounts, cfg.draft_style, origin)
         cfg.profiles = _validate_profiles(cfg.profiles, known, origin)
         if not isinstance(cfg.run_at, list) or not cfg.run_at:
@@ -269,7 +302,7 @@ def _validate_draft_style(data: Any, base: dict[str, Any], origin: str, where: s
     validated global draft_style for a per-account override."""
     if not isinstance(data, dict):
         raise MailError(f"'{where}' in {origin} must be a mapping (got {type(data).__name__}).")
-    known = {"tone", "sign_off", "language", "max_sentences"}
+    known = {"tone", "sign_off", "language", "max_sentences", "learn_voice"}
     for key in sorted(set(data) - known):
         print(f"mailtriage: ignoring unknown key {key!r} in {where} in {origin}", file=sys.stderr)
 
@@ -277,12 +310,30 @@ def _validate_draft_style(data: Any, base: dict[str, Any], origin: str, where: s
 
     if style["tone"] not in DRAFT_TONES:
         raise MailError(f"'{where}.tone' in {origin} must be one of {DRAFT_TONES} (got {style['tone']!r}).")
+    if not isinstance(style["learn_voice"], bool):
+        raise MailError(f"'{where}.learn_voice' in {origin} must be true or false (got {style['learn_voice']!r}).")
     style["sign_off"] = str(style["sign_off"])
     style["language"] = str(style["language"])
     max_sentences = style["max_sentences"]
     if not isinstance(max_sentences, int) or isinstance(max_sentences, bool) or max_sentences < 1:
         raise MailError(f"'{where}.max_sentences' in {origin} must be a positive whole number (got {max_sentences!r}).")
     return style
+
+
+def _validate_noise(data: Any, origin: str) -> dict[str, bool]:
+    if not isinstance(data, dict):
+        raise MailError(f"'noise' in {origin} must be a mapping (got {type(data).__name__}).")
+    for key in sorted(set(data) - set(NOISE_DEFAULTS)):
+        print(f"mailtriage: ignoring unknown key {key!r} in noise in {origin}", file=sys.stderr)
+    out = {**NOISE_DEFAULTS, **{k: v for k, v in data.items() if k in NOISE_DEFAULTS}}
+    for k, v in out.items():
+        if not isinstance(v, bool):
+            raise MailError(f"'noise.{k}' in {origin} must be true or false (got {v!r}).")
+    if out["archive"] and not out["label"]:
+        raise MailError(
+            f"'noise.archive' in {origin} requires 'noise.label: true' -- archived mail must stay findable."
+        )
+    return out
 
 
 def _validate_rules(data: Any, origin: str) -> dict[str, list[str]]:

@@ -23,14 +23,19 @@ SERIF = "Georgia,'Times New Roman',serif"
 SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
 
 
-def _draft_block(draft: str) -> str:
+def _draft_block(draft: str, has_full: bool = False) -> str:
     if not draft:
         return ""
+    fuller = (
+        f'<div style="font:400 12px/1.4 {SANS};color:{DIM};margin:6px 0 0 0;">A fuller version is in Drafts.</div>'
+        if has_full
+        else ""
+    )
     # white-space:pre-wrap keeps the model's paragraph breaks without a <br>-injection risk.
     return f"""
         <div class="muted" style="margin:10px 0 0 0;padding:10px 12px;border-left:2px solid {RULE};">
           <div style="font:700 11px/1 {SANS};letter-spacing:.08em;color:{DIM};text-transform:uppercase;">Draft reply</div>
-          <p style="font:400 14px/1.5 {SANS};color:{DIM};margin:6px 0 0 0;white-space:pre-wrap;">{html.escape(draft)}</p>
+          <p style="font:400 14px/1.5 {SANS};color:{DIM};margin:6px 0 0 0;white-space:pre-wrap;">{html.escape(draft)}</p>{fuller}
         </div>"""
 
 
@@ -127,7 +132,7 @@ def _rows(items: list[Triaged], start: int) -> str:
       <tr><td style="padding:0 0 26px 0;">
         {_number(n, it["link"])}<a href="{html.escape(it["link"], quote=True)}" style="font:700 18px/1.35 {SERIF};color:{INK};text-decoration:none;">{html.escape(it["subject"])}</a>
         <div class="muted" style="font:400 13px/1.4 {SANS};color:{DIM};padding-top:4px;">{dot}{html.escape(it["sender"])} &nbsp;·&nbsp; {html.escape(it["account"])}</div>{_due_line(it)}
-        <p style="font:400 15px/1.55 {SERIF};color:{INK};margin:8px 0 0 0;">{html.escape(it["note"])}</p>{_draft_block(it["draft"])}
+        <p style="font:400 15px/1.55 {SERIF};color:{INK};margin:8px 0 0 0;">{html.escape(it["note"])}</p>{_draft_block(it["draft"], bool(it.get("draft_full")))}
       </td></tr>"""
     return out
 
@@ -165,6 +170,28 @@ def _carried_footer(cfg: Config) -> str:
     <tr><td class="muted" style="font:400 12px/1.5 {SANS};color:{DIM};padding-top:2px;">Clears when you reply, archive, or remove the {html.escape(cfg.label)} label in Gmail.</td></tr>"""
 
 
+def _noise_section(items: list[Triaged]) -> str:
+    """Folded footer: one line per omitted sender with an Unsubscribe link.
+    Only https and mailto targets are rendered -- anything else is dropped
+    here too, not just at parse time -- and nothing is ever clicked for you."""
+    rows = ""
+    for it in items:
+        link = it["link"]
+        if not link.lower().startswith(("https://", "mailto:")):
+            continue
+        rows += f"""
+        <div style="font:400 13px/1.6 {SANS};color:{DIM};">{html.escape(it["sender"])} &nbsp;·&nbsp; <a href="{html.escape(link, quote=True)}" style="color:{DIM};">Unsubscribe</a></div>"""
+    if not rows:
+        return ""
+    return f"""
+    <tr><td class="muted" style="padding-top:26px;">
+      <details><summary style="cursor:pointer;font:700 13px/1 {SANS};letter-spacing:.1em;color:{DIM};text-transform:uppercase;">Noise this week</summary>
+        <div style="padding-top:10px;">{rows}
+        </div>
+      </details>
+    </td></tr>"""
+
+
 COMMANDS_HINT = (
     'Reply to this email with e.g. "done 2", "snooze 3 for a week", "draft 1 shorter", "never 4" or "vip 5" '
     "— or label a message mailtriage/done, mailtriage/snooze-3d (1w, 2w), mailtriage/never or mailtriage/vip "
@@ -185,6 +212,7 @@ def email_html(cfg: Config, triaged: list[Triaged], today: date | None = None) -
         else:
             sections += _section(heading, _rows(items, n))
         n += len(items)
+    sections += _noise_section([t for t in triaged if t["bucket"] == "noise"])
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">

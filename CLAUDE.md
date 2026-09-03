@@ -73,10 +73,13 @@ catch_up_minutes: int (60..360)    (how late the hourly gate still fires a slot)
 subject_prefix: str                email_to: str        email_from: str
 provider: str                      model: str
 draft_replies: bool                draft_style: {tone, sign_off, language,
-                                      max_sentences}
+draft_variants: 1 | 2                 max_sentences, learn_voice}
 rules: {always_ignore, always_surface, always_action}   accounts: {addr: {…}}
 carry_over: bool                   label: str
 nag_after_days: int
+thread_context: bool               sender_memory: bool
+show_unsubscribe: bool             noise: {label: bool, archive: bool}
+                                      (archive requires label; both off)
 ```
 
 **Label names** are fixed literals in `commands.py`, quoted in the digest
@@ -87,11 +90,6 @@ together:
 mailtriage/done   mailtriage/snooze-<N>d (1..90) | -1w | -2w   mailtriage/until-YYYY-MM-DD
 mailtriage/never  mailtriage/vip                                mailtriage/handled
 ```
-
-A sibling branch adds `carry_over: bool` and `label: str` with those exact
-names — the wizard already writes both (forward-compat) even though
-`Config` on this branch doesn't parse them yet (they show up as a harmless
-"ignoring unknown key" warning until that branch lands).
 
 **Secret names** — used by the wizard (writes), the workflow (exports all via
 `toJSON(secrets)`), and the engine (reads env):
@@ -241,6 +239,16 @@ are flat-rate, the default costs nothing extra.
   `push_drafts` only `APPEND`s to the account's `\Drafts` mailbox; INBOX
   stays `select(..., readonly=True)` for the whole run; there is no SMTP call
   anywhere in `imap_pull.py`. Don't add one.
+- **`noise.archive` is the ONE opt-in exception to "never remove anything"**,
+  and it only removes the `\Inbox` Gmail label (`-X-GM-LABELS (\Inbox)`)
+  from mail `rules.omitted` returned -- never EXPUNGE, never DELETE, never a
+  rule-protected sender, never on `--dry-run`, and it requires `noise.label`
+  so the mail stays findable. Keep it that way.
+- **Inbox intelligence is read-only and count-only.** `enrich` (thread
+  context from `\All`, sender memory from `\Sent`) and `pull_voice_examples`
+  (the reader's own Sent text, drafting prompt only) select `readonly=True`
+  and fetch with `BODY.PEEK`; cli prints how many, never what. Voice
+  examples must never reach stderr or the digest.
 
 ## Landmines (each one cost a real debugging session)
 

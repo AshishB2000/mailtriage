@@ -1,14 +1,16 @@
-"""Pull recent INBOX mail from several Gmail accounts as JSON. Stdlib only.
+r"""Pull recent INBOX mail from several Gmail accounts as JSON. Stdlib only.
 
 CRITICAL INVARIANT: `fetch_account`/`pull`, `pull_open_actions`, `pull_week`,
 `already_delivered`, and `check_login` are read-only -- `select(..., readonly=True)` and `BODY.PEEK[]`
 (or `BODY.PEEK[HEADER.FIELDS (...)]`, for `pull_week`) only. The engine
-writes exactly two things to Gmail: `label_actions` adds a label to INBOX
-messages (the one read-write INBOX `select` in this codebase, required
-because STORE on an EXAMINEd mailbox returns NO) and `push_drafts` APPENDs a
-new message to the account's Drafts mailbox. Nothing here ever marks a
-message read outside of that, sends mail, deletes anything, or moves a
-message between mailboxes.
+writes exactly three things to Gmail: `label_actions` and `label_noise`
+add a label to INBOX messages (the read-write INBOX `select`s in this
+codebase, required because STORE on an EXAMINEd mailbox returns NO) --
+`label_noise` with `archive=True` is the ONE opt-in exception that removes
+a label (`\Inbox`, so the message leaves the inbox but stays in All Mail)
+-- and `push_drafts` APPENDs a new message to the account's Drafts mailbox.
+Nothing here ever marks a message read outside of that, sends mail, deletes
+or EXPUNGEs anything, or moves a message between mailboxes.
 """
 
 from __future__ import annotations
@@ -22,13 +24,13 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes, policy
 from email.message import EmailMessage
-from email.utils import format_datetime, parsedate_to_datetime
+from email.utils import format_datetime, parseaddr, parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote
 
 # Re-exported: tests import MailError from this module too.
 from mailtriage.errors import MailError as MailError
-from mailtriage.models import Email, PullResult, Triaged, WeekItem, WeekResult
+from mailtriage.models import Email, EnrichResult, PullResult, Triaged, WeekItem, WeekResult
 
 
 def pw_env_var(addr: str) -> str:
@@ -118,7 +120,8 @@ def gmail_link(addr: str, message_id: str) -> str:
     return f"https://mail.google.com/mail/u/{addr}/#search/rfc822msgid:{quote(mid)}"
 
 
-def snippet_of(msg: EmailMessage, limit: int = 200) -> str:
+def plain_text(msg: EmailMessage) -> str:
+    """The first non-attachment text/plain part, decoded, line breaks intact."""
     part: EmailMessage | None = msg
     if msg.is_multipart():
         part = next(
@@ -138,7 +141,54 @@ def snippet_of(msg: EmailMessage, limit: int = 200) -> str:
         if not isinstance(payload, bytes):  # get_payload(decode=True) is typed loosely; guard the real shape
             payload = b""
         text = payload.decode(part.get_content_charset() or "utf-8", "replace")
-    return " ".join(text.split())[:limit]
+    return str(text)
+
+
+def snippet_of(msg: EmailMessage, limit: int = 200) -> str:
+    return " ".join(plain_text(msg).split())[:limit]
+
+
+_QUOTE_START_RE = re.compile(r"^(>|On .{0,200}wrote:\s*$|-{2,}\s*$|_{5,}|From: .*$|-----Original Message-----)")
+
+
+def reply_text(body: str, limit: int = 600) -> str:
+    """The reader's own words from a sent message: everything above the first
+    quoted line, signature separator, or forwarded-header block, trimmed."""
+    # ponytail: a Gmail "On <date>, <name> wrote:" line that wrapped onto two
+    # lines slips through; the 600-char cap keeps the damage to a few words.
+    kept: list[str] = []
+    for line in body.splitlines():
+        if _QUOTE_START_RE.match(line.strip()):
+            break
+        kept.append(line.rstrip())
+    return "\n".join(kept).strip()[:limit]
+
+
+def attachments_of(msg: EmailMessage, limit: int = 10) -> list[str]:
+    """'name (content/type)' for every part that is an attachment or carries a
+    filename (inline images with a name count; unnamed body parts don't)."""
+    out: list[str] = []
+    for part in msg.walk():
+        if part.is_multipart():
+            continue
+        name = part.get_filename()
+        if not name and "attachment" not in str(part.get("Content-Disposition", "")).lower():
+            continue
+        out.append(f"{name or 'unnamed'} ({part.get_content_type()})")
+        if len(out) == limit:
+            break
+    return out
+
+
+def unsubscribe_of(header: str) -> str:
+    """The https URL from a List-Unsubscribe header, else its mailto:, else
+    "". Nothing else -- an http: or javascript: entry never becomes a link."""
+    targets = [t.strip() for t in re.findall(r"<([^>]+)>", header or "")]
+    for scheme in ("https://", "mailto:"):
+        for t in targets:
+            if t.lower().startswith(scheme):
+                return str(t)
+    return ""
 
 
 def _email_from_msg(msg: EmailMessage, addr: str, flags: str, dt: datetime, uid: str) -> Email:
@@ -154,6 +204,9 @@ def _email_from_msg(msg: EmailMessage, addr: str, flags: str, dt: datetime, uid:
         "message_id": str(msg.get("Message-ID", "")),
         "reply_to": str(msg.get("Reply-To", "") or msg.get("From", "")),
         "uid": uid,
+        "thrid": _extract_thrid(flags),
+        "attachments": attachments_of(msg),
+        "unsubscribe": unsubscribe_of(str(msg.get("List-Unsubscribe", ""))),
     }
 
 
@@ -187,7 +240,7 @@ def fetch_account(addr: str, pw: str, now: datetime, hours: int, host: str = "im
         for num in data[0].split():
             # UID requested alongside FLAGS so label/draft stages can address this
             # message by UID later without a second round trip to look it up.
-            _, fetched = M.fetch(num, "(FLAGS UID BODY.PEEK[])")  # PEEK => never sets \Seen
+            _, fetched = M.fetch(num, "(FLAGS UID X-GM-THRID BODY.PEEK[])")  # PEEK => never sets \Seen
             flags, raw = "", b""
             for part in fetched:
                 if isinstance(part, tuple):
@@ -327,14 +380,14 @@ def _quote_mailbox(name: str) -> str:
     return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _build_draft_message(account: str, src: Email, draft: str) -> EmailMessage:
+def _build_draft_message(account: str, src: Email, draft: str, suffix: str = "") -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = account
     msg["To"] = src["reply_to"]
     subject = src["subject"]
     if not subject.lower().startswith("re:"):
         subject = "Re: " + subject
-    msg["Subject"] = subject
+    msg["Subject"] = subject + suffix
     message_id = src["message_id"]
     if message_id:
         msg["In-Reply-To"] = message_id
@@ -378,14 +431,83 @@ def push_drafts(
                 mailbox = _quote_mailbox(_find_drafts_mailbox(M.list()[1] or []))
                 for t in items:
                     src = emails[t["idx"]]
-                    msg = _build_draft_message(account, src, t["draft"])
-                    M.append(mailbox, "\\Draft", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+                    full = t.get("draft_full", "")
+                    # Two variants -> two separate threaded drafts, told apart by subject.
+                    variants = [(t["draft"], " [A short]"), (full, " [B full]")] if full else [(t["draft"], "")]
+                    for draft, suffix in variants:
+                        msg = _build_draft_message(account, src, draft, suffix)
+                        M.append(mailbox, "\\Draft", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
             finally:
                 with contextlib.suppress(Exception):
                     M.logout()
         except Exception as e:  # imaplib raises many unrelated types — one bad account must not abort the rest
             warnings.append({"account": account, "error": f"{type(e).__name__}: {e}"})
     return warnings
+
+
+VOICE_EXAMPLES = 3  # most recent Sent messages per recipient shown to the drafting model
+
+
+def _last_uids(M: imaplib.IMAP4_SSL, *criteria: str) -> list[bytes]:
+    _, data = M.uid("SEARCH", None, *criteria)  # type: ignore[arg-type]
+    uids = data[0].split() if data and data[0] else []
+    return uids[-VOICE_EXAMPLES:]
+
+
+def pull_voice_examples(
+    environ: Mapping[str, str],
+    triaged: list[Triaged],
+    emails: list[Email],
+    host: str = "imap.gmail.com",
+) -> tuple[dict[int, list[str]], list[dict[str, str]]]:
+    """For each needs_action item, up to VOICE_EXAMPLES of the reader's own
+    recent Sent messages to the same recipient (falling back to the same
+    domain), as reply text only -- nothing below a quoted section. Keyed by
+    the item's idx. Read-only: \\Sent is selected readonly and fetched with
+    BODY.PEEK, bounded to one SEARCH (two on domain fallback) plus one FETCH
+    per distinct recipient. Same per-account warn-and-continue as `pull`.
+    """
+    by_account: dict[str, list[Triaged]] = {}
+    for t in triaged:
+        if t["bucket"] == "needs_action":
+            by_account.setdefault(t["account"], []).append(t)
+
+    examples: dict[int, list[str]] = {}
+    warnings: list[dict[str, str]] = []
+    for account, items in by_account.items():
+        pw = app_password(environ, account)
+        if not pw:
+            warnings.append(
+                {"account": account, "error": f"no app password found in ${pw_env_var(account)}, skipping voice"}
+            )
+            continue
+        try:
+            M = imaplib.IMAP4_SSL(host, 993)
+            try:
+                M.login(account, pw)
+                M.select(_quote_mailbox(_find_sent_mailbox(M.list()[1] or [])), readonly=True)
+                cache: dict[str, list[str]] = {}
+                for t in items:
+                    addr = parseaddr(emails[t["idx"]]["reply_to"])[1].lower()
+                    if not addr or "@" not in addr:
+                        continue
+                    if addr not in cache:
+                        uids = _last_uids(M, "TO", _quote_mailbox(addr)) or _last_uids(
+                            M, "TO", _quote_mailbox("@" + addr.rsplit("@", 1)[1])
+                        )
+                        texts = [
+                            reply_text(plain_text(message_from_bytes(raw, policy=policy.default)))
+                            for _flags, raw in _fetch_many(M, uids, f"(BODY.PEEK[]{_PARTIAL})")
+                        ]
+                        cache[addr] = [s for s in texts if s]
+                    if cache[addr]:
+                        examples[t["idx"]] = cache[addr]
+            finally:
+                with contextlib.suppress(Exception):
+                    M.logout()
+        except Exception as e:  # imaplib raises many unrelated types — one bad account must not abort the rest
+            warnings.append({"account": account, "error": f"{type(e).__name__}: {e}"})
+    return examples, warnings
 
 
 def label_actions(
@@ -438,6 +560,59 @@ def label_actions(
     return warnings
 
 
+NOISE_LABEL = "mailtriage/noise"
+
+
+def label_noise(
+    environ: Mapping[str, str],
+    emails: list[Email],
+    idxs: list[int],
+    archive: bool = False,
+    host: str = "imap.gmail.com",
+) -> tuple[int, list[dict[str, str]]]:
+    """Opt-in (config `noise.label`): apply NOISE_LABEL to the candidates at
+    `idxs` -- the caller passes `rules.omitted`, so a rule-protected sender
+    never reaches here. With `archive` (config `noise.archive`), also remove
+    Gmail's `\\Inbox` label so they leave the inbox; they stay in All Mail,
+    searchable, and are never deleted or expunged. Same read-write INBOX
+    select and per-account warn-and-continue as `label_actions`; never
+    fetches a body. Returns (messages touched, warnings)."""
+    by_account: dict[str, list[str]] = {}
+    for i in idxs:
+        em = emails[i]
+        if em["uid"]:
+            by_account.setdefault(em["account"], []).append(em["uid"])
+
+    touched = 0
+    warnings: list[dict[str, str]] = []
+    quoted_label = _quote_mailbox(NOISE_LABEL)
+    for account, uids in by_account.items():
+        pw = app_password(environ, account)
+        if not pw:
+            warnings.append(
+                {"account": account, "error": f"no app password found in ${pw_env_var(account)}, skipping noise labels"}
+            )
+            continue
+        try:
+            M = imaplib.IMAP4_SSL(host, 993)
+            try:
+                M.login(account, pw)
+                M.select("INBOX")  # read-write on purpose -- STORE needs it
+                with contextlib.suppress(Exception):
+                    M.create(quoted_label)
+                for uid in uids:
+                    M.uid("STORE", uid, "+X-GM-LABELS", f"({quoted_label})")
+                    if archive:
+                        M.uid("STORE", uid, "-X-GM-LABELS", "(\\Inbox)")
+                    touched += 1
+            finally:
+                with contextlib.suppress(Exception):
+                    M.logout()
+        except Exception as e:  # imaplib raises many unrelated types — one bad account must not abort the rest
+            warnings.append({"account": account, "error": f"{type(e).__name__}: {e}"})
+    return touched, warnings
+
+
 def _extract_uid(flags: str) -> str:
     m = re.search(r"UID (\d+)", flags)
     return m.group(1) if m else ""
@@ -446,6 +621,154 @@ def _extract_uid(flags: str) -> str:
 def _extract_thrid(flags: str) -> str:
     m = re.search(r"X-GM-THRID (\d+)", flags)
     return m.group(1) if m else ""
+
+
+THREAD_CONTEXT_CAP = 15  # candidates per run that get earlier-thread context -- the newest ones
+THREAD_PREV = 2  # earlier messages shown per thread
+# Bounded partial fetch for context messages: headers plus the start of the
+# body is all a 300-char snippet needs, and it keeps a 40-candidate run's
+# extra bytes small no matter how big the thread's attachments are.
+_PARTIAL = "<0.16384>"
+
+
+def _age(sent: datetime, now: datetime) -> str:
+    # Same shape as the age in triage.build_user, kept local so this module
+    # never imports the triage package.
+    minutes = max(0, int((now - sent).total_seconds() // 60))
+    if minutes < 60:
+        return f"{minutes}m ago"
+    if minutes < 24 * 60:
+        return f"{minutes // 60}h ago"
+    return f"{minutes // (24 * 60)}d ago"
+
+
+def _fetch_many(M: imaplib.IMAP4_SSL, uids: list[bytes], spec: str) -> list[tuple[str, bytes]]:
+    """One UID FETCH for several messages -> (flags line, raw) per message."""
+    if not uids:
+        return []
+    _, fetched = M.uid("FETCH", b",".join(uids).decode(), spec)
+    return [(p[0].decode("ascii", "replace"), p[1]) for p in fetched if isinstance(p, tuple)]
+
+
+def _thread_lines(M: imaplib.IMAP4_SSL, em: Email, now: datetime) -> tuple[list[str], int]:
+    """Up to THREAD_PREV messages that came before `em` in its Gmail thread,
+    oldest first, read from the currently selected \\All mailbox. Returns
+    (lines, extra fetches made)."""
+    _, data = M.uid("SEARCH", None, "X-GM-THRID", em["thrid"])  # type: ignore[arg-type]
+    uids = data[0].split() if data and data[0] else []
+    if len(uids) < 2:
+        return [], 0  # first (or only) message of its thread -- nothing earlier to show
+    sent_at = datetime.fromisoformat(em["date"])
+    earlier: list[tuple[datetime, str]] = []
+    # ponytail: the last THREAD_PREV+1 UIDs are the thread's newest arrivals,
+    # which normally means the candidate plus what came just before it. A
+    # thread that grew again after the candidate shows fewer earlier lines.
+    for _flags, raw in _fetch_many(M, uids[-(THREAD_PREV + 1) :], f"(BODY.PEEK[]{_PARTIAL})"):
+        msg = message_from_bytes(raw, policy=policy.default)
+        dt = msg_datetime(str(msg.get("Date", "")))
+        if dt is None or dt >= sent_at or str(msg.get("Message-ID", "")) == em["message_id"]:
+            continue
+        earlier.append((dt, f"{_age(dt, now)} · {msg.get('From', '')}: {snippet_of(msg, 300)}"))
+    earlier.sort(key=lambda pair: pair[0])
+    return [line for _, line in earlier[-THREAD_PREV:]], 1
+
+
+SENDER_MEMORY_CAP = 40  # distinct sender addresses looked up in \Sent per run
+SENDER_MEMORY_DAYS = 180
+# Automated senders nobody replies to -- a Sent search for them is a wasted round trip.
+_NOREPLY_RE = re.compile(r"no-?reply|do-?not-?reply|notifications?@|mailer-daemon|bounce|^postmaster@", re.IGNORECASE)
+
+
+def _sender_addresses(items: list[Email], own: set[str], budget: int) -> list[str]:
+    """Distinct candidate sender addresses worth a \\Sent lookup, in the order
+    given (newest candidate first), skipping the reader's own accounts and
+    noreply-ish senders."""
+    out: list[str] = []
+    for em in items:
+        if len(out) >= budget:
+            break
+        addr = parseaddr(em["from"])[1].lower()
+        if not addr or addr in own or addr in out or _NOREPLY_RE.search(addr):
+            continue
+        out.append(addr)
+    return out
+
+
+def _sent_count(M: imaplib.IMAP4_SSL, addr: str, since: str) -> int:
+    """Messages in the selected \\Sent mailbox addressed to `addr` since `since`."""
+    _, data = M.uid("SEARCH", None, "TO", _quote_mailbox(addr), "SINCE", since)  # type: ignore[arg-type]
+    return len(data[0].split()) if data and data[0] else 0
+
+
+def enrich(
+    environ: Mapping[str, str],
+    emails: list[Email],
+    now: datetime,
+    *,
+    thread_context: bool = True,
+    sender_memory: bool = True,
+    host: str = "imap.gmail.com",
+) -> EnrichResult:
+    """Fill the optional context keys on `emails` in place, after `pull`:
+    `thread` (earlier messages of the same Gmail thread, from \\All) and
+    `replied_before` (how often the reader has written to that sender, from
+    \\Sent).
+
+    Read-only throughout (`readonly=True`, `BODY.PEEK`), one login per
+    account that has something to look up, and the same warn-and-continue
+    shape as `pull`. Round trips are bounded by the caps above, and the
+    counts returned are what `cli` prints -- never the content.
+    """
+    threads = fetches = senders = 0
+    warnings: list[dict[str, str]] = []
+    by_account: dict[str, list[Email]] = {}
+    for em in emails:  # pull() sorted newest first, so the caps below favor the newest
+        by_account.setdefault(em["account"], []).append(em)
+    own = {a.lower() for a in by_account}
+    since = (now - timedelta(days=SENDER_MEMORY_DAYS)).strftime("%d-%b-%Y")
+
+    thread_budget = THREAD_CONTEXT_CAP if thread_context else 0
+    sender_budget = SENDER_MEMORY_CAP if sender_memory else 0
+    for account, items in by_account.items():
+        want_threads = [em for em in items if em.get("thrid")][:thread_budget]
+        want_senders = _sender_addresses(items, own, sender_budget)
+        if not want_threads and not want_senders:
+            continue
+        pw = app_password(environ, account)
+        if not pw:
+            warnings.append(
+                {"account": account, "error": f"no app password found in ${pw_env_var(account)}, skipping context"}
+            )
+            continue
+        try:
+            M = imaplib.IMAP4_SSL(host, 993)
+            try:
+                M.login(account, pw)
+                list_lines = M.list()[1] or []
+                if want_threads:
+                    M.select(_quote_mailbox(_find_all_mailbox(list_lines)), readonly=True)
+                    for em in want_threads:
+                        lines, n = _thread_lines(M, em, now)
+                        fetches += n
+                        thread_budget -= 1
+                        if lines:
+                            em["thread"] = lines
+                            threads += 1
+                if want_senders:
+                    M.select(_quote_mailbox(_find_sent_mailbox(list_lines)), readonly=True)
+                    counts = {addr: _sent_count(M, addr, since) for addr in want_senders}
+                    senders += len(counts)
+                    sender_budget -= len(counts)
+                    for em in items:
+                        n = counts.get(parseaddr(em["from"])[1].lower(), 0)
+                        if n:
+                            em["replied_before"] = n
+            finally:
+                with contextlib.suppress(Exception):
+                    M.logout()
+        except Exception as e:  # imaplib raises many unrelated types — one bad account must not abort the rest
+            warnings.append({"account": account, "error": f"{type(e).__name__}: {e}"})
+    return {"threads": threads, "fetches": fetches, "senders": senders, "warnings": warnings}
 
 
 def _replied_in_sent(M: imaplib.IMAP4_SSL, thrid: str, message_id: str) -> bool:

@@ -3,8 +3,8 @@
 from typing import TypedDict
 
 # The record imap_pull emits per message. `from` is a keyword → functional form.
-Email = TypedDict(
-    "Email",
+_EmailBase = TypedDict(
+    "_EmailBase",
     {
         "account": str,
         "from": str,
@@ -21,10 +21,32 @@ Email = TypedDict(
 )
 
 
+class Email(_EmailBase, total=False):
+    """Context added on top of the fetch. Optional keys (total=False) so a
+    synthetic Email in a test, or one from a stage that never enriches, stays
+    valid -- readers use .get() with a falsy default."""
+
+    thrid: str  # Gmail X-GM-THRID from the fetch; "" when the server didn't return one
+    thread: list[str]  # imap_pull.enrich: "<age> · <from>: <snippet>" for up to 2 earlier thread messages, oldest first
+    attachments: list[str]  # "invoice.pdf (application/pdf)" per attached or named part, from the fetch itself
+    replied_before: int  # imap_pull.enrich: messages the reader sent to this sender in the last 180 days
+    unsubscribe: str  # https URL or mailto: from List-Unsubscribe, "" when absent -- never any other scheme
+
+
 class PullResult(TypedDict):
     """Return shape of `imap_pull.pull`: collected messages plus per-account warnings."""
 
     messages: list["Email"]
+    warnings: list[dict[str, str]]
+
+
+class EnrichResult(TypedDict):
+    """Return shape of `imap_pull.enrich`: counts only (they get printed to a
+    public Actions log) plus the same per-account warnings as PullResult."""
+
+    threads: int  # candidates that got earlier-thread context
+    fetches: int  # extra IMAP FETCH round trips spent on it
+    senders: int  # distinct senders looked up in \Sent
     warnings: list[dict[str, str]]
 
 
@@ -33,6 +55,7 @@ class _TriagedOptional(TypedDict, total=False):
     # carried and rule-forced items never have one, and every existing
     # Triaged literal stays valid. Read it with t.get("due", "").
     due: str  # "YYYY-MM-DD" or "": model-authored, validated by triage.pick()
+    draft_full: str  # the longer variant when draft_variants == 2; `draft` is then the short one
 
 
 class Triaged(_TriagedOptional):
@@ -43,6 +66,9 @@ class Triaged(_TriagedOptional):
     # client-authored only, by imap_pull.pull_open_actions re-surfacing a prior
     # run's still-open needs_action mail -- the model's own bucket enum
     # (triage.BUCKETS) is unchanged, so triage.pick() keeps rejecting it.
+    # "noise" is likewise client-authored (cli.run, from rules.omitted): an
+    # omitted candidate with an unsubscribe link, rendered as the digest's
+    # folded footer. `link` is then the unsubscribe URL, `sender` the display name.
     note: str  # the single model-authored line
     account: str
     sender: str

@@ -112,6 +112,11 @@ model: ""
 # Gmail drafts folder; never sends.
 draft_replies: true
 
+# 1 = one draft per needs-action email. 2 = a short and a full variant, both
+# pushed to Gmail Drafts (subjects end in "[A short]" / "[B full]"); the
+# digest shows the short one.
+draft_variants: 1
+
 # Reply tone/sign-off/language/length for AI-drafted replies. Any key you
 # omit keeps its default below. "language" is "auto" (match the sender's
 # language) unless set to a specific language name.
@@ -120,6 +125,10 @@ draft_style:
   sign_off: "" # e.g. "Best, Alex" -- overrides the generic "Thanks,"
   language: auto # or a language name, e.g. "French"
   max_sentences: 5
+  # Show the drafting model up to 3 of your own recent Sent messages to the
+  # same recipient (or domain) so drafts sound like you. Read-only; the
+  # examples go into the prompt only, never into logs or the digest.
+  learn_voice: true
 
 # Hard rules you set by hand -- checked deterministically, no API call.
 # Entries are a full address ("boss@corp.com") or a domain starting with "@"
@@ -175,3 +184,29 @@ nag_after_days: 3
 #     accounts: ["you@gmail.com"]
 #     run_at: ["19:00"]
 profiles: {}
+
+# Show the model up to 2 earlier messages of a candidate's thread (from All
+# Mail, for the newest 15 candidates each run) so it can tell a live
+# conversation from a stale one. Read-only; a few extra IMAP fetches.
+thread_context: true
+
+# Tell the model how often you've written to each sender in the last 180
+# days (counted in Sent Mail, newest 40 senders per run). Read-only.
+sender_memory: true
+
+# Folded "Noise this week" footer in the digest: one Unsubscribe link per
+# sender the run left out that offered one (https or mailto only, at most
+# 20). Nothing is ever clicked for you.
+show_unsubscribe: true
+
+# Opt-in noise handling, both off by default. This is the one place the
+# engine changes anything in your inbox beyond adding a label.
+#   label:   apply "mailtriage/noise" to the mail a run left out. Senders in
+#            rules.always_surface / always_action are never touched.
+#   archive: (requires label) also remove those from the inbox -- Gmail's
+#            "archive", i.e. the \Inbox label comes off. They stay in All
+#            Mail under mailtriage/noise, searchable, never deleted.
+# Neither happens on --dry-run. Try label alone for a week first.
+noise:
+  label: false
+  archive: false

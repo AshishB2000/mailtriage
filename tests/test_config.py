@@ -122,12 +122,37 @@ def test_env_overlay_leaves_blank_when_unset(tmp_path):
 
 def test_draft_style_defaults():
     cfg = Config.from_mapping(MINIMAL)
-    assert cfg.draft_style == {"tone": "friendly", "sign_off": "", "language": "auto", "max_sentences": 5}
+    assert cfg.draft_style == {
+        "tone": "friendly",
+        "sign_off": "",
+        "language": "auto",
+        "max_sentences": 5,
+        "learn_voice": True,
+    }
 
 
 def test_draft_style_partial_mapping_merges_over_defaults():
     cfg = Config.from_mapping({**MINIMAL, "draft_style": {"tone": "formal"}})
-    assert cfg.draft_style == {"tone": "formal", "sign_off": "", "language": "auto", "max_sentences": 5}
+    assert cfg.draft_style == {
+        "tone": "formal",
+        "sign_off": "",
+        "language": "auto",
+        "max_sentences": 5,
+        "learn_voice": True,
+    }
+
+
+@pytest.mark.parametrize("bad", [0, 3, True, "2"])
+def test_draft_variants_must_be_1_or_2(bad):
+    with pytest.raises(MailError, match="draft_variants"):
+        Config.from_mapping({**MINIMAL, "draft_variants": bad})
+    assert Config.from_mapping({**MINIMAL, "draft_variants": 2}).draft_variants == 2
+
+
+def test_draft_style_learn_voice_must_be_bool():
+    with pytest.raises(MailError, match="learn_voice"):
+        Config.from_mapping({**MINIMAL, "draft_style": {"learn_voice": "yes"}})
+    assert Config.from_mapping({**MINIMAL, "draft_style": {"learn_voice": False}}).draft_style["learn_voice"] is False
 
 
 def test_draft_style_must_be_a_mapping():
@@ -237,6 +262,7 @@ def test_accounts_draft_style_merges_over_the_global_draft_style_not_defaults():
         "sign_off": "Best, Alex",
         "language": "auto",
         "max_sentences": 3,
+        "learn_voice": True,
     }
 
 
@@ -464,3 +490,30 @@ def test_profile_unknown_key_warns_and_is_dropped(capsys):
     err = capsys.readouterr().err
     assert "made_up" in err and "profiles.w" in err
     assert "made_up" not in cfg.profiles["w"] and "profiles" not in cfg.profiles["w"]
+
+
+# --- inbox intelligence -------------------------------------------------------
+
+
+def test_intelligence_defaults_are_on():
+    cfg = Config.from_mapping(MINIMAL)
+    assert cfg.thread_context is True
+    assert cfg.sender_memory is True
+    assert cfg.show_unsubscribe is True
+
+
+def test_noise_defaults_off_and_archive_requires_label():
+    assert Config.from_mapping(MINIMAL).noise == {"label": False, "archive": False}
+    assert Config.from_mapping({**MINIMAL, "noise": {"label": True}}).noise == {"label": True, "archive": False}
+    with pytest.raises(MailError, match="noise.archive"):
+        Config.from_mapping({**MINIMAL, "noise": {"archive": True}})
+    with pytest.raises(MailError, match="noise.label"):
+        Config.from_mapping({**MINIMAL, "noise": {"label": "yes"}})
+    with pytest.raises(MailError, match="'noise'"):
+        Config.from_mapping({**MINIMAL, "noise": ["label"]})
+
+
+@pytest.mark.parametrize("name", ["thread_context", "sender_memory", "show_unsubscribe"])
+def test_intelligence_bools_reject_non_bool(name):
+    with pytest.raises(MailError, match=name):
+        Config.from_mapping({**MINIMAL, name: "yes"})

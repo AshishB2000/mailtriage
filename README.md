@@ -84,6 +84,12 @@ send after a quick human read. You'll find it two places:
 Set `draft_replies: false` in `config.yaml` to turn this off — the digest
 still triages normally, it just stops drafting.
 
+**Two drafts per item.** With `draft_variants: 2`, the model writes a `short`
+variant (the minimum polite reply, one or two sentences) and a `full` one
+(covers every point). Both are pushed to Drafts as separate threaded drafts,
+subjects ending in ` [A short]` and ` [B full]`; the digest shows the short
+one and notes that a fuller version is waiting in Drafts. Default is `1`.
+
 ---
 
 ## What it looks like
@@ -478,11 +484,20 @@ draft_style:
   sign_off: ""          # e.g. "Best, Alex" -- overrides the generic "Thanks,"
   language: auto        # or a language name, e.g. "French"
   max_sentences: 5
+  learn_voice: true     # draft in your voice -- see below
 ```
 
 `language: auto` matches the sender's language rather than always replying
 in one. Set `draft_replies: false` to turn drafting off entirely — see
 [Reply drafting](#reply-drafting) above.
+
+**Drafts in your voice.** With `learn_voice: true` (default), before drafting
+a reply the engine reads up to 3 of your own most recent Sent messages to the
+same recipient (falling back to the same domain, then skipping), keeps only
+your words above any quoted section, and shows them to the drafting model as
+examples of how you write to that person — tone, length, greeting, sign-off.
+Read-only, like everything else; the examples go into the prompt only and
+never into the Actions log or the digest.
 
 ---
 
@@ -615,6 +630,46 @@ items you closed via the `done` label separately, since those have lost the
 
 ---
 
+## Inbox intelligence
+
+Read-only lookups that give the model more to go on than a subject line and
+a snippet. Everything here stays between your Gmail and the AI provider you
+picked; the Actions log only ever shows counts.
+
+- **Thread context** (`thread_context: true`, default) — for a message that
+  isn't the first in its thread, the model also sees up to 2 earlier messages
+  of that thread (sender, age, a short snippet), read from All Mail. Capped
+  at the newest 15 candidates per run so a busy inbox stays a handful of extra
+  fetches.
+- **Attachments** (always on, no extra fetch) — attachment names and types
+  are listed under each candidate, and the model is told that an invoice, a
+  contract, an e-sign request or a form usually means `needs_action` even
+  when the body is one line.
+- **Sender memory** (`sender_memory: true`, default) — for each candidate's
+  sender, how many messages you've sent them in the last 180 days (counted in
+  Sent Mail, newest 40 senders per run; your own addresses and noreply-style
+  senders are skipped). Senders you've replied to before get the benefit of
+  the doubt; senders you never reply to need a stronger reason to surface.
+- **Unsubscribe links** (`show_unsubscribe: true`, default) — the digest ends
+  with a folded "Noise this week" footer: one line per sender the run left
+  out whose mail carried a `List-Unsubscribe` header, with its Unsubscribe
+  link (https or mailto only, at most 20). Nothing is ever clicked for you;
+  senders named in your `always_surface` / `always_action` rules never
+  appear there.
+- **Noise handling, opt-in** (`noise: {label: false, archive: false}`) —
+  both off by default. `label: true` applies the Gmail label
+  `mailtriage/noise` to the mail each run leaves out, so you can review what
+  the model is skipping. `archive: true` (requires `label`) also takes that
+  mail out of the inbox the way Gmail's own Archive does — the `\Inbox` label
+  comes off, the message stays in All Mail under `mailtriage/noise`,
+  searchable, and is never deleted or expunged. Senders in your
+  `always_surface` / `always_action` rules are never touched, and neither
+  happens on `--dry-run`. This is the one place mailtriage changes your inbox
+  beyond adding a label; try `label` alone for a week before turning on
+  `archive`.
+
+---
+
 ## The 60-day caveat
 
 GitHub automatically disables scheduled workflows on a repo after **60 days
@@ -716,7 +771,9 @@ something failed.
   `readonly=True` and fetches with `BODY.PEEK[]`, so it can never mark a
   message as read or change anything in your inbox. Drafting only ever
   **appends** to the Drafts mailbox — it never sends and never touches an
-  existing message.
+  existing message. The only writes are Gmail labels (`carry_over`, and the
+  opt-in `noise.label` / `noise.archive` — archiving removes the `\Inbox`
+  label, never a message).
 - Secrets (API keys, app passwords, and your `EMAIL_TO`/`EMAIL_FROM`
   addresses) live only in your fork's GitHub Actions secrets — encrypted at
   rest by GitHub, not readable back by anyone including you, once saved.

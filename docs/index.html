@@ -781,6 +781,12 @@ footer a{color:var(--muted)}
       </label>
       <p class="hint" style="margin:6px 0 0">Into the digest and your Gmail Drafts folder — never sent.</p>
 
+      <label class="toggle" style="margin-top:12px">
+        <input type="checkbox" id="draftVariants">
+        <span>Two drafts per reply: a short one and a full one</span>
+      </label>
+      <p class="hint" style="margin:4px 0 0">Both land in Gmail Drafts (subjects end in [A short] / [B full]); the digest shows the short one.</p>
+
       <div id="draftStyleBox" style="margin-top:16px">
         <div class="f">
           <span class="lgnd">Tone</span>
@@ -804,6 +810,11 @@ footer a{color:var(--muted)}
           <label for="maxSentences">Max sentences</label>
           <input type="number" id="maxSentences" min="1" max="20" step="1" value="5" style="max-width:100px">
         </div>
+        <label class="toggle" style="margin-top:12px">
+          <input type="checkbox" id="learnVoice" checked>
+          <span>Draft in your voice</span>
+        </label>
+        <p class="hint" style="margin:4px 0 0">Shows the model up to 3 of your own recent Sent messages to the same recipient. Read-only; they go into the prompt only, never into logs or the digest.</p>
       </div>
     </div>
 
@@ -823,6 +834,41 @@ footer a{color:var(--muted)}
         <label for="nagAfterDays">Flag as "still open" after (days)</label>
         <input type="number" id="nagAfterDays" min="1" max="90" step="1" value="3" style="max-width:100px">
       </div>
+    </div>
+
+    <div class="sect">
+      <h3>Inbox intelligence</h3>
+      <p class="hint" style="margin:0">Read-only lookups that give the model more to go on. All of it stays between your Gmail and your AI provider.</p>
+      <details class="ovr" id="intelAdvanced" style="margin-top:14px">
+        <summary>Advanced</summary>
+        <div class="ovr-body">
+          <label class="toggle" style="margin-top:10px">
+            <input type="checkbox" id="threadContext" checked>
+            <span>Show the model earlier messages of each thread</span>
+          </label>
+          <p class="hint" style="margin:4px 0 0">Up to 2 earlier messages, from All Mail, for the newest 15 candidates per run.</p>
+          <label class="toggle" style="margin-top:12px">
+            <input type="checkbox" id="senderMemory" checked>
+            <span>Tell the model how often you've written to each sender</span>
+          </label>
+          <p class="hint" style="margin:4px 0 0">Counted in Sent Mail over the last 180 days. Senders you reply to get the benefit of the doubt.</p>
+          <label class="toggle" style="margin-top:12px">
+            <input type="checkbox" id="showUnsubscribe" checked>
+            <span>Unsubscribe links for noise, folded at the bottom of the digest</span>
+          </label>
+          <p class="hint" style="margin:4px 0 0">One link per left-out sender that offered one. Nothing is ever clicked for you.</p>
+          <label class="toggle" style="margin-top:16px">
+            <input type="checkbox" id="noiseLabel">
+            <span>Label the mail each run leaves out as <code>mailtriage/noise</code></span>
+          </label>
+          <p class="hint" style="margin:4px 0 0">Off by default. Adds a Gmail label to noise so you can review what the model is skipping. Senders in your rules are never touched.</p>
+          <label class="toggle" style="margin-top:12px">
+            <input type="checkbox" id="noiseArchive">
+            <span>…and archive it out of the inbox</span>
+          </label>
+          <p class="hint" style="margin:4px 0 0"><strong>This changes your inbox.</strong> Noise leaves the inbox but stays in All Mail under the label — searchable, never deleted. Needs the label above; try labeling alone for a week first.</p>
+        </div>
+      </details>
     </div>
 
     <div class="sect">
@@ -1106,7 +1152,10 @@ function draftStyleLines(style, indent) {
     pad + "tone: " + style.tone,
     pad + "sign_off: " + yamlStr(style.sign_off),
     pad + "language: " + yamlStr(style.language || "auto"),
-    pad + "max_sentences: " + style.max_sentences
+    pad + "max_sentences: " + style.max_sentences,
+    pad + "# Show the drafting model up to 3 of your own recent Sent messages to",
+    pad + "# the same recipient so drafts sound like you. Prompt only, never logged.",
+    pad + "learn_voice: " + (style.learn_voice === false ? "false" : "true")
   ];
 }
 
@@ -1208,6 +1257,10 @@ function buildYaml(v) {
     "# your Gmail drafts folder; never sends.",
     "draft_replies: " + (v.draft_replies ? "true" : "false"),
     "",
+    "# 1 = one draft per needs-action email. 2 = a short and a full variant,",
+    "# both pushed to Gmail Drafts; the digest shows the short one.",
+    "draft_variants: " + (v.draft_variants === 2 ? 2 : 1),
+    "",
     "# Reply tone/sign-off/language/length for AI-drafted replies -- edit by",
     "# hand any time. See README.md for the full syntax.",
     "draft_style:",
@@ -1235,6 +1288,25 @@ function buildYaml(v) {
     "# own overrides -- hand-edited; the wizard carries this block through",
     "# untouched. See README.md \"Two digests: work and personal\".",
     ...(v.profiles_raw ? String(v.profiles_raw).split("\n") : ["profiles: {}"]),
+    "",
+    "# Show the model up to 2 earlier messages of a candidate's thread (from",
+    "# All Mail, newest 15 candidates per run). Read-only.",
+    "thread_context: " + (v.thread_context === false ? "false" : "true"),
+    "",
+    "# Tell the model how often you've written to each sender in the last 180",
+    "# days (Sent Mail, newest 40 senders per run). Read-only.",
+    "sender_memory: " + (v.sender_memory === false ? "false" : "true"),
+    "",
+    "# Folded \"Noise this week\" footer with one Unsubscribe link per left-out",
+    "# sender that offered one (https/mailto, at most 20). Never clicked for you.",
+    "show_unsubscribe: " + (v.show_unsubscribe === false ? "false" : "true"),
+    "",
+    "# Opt-in noise handling, both off by default. label: tag what each run",
+    "# leaves out as mailtriage/noise. archive (needs label): also take it out",
+    "# of the inbox -- stays in All Mail, never deleted. Never on --dry-run.",
+    "noise:",
+    "  label: " + ((v.noise || {}).label ? "true" : "false"),
+    "  archive: " + ((v.noise || {}).archive ? "true" : "false"),
     ""
   ].join("\n");
 }
@@ -1491,6 +1563,7 @@ function applyConfig(cfg) {
     }
   }
   if (typeof cfg.draft_replies === "boolean") $("#draftReplies").checked = cfg.draft_replies;
+  if (cfg.draft_variants === 1 || cfg.draft_variants === 2) $("#draftVariants").checked = cfg.draft_variants === 2;
   if (cfg.draft_style) applyDraftStyle(cfg.draft_style);
   if (cfg.rules) {
     if (Array.isArray(cfg.rules.always_ignore)) $("#rulesIgnore").value = cfg.rules.always_ignore.join("\n");
@@ -1500,6 +1573,13 @@ function applyConfig(cfg) {
   if (typeof cfg.carry_over === "boolean") $("#carryOver").checked = cfg.carry_over;
   if (cfg.label != null && cfg.label !== "") $("#label").value = cfg.label;
   if (typeof cfg.nag_after_days === "number") $("#nagAfterDays").value = cfg.nag_after_days;
+  if (typeof cfg.thread_context === "boolean") $("#threadContext").checked = cfg.thread_context;
+  if (typeof cfg.sender_memory === "boolean") $("#senderMemory").checked = cfg.sender_memory;
+  if (typeof cfg.show_unsubscribe === "boolean") $("#showUnsubscribe").checked = cfg.show_unsubscribe;
+  if (cfg.noise) {
+    if (typeof cfg.noise.label === "boolean") $("#noiseLabel").checked = cfg.noise.label;
+    if (typeof cfg.noise.archive === "boolean") $("#noiseArchive").checked = cfg.noise.archive;
+  }
   if (cfg.accounts && typeof cfg.accounts === "object") S.acctOverrides = cfg.accounts;
   updateWindowNote();
 }
@@ -1765,13 +1845,15 @@ function applyDraftStyle(style) {
   if (style.sign_off != null) $("#signOff").value = style.sign_off;
   if (style.language) $("#draftLanguage").value = style.language;
   if (style.max_sentences != null) $("#maxSentences").value = style.max_sentences;
+  if (typeof style.learn_voice === "boolean") $("#learnVoice").checked = style.learn_voice;
 }
 function collectDraftStyle() {
   return {
     tone: $('input[name=tone]:checked').value,
     sign_off: $("#signOff").value.trim(),
     language: $("#draftLanguage").value.trim() || "auto",
-    max_sentences: +$("#maxSentences").value
+    max_sentences: +$("#maxSentences").value,
+    learn_voice: $("#learnVoice").checked
   };
 }
 function collectRuleList(id) {
@@ -1797,6 +1879,7 @@ function collect() {
     profiles_raw: S.profilesRaw || "",
     provider: selectedProvider(),
     draft_replies: $("#draftReplies").checked,
+    draft_variants: $("#draftVariants").checked ? 2 : 1,
     draft_style: collectDraftStyle(),
     rules: {
       always_ignore: collectRuleList("rulesIgnore"),
@@ -1805,7 +1888,12 @@ function collect() {
     },
     carry_over: $("#carryOver").checked,
     label: $("#label").value.trim(),
-    nag_after_days: Math.max(1, +$("#nagAfterDays").value || 3)
+    nag_after_days: Math.max(1, +$("#nagAfterDays").value || 3),
+    thread_context: $("#threadContext").checked,
+    sender_memory: $("#senderMemory").checked,
+    show_unsubscribe: $("#showUnsubscribe").checked,
+    // archive requires label -- mirror config.py's rule instead of writing a file the engine rejects
+    noise: { label: $("#noiseLabel").checked, archive: $("#noiseLabel").checked && $("#noiseArchive").checked }
   };
 }
 
