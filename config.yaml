@@ -136,3 +136,7 @@ carry_over: true
 # again next run. A "/" nests it under a parent in Gmail's sidebar (this
 # shows as mailtriage -> action) -- that's intended.
 label: "mailtriage/action"
+
+# A carried item ("Still waiting on you") open for at least this many days
+# is flagged in bold with a "still open" badge.
+nag_after_days: 3

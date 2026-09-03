@@ -115,6 +115,9 @@ class Config:
     # the next run. A "/" nests it under a parent in Gmail's sidebar (e.g.
     # "mailtriage/action" shows as mailtriage -> action) -- intended.
     label: str = "mailtriage/action"
+    # A carried item open for at least this many days is flagged "still open"
+    # (bold row + badge) in the digest's "Still waiting on you" section.
+    nag_after_days: int = 3
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any], origin: str = "config.yaml") -> Config:
@@ -135,7 +138,7 @@ class Config:
             if name in data and data[name] is not None:
                 setattr(cfg, name, data[name])
 
-        for name in ("reading_count", "window_hours"):
+        for name in ("reading_count", "window_hours", "nag_after_days"):
             value = getattr(cfg, name)
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise MailError(f"'{name}' in {origin} must be a positive whole number (got {value!r}).")
