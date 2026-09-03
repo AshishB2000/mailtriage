@@ -559,8 +559,11 @@ tests/               pytest suite
 config.yaml          your triage settings (committed, holds no secrets)
 docs/index.html      the zero-backend setup wizard (+ vendored sodium.js)
 docs/SETUP.md        one-time credential setup (2-Step Verification + app passwords)
+CHANGELOG.md          what changed, by release
 .github/workflows/digest.yml   the schedule
 .github/workflows/ci.yml       lint + types + tests on every push
+.github/workflows/upstream-sync.yml   monthly "pull in upstream" PR, forks only
+.github/dependabot.yml         keeps the SHA-pinned actions above current
 ```
 
 No build step, no framework, no `node_modules`, no server.
