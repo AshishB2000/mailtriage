@@ -716,7 +716,7 @@ def _build_draft_message(account: str, src: Email, draft: str, suffix: str = "")
     return msg
 
 
-def count_drafts(environ: Mapping[str, str], now: datetime, days: int = 7, host: str = "imap.gmail.com") -> int:
+def count_drafts(environ: Mapping[str, str], now: datetime, days: int = 7, host: str = "") -> int:
     """How many drafts mailtriage pushed in the last `days` days, across every
     account's \\Drafts mailbox -- found by the `DRAFT_MARKER` header
     `push_drafts` stamps, so a draft the reader wrote themselves never counts.
@@ -731,10 +731,9 @@ def count_drafts(environ: Mapping[str, str], now: datetime, days: int = 7, host:
         return 0
     for addr, pw in accounts:
         with contextlib.suppress(Exception):  # imaplib raises many unrelated types; a count never fails a run
-            M = imaplib.IMAP4_SSL(host, 993)
+            M, caps = connect(addr, pw, host or imap_host(environ, addr))
             try:
-                M.login(addr, pw)
-                M.select(_quote_mailbox(_find_drafts_mailbox(M.list()[1] or [])), readonly=True)
+                M.select(_quote_mailbox(drafts_mailbox(M, caps)), readonly=True)
                 # None = default charset, same imaplib stub quirk as _replied_in_sent.
                 _, data = M.uid("SEARCH", None, "HEADER", DRAFT_MARKER, "draft", "SINCE", since)  # type: ignore[arg-type]
                 total += len(data[0].split() if data and data[0] else [])
