@@ -11,7 +11,12 @@ only you can do — not something that can be automated for you.
    it once.
 3. In your fork, under **Settings → Secrets and variables → Actions**, add:
    - `MAIL_ACCOUNTS` — your addresses, comma-separated, e.g.
-     `alice@gmail.com,alice.work@gmail.com`
+     `alice@gmail.com,alice.work@gmail.com`. A non-Gmail mailbox names its
+     IMAP server after a `|` — `you@fastmail.com|imap.fastmail.com`,
+     `you@work.com|mail.work.com:993` — and gets its app password from that
+     provider instead (Fastmail: Settings → Privacy & Security → app
+     passwords; iCloud: appleid.apple.com → App-Specific Passwords). See
+     README "Other mailboxes".
    - one password secret per address, named `MAIL_PW_` + the first 16 hex
      characters (upper-cased) of a BLAKE2b-128 hash of the trimmed,
      lower-cased address — a hash, so the secret's name never shows your

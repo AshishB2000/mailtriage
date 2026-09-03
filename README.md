@@ -224,7 +224,7 @@ workflows, go ahead and enable them."**
 |---|---|
 | one AI-auth secret | pick one from the [provider matrix above](#bring-the-ai-you-already-pay-for) |
 | `RESEND_API_KEY` | a key from [resend.com/api-keys](https://resend.com/api-keys) (free tier) — you'll also need to verify a sending domain at [resend.com/domains](https://resend.com/domains) |
-| `MAIL_ACCOUNTS` | comma-separated Gmail addresses, e.g. `alice@gmail.com,alice.work@gmail.com` |
+| `MAIL_ACCOUNTS` | comma-separated addresses, e.g. `alice@gmail.com,alice.work@gmail.com`. A non-Gmail mailbox names its server after a `\|`: `you@fastmail.com\|imap.fastmail.com` — see [Other mailboxes](#other-mailboxes) |
 | one `MAIL_PW_*` per address | the app password for that address (see step 4) |
 | `EMAIL_TO` *(optional)* | where the digest is delivered. For `delivery: gmail`, defaults to your first `MAIL_ACCOUNTS` address if unset |
 | `EMAIL_FROM` *(optional)* | who it's sent from. Same default as above for `delivery: gmail`; required for `delivery: email` (Resend) |
@@ -261,6 +261,10 @@ For **each** Gmail address in `MAIL_ACCOUNTS`:
    [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
 3. Paste the 16-character value into the matching `MAIL_PW_*` secret above.
 
+For a non-Gmail mailbox, the app password comes from that provider instead —
+see [Other mailboxes](#other-mailboxes). The secret name is still hashed from
+the address alone, never from the `address|host` form.
+
 Full walkthrough: [docs/SETUP.md](docs/SETUP.md).
 
 #### 5. Edit `config.yaml` and commit
@@ -290,6 +294,7 @@ Secrets and variables → Actions):
 | `delivery` | secret | also needs |
 |---|---|---|
 | `gmail` | (reuses `MAIL_PW_*`) | — |
+| `mailbox` | (reuses `MAIL_PW_*`) | a non-Gmail account in `MAIL_ACCOUNTS` |
 | `email` | `RESEND_API_KEY` | `EMAIL_TO`, `EMAIL_FROM` secrets |
 | `telegram` | `TELEGRAM_BOT_TOKEN` | `telegram_chat_id` in config.yaml |
 | `slack` | `SLACK_WEBHOOK_URL` | — |
@@ -313,6 +318,14 @@ secret into the run already.
   mail from your Gmail to your Gmail lands straight in the inbox. Leave
   `EMAIL_TO` / `EMAIL_FROM` unset entirely to self-mail: both default to the
   first `MAIL_ACCOUNTS` address.
+- **`mailbox`** — the same thing for any other IMAP account. The SMTP host
+  is derived from the account's own IMAP host (`imap.fastmail.com` →
+  `smtp.fastmail.com:465`, `imap.mail.me.com` → `smtp.mail.me.com:587`,
+  anything else → `smtp.<domain>:465`), or set it explicitly as a third
+  field in the `MAIL_ACCOUNTS` entry:
+  `you@work.com|mail.work.com|smtp.work.com:587`. Port 465 means implicit
+  TLS, anything else STARTTLS. Same `EMAIL_TO`/`EMAIL_FROM` defaults as
+  `gmail`.
 - **`telegram`** — a bot messages you. In Telegram, talk to
   [@BotFather](https://t.me/BotFather), send `/newbot`, and copy the token
   into the `TELEGRAM_BOT_TOKEN` secret. Open your new bot and press
@@ -679,6 +692,58 @@ the review itself shows: per-account counts, the open items' subject,
 sender and age, and the handled ones. One extra call a week; if it fails
 the plain review still goes out, with a warning in the log. Set it to
 `false` to skip the call.
+
+---
+
+## Other mailboxes
+
+Gmail is the default, not a requirement. Point an account at any IMAP server
+by putting the host after a `|` in `MAIL_ACCOUNTS`:
+
+```
+alice@gmail.com,you@fastmail.com|imap.fastmail.com,you@work.com|mail.work.com:993
+```
+
+Port defaults to 993 and the connection is **always TLS** — there is no
+plaintext form. A third field sets the SMTP host for `delivery: mailbox`
+(`you@work.com|mail.work.com|smtp.work.com:587`). The `MAIL_PW_*` secret is
+still named from the address alone, so nothing about your existing Gmail
+setup changes.
+
+At login the engine reads `CAPABILITY` once and picks a mode. `mailtriage
+--doctor` prints it per account:
+
+```
+doctor: PASS account you@fastmail.com — ok: 1432 in INBOX · keywords mode · keywords=yes special-use=yes move=yes
+```
+
+| | **Gmail** (`X-GM-EXT-1`) | **Keywords** (most IMAP servers) | **Folders** (no custom keywords) |
+|---|---|---|---|
+| Labels | Gmail labels (`mailtriage/action`) | IMAP keywords (`$MailtriageAction`) — your client shows them as tags | a `mailtriage/action` folder, entered with `MOVE` |
+| Carry-over | yes | yes | yes, but the message leaves the inbox for that folder |
+| done / snooze / never / vip | yes | yes (tag the message with `$MailtriageDone`, `$MailtriageSnooze3d`, …) | **no** — one warning per run, triage keeps working |
+| Reply to the digest | yes | yes | no |
+| Thread context | Gmail thread ids | `References`/`In-Reply-To` chain | same |
+| "Everything" search (weekly review, never/vip) | `\All` | INBOX + `\Archive`, de-duplicated by Message-ID | same |
+| Archive noise (`noise.archive`) | drops the `\Inbox` label | `MOVE` to `\Archive` | `MOVE` to `\Archive`, or skipped with a counted warning |
+| Drafts / Sent | `\Drafts` / `\Sent` | same, falling back to the names `Drafts` / `Sent` | same |
+| Digest links | opens the message in Gmail | Fastmail: a `msgid:` search; iCloud: the mailbox; otherwise a `message:` URI, or no link | same |
+
+Nothing is ever deleted or expunged in any mode, and INBOX is still selected
+read-only with `BODY.PEEK[]` everywhere but the label writes.
+
+**Fastmail.** Settings → Privacy & Security → Integrations → **App
+Passwords** → *New app password*, scoped to Mail (IMAP/SMTP). Host:
+`imap.fastmail.com`.
+
+**iCloud.** [appleid.apple.com](https://appleid.apple.com) → Sign-In and
+Security → **App-Specific Passwords**. Host: `imap.mail.me.com`. iCloud has
+no per-message web link, so digest items link to the iCloud mailbox itself.
+
+**A work or self-hosted server** (Dovecot, Proton Mail Bridge, Zoho, …):
+use its IMAP host and, if it isn't on 993, `host:port`. Proton Bridge runs
+on localhost and is not reachable from GitHub's runners — it only works if
+you run mailtriage on the same machine.
 
 ---
 

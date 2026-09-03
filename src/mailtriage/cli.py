@@ -573,11 +573,14 @@ def run_doctor(config_path: str) -> int:
     ok = _check("config", True, f"{config_path} loads")
 
     try:
-        for addr, count, err in check_login(os.environ):
+        for addr, count, err, caps in check_login(os.environ):
             ok &= _check(
                 f"account {addr}",
                 not err,
-                f"ok: {count} in INBOX" if not err else f"{err} — check the MAIL_PW_* secret for this address",
+                # The capability summary is what tells a non-Gmail forker which
+                # features their server supports: mode plus booleans, never a
+                # mailbox name (this line goes to a public Actions log).
+                f"ok: {count} in INBOX · {caps}" if not err else f"{err} — check the MAIL_PW_* secret for this address",
             )
     except MailError as e:
         ok = _check("accounts", False, str(e))

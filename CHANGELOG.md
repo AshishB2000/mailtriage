@@ -9,6 +9,18 @@ contract is a major bump).
 
 ### Added
 
+- **Any IMAP mailbox, not just Gmail.** A `MAIL_ACCOUNTS` entry may name its
+  server -- `you@fastmail.com|imap.fastmail.com`, `you@work.com|mail.work.com:993`,
+  or with an SMTP host as a third field -- and the engine reads `CAPABILITY`
+  once per connection to pick how it stores a label: Gmail labels, IMAP
+  keywords (`mailtriage/action` becomes the `$MailtriageAction` tag your
+  client shows), or a `mailtriage/action` folder entered with `MOVE`. Thread
+  context falls back to `References`/`In-Reply-To`, `\All` to INBOX plus
+  `\Archive`, archiving to a `MOVE`, and digest links to the account's own
+  webmail. `delivery: mailbox` sends the digest through that mailbox's own
+  SMTP. `--doctor` reports the detected mode per account. Gmail behaviour,
+  the `MAIL_PW_<HASH>` secret names and `delivery: gmail` are unchanged; see
+  README "Other mailboxes" for what works where.
 - **Inbox intelligence.** The model now sees up to 2 earlier messages of a
   candidate's thread (`thread_context`), its attachment names and types, and
   how often you've written to that sender in the last 180 days

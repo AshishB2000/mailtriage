@@ -32,10 +32,10 @@ def _valid_time(hhmm: str) -> bool:
     return 0 <= int(h) <= 23 and 0 <= int(m) <= 59
 
 
-Delivery = Literal["email", "gmail", "telegram", "slack", "discord", "ntfy"]
+Delivery = Literal["email", "gmail", "mailbox", "telegram", "slack", "discord", "ntfy"]
 DELIVERIES: tuple[str, ...] = get_args(Delivery)
-# The two email deliveries; the chat channels are text-only by nature.
-EMAIL_DELIVERIES: tuple[str, ...] = ("email", "gmail")
+# The email deliveries; the chat channels are text-only by nature.
+EMAIL_DELIVERIES: tuple[str, ...] = ("email", "gmail", "mailbox")
 
 DigestFormat = Literal["html", "text"]
 DIGEST_FORMATS: tuple[str, ...] = get_args(DigestFormat)

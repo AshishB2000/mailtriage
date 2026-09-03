@@ -612,6 +612,10 @@ footer a{color:var(--muted)}
             <span><span class="pname">Gmail (recommended)</span><span class="pdesc">Sends the digest from your own Gmail to itself using the app password you already entered below. Lands in your inbox, never spam, nothing else to set up.</span></span>
           </label>
           <label class="prov">
+            <input type="radio" name="delivery" value="mailbox" id="delivery-mailbox">
+            <span><span class="pname">Your own mailbox</span><span class="pdesc">Same idea for a non-Gmail account: sends through that mailbox's own SMTP (Fastmail, iCloud, a work server) with the app password you enter below. Nothing else to set up.</span></span>
+          </label>
+          <label class="prov">
             <input type="radio" name="delivery" value="email" id="delivery-email">
             <span><span class="pname">Resend</span><span class="pdesc">Send from a custom domain via resend.com — needs an API key and a verified sending domain.</span></span>
           </label>
@@ -648,6 +652,18 @@ footer a{color:var(--muted)}
             <label for="emailToGmail">Send to</label>
             <p class="hint">Leave blank to self-send to your own Gmail inbox — this also won't overwrite an <code>EMAIL_TO</code> secret already set in your repo.</p>
             <input type="email" id="emailToGmail" placeholder="you@example.com" autocomplete="off" spellcheck="false">
+            <div class="msg"></div>
+          </div>
+        </div>
+      </details>
+
+      <details class="ovr" id="mailboxFields" style="margin-top:14px;display:none">
+        <summary>Send to a different address (optional)</summary>
+        <div class="ovr-body">
+          <div class="f" id="f-emailToMailbox" style="margin-top:10px">
+            <label for="emailToMailbox">Send to</label>
+            <p class="hint">Leave blank to send to the first account below. The digest is sent through that account's own SMTP host — derived from its IMAP host, or set explicitly as a third field in the account row.</p>
+            <input type="email" id="emailToMailbox" placeholder="you@example.com" autocomplete="off" spellcheck="false">
             <div class="msg"></div>
           </div>
         </div>
@@ -744,8 +760,9 @@ footer a{color:var(--muted)}
     </div>
 
     <div class="sect">
-      <h3>Gmail accounts</h3>
-      <p class="hint" style="margin:-2px 0 4px">Each account needs its own 16-character app password, not your normal Google password. It is stored as a repository secret named <code>MAIL_PW_</code> + a 16-character hash of the address, so the secret's name never reveals the address in your fork's public Actions log. Enable 2-Step Verification at <a href="https://myaccount.google.com/security" target="_blank" rel="noopener">myaccount.google.com/security</a>, then create one per account at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>.</p>
+      <h3>Mail accounts</h3>
+      <p class="hint" style="margin:-2px 0 4px">Gmail addresses go in as they are. For any other IMAP mailbox, add its server after a <code>|</code>: <code>you@fastmail.com|imap.fastmail.com</code>, <code>you@icloud.com|imap.mail.me.com</code>, or <code>you@work.com|mail.work.com:993</code> (always TLS). A third field sets the SMTP host for <em>Your own mailbox</em> delivery: <code>you@work.com|mail.work.com|smtp.work.com:465</code>.</p>
+      <p class="hint" style="margin:-2px 0 4px">Each account needs its own app password, not your normal password. It is stored as a repository secret named <code>MAIL_PW_</code> + a 16-character hash of the address, so the secret's name never reveals the address in your fork's public Actions log. Enable 2-Step Verification at <a href="https://myaccount.google.com/security" target="_blank" rel="noopener">myaccount.google.com/security</a>, then create one per account at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>.</p>
       <div id="accounts"></div>
       <div class="chips">
         <button type="button" class="chip" id="addAcct">+ Add another account</button>
@@ -1265,8 +1282,9 @@ function buildYaml(v) {
     "catch_up_minutes: 120",
     "",
     "# Valid values: delivery: gmail (recommended, via your own Gmail SMTP),",
-    "# delivery: email (via Resend), telegram, slack, discord or ntfy. Picked",
-    "# in the wizard's delivery step; see README.md \"Delivery options\".",
+    "# mailbox (any other IMAP account, via its own SMTP), email (via Resend),",
+    "# telegram, slack, discord or ntfy. Picked in the wizard's delivery step;",
+    "# see README.md \"Delivery options\".",
     "delivery: " + v.delivery,
     "",
     "# Addresses go in the EMAIL_TO / EMAIL_FROM repo secrets, not here --",
@@ -1679,6 +1697,7 @@ $$('input[name=provider]').forEach((r) => r.addEventListener("change", updateAut
 // here -- update both sides together. gmail reuses the MAIL_PW_* secret.
 const DELIVERY_FIELDS = {
   gmail: "gmailAdvanced",
+  mailbox: "mailboxFields",
   email: "resendFields",
   telegram: "telegramFields",
   slack: "slackFields",
@@ -1696,7 +1715,7 @@ const selectedDelivery = () => $('input[name=delivery]:checked').value;
 function updateDeliveryFields() {
   const sel = selectedDelivery();
   Object.keys(DELIVERY_FIELDS).forEach((d) => { $("#" + DELIVERY_FIELDS[d]).style.display = d === sel ? "block" : "none"; });
-  $("#f-digestText").style.display = sel === "gmail" || sel === "email" ? "block" : "none";
+  $("#f-digestText").style.display = sel === "gmail" || sel === "mailbox" || sel === "email" ? "block" : "none";
 }
 $$('input[name=delivery]').forEach((r) => r.addEventListener("change", updateDeliveryFields));
 
@@ -1776,7 +1795,7 @@ function acctRowHtml() {
   const n = acctSeq;
   return '<div class="acct" data-seq="' + n + '">' +
     '<div class="acct-row">' +
-    '<input type="email" class="acct-email mono" placeholder="alice@gmail.com" autocomplete="off" spellcheck="false">' +
+    '<input type="text" class="acct-email mono" placeholder="alice@gmail.com  or  you@fastmail.com|imap.fastmail.com" autocomplete="off" spellcheck="false">' +
     '<div class="reveal"><input type="password" class="acct-pw mono" placeholder="xxxx xxxx xxxx xxxx" autocomplete="off" spellcheck="false"><button type="button" data-reveal-row>Show</button></div>' +
     '<button type="button" class="btn btn-ghost rm" aria-label="Remove this account">✕</button>' +
     "</div>" +
@@ -1850,7 +1869,7 @@ function applyAccountOverrideToRow(el, ov) {
 }
 $("#accounts").addEventListener("blur", (e) => {
   if (!e.target.classList || !e.target.classList.contains("acct-email")) return;
-  const addr = e.target.value.trim().toLowerCase();
+  const addr = acctAddr(e.target.value).toLowerCase();
   const ov = S.acctOverrides[addr];
   if (ov) applyAccountOverrideToRow(e.target.closest(".acct"), ov);
 }, true);
@@ -1889,6 +1908,10 @@ function collectAccounts() {
 // Python's hashlib.blake2b at the same digest size. tests/test_contracts.py
 // pins the line below and this vector against the engine:
 // vector: alice@gmail.com -> MAIL_PW_F24FE3C393F64986
+// A MAIL_ACCOUNTS entry may carry its server: "addr|imap.host[|smtp.host]".
+// The secret name is hashed from the address alone -- mirrors
+// imap_pull.split_account, and keeps every existing Gmail secret name valid.
+const acctAddr = (entry) => String(entry).split("|")[0].trim();
 const mailPwSlug = (email) => "MAIL_PW_" + sodium.to_hex(sodium.crypto_generichash(16, sodium.from_string(email.trim().toLowerCase()))).slice(0, 16).toUpperCase();
 
 /* ------------------------------------------------------------ step 2: draft style + rules */
@@ -1924,7 +1947,7 @@ function collect() {
     timezone: $("#timezone").value,
     weekly_review: $("#weeklyOn").checked ? $("#weeklyDay").value + " " + $("#weeklyTime").value : "",
     delivery: delivery,
-    email_to: (delivery === "gmail" ? $("#emailToGmail").value : delivery === "email" ? $("#emailTo").value : "").trim(),
+    email_to: (delivery === "gmail" ? $("#emailToGmail").value : delivery === "mailbox" ? $("#emailToMailbox").value : delivery === "email" ? $("#emailTo").value : "").trim(),
     email_from: delivery === "email" ? $("#emailFrom").value.trim() : "",
     telegram_chat_id: $("#tgChatId").value.trim(),
     digest_format: $("#digestText").checked ? "text" : "html",
@@ -1975,9 +1998,10 @@ function validate() {
     if (!$("#resend").value.trim()) fail("resend", "Needed to send the email.");
     if (!/^\S+@\S+\.\S+$/.test(v.email_to)) fail("emailTo", "Enter the address the digest should arrive at.");
     if (!/^\S+@\S+\.\S+$/.test(v.email_from)) fail("emailFrom", "Enter the address it should be sent from.");
-  } else if (v.delivery === "gmail" && v.email_to && !/^\S+@\S+\.\S+$/.test(v.email_to)) {
-    $("#gmailAdvanced").open = true;
-    fail("emailToGmail", "This doesn't look like an email address.");
+  } else if ((v.delivery === "gmail" || v.delivery === "mailbox") && v.email_to && !/^\S+@\S+\.\S+$/.test(v.email_to)) {
+    const gm = v.delivery === "gmail";
+    $(gm ? "#gmailAdvanced" : "#mailboxFields").open = true;
+    fail(gm ? "emailToGmail" : "emailToMailbox", "This doesn't look like an email address.");
   } else if (DELIVERY_SECRET[v.delivery]) {
     const [fid, name] = DELIVERY_SECRET[v.delivery];
     const val = $("#" + fid).value.trim();
@@ -1994,14 +2018,18 @@ function validate() {
   let firstAcctBad = null;
   const seen = new Set();
   $$(".acct").forEach((row) => {
-    const email = $(".acct-email", row).value.trim();
+    const entry = $(".acct-email", row).value.trim();
+    const email = acctAddr(entry);
+    const parts = entry.split("|").map((x) => x.trim());
     const pw = $(".acct-pw", row).value.replace(/\s+/g, "");
     let msg = "";
-    if (!email) msg = "Enter the Gmail address.";
+    if (!email) msg = "Enter the email address.";
     else if (!/^\S+@\S+\.\S+$/.test(email)) msg = "This doesn't look like an email address.";
+    else if (parts.length > 3) msg = "At most address|imap.host|smtp.host.";
+    else if (parts.slice(1).some((h) => h && !/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(h))) msg = "A server is a host name, optionally :port — e.g. imap.fastmail.com or mail.work.com:993.";
     else if (seen.has(email.toLowerCase())) msg = "Already listed above.";
-    else if (!pw) msg = "Enter the app password Google gave you for this account.";
-    else if (!/^[A-Za-z0-9]{16}$/.test(pw)) msg = "App passwords are 16 characters (Google shows them as 4 groups of 4) — check for a missing or extra character.";
+    else if (!pw) msg = "Enter the app password your mail provider gave you for this account.";
+    else if (/gmail\.com$/i.test(email) && !/^[A-Za-z0-9]{16}$/.test(pw)) msg = "Gmail app passwords are 16 characters (shown as 4 groups of 4) — check for a missing or extra character.";
     if (msg) { acctError(row, msg); if (!firstAcctBad) firstAcctBad = row; }
     else seen.add(email.toLowerCase());
   });
@@ -2045,8 +2073,8 @@ $("#go3").addEventListener("click", async () => {
   S.secrets.MAIL_ACCOUNTS = accounts.map((a) => a.email).join(",");
   v.accounts = {};
   accounts.forEach((a) => {
-    S.secrets[mailPwSlug(a.email)] = a.pw;
-    if (Object.keys(a.override).length) v.accounts[a.email.toLowerCase()] = a.override;
+    S.secrets[mailPwSlug(acctAddr(a.email))] = a.pw;
+    if (Object.keys(a.override).length) v.accounts[acctAddr(a.email).toLowerCase()] = a.override;
   });
 
   prepLaunch();
@@ -2207,7 +2235,7 @@ function succeed(run) {
   $("#doneView").style.display = "block";
   $$("#stepper li").forEach((li) => { li.classList.remove("on"); li.classList.add("done"); });
   const CHAT_DEST = { telegram: "your Telegram chat", slack: "your Slack channel", discord: "your Discord channel", ntfy: "the ntfy app" };
-  const dest = CHAT_DEST[S.cfg.delivery] || (S.cfg.email_to ? "<strong>" + esc(S.cfg.email_to) + "</strong>" : "your own Gmail inbox");
+  const dest = CHAT_DEST[S.cfg.delivery] || (S.cfg.email_to ? "<strong>" + esc(S.cfg.email_to) + "</strong>" : "your own inbox");
   $("#doneMsg").innerHTML =
     "Check " + dest + (CHAT_DEST[S.cfg.delivery] ? ". " : ", including the spam folder for the first one. ") +
     "It repeats at " + esc(S.cfg.run_at.join(", ")) + " (" + esc(S.cfg.timezone) + ").";
@@ -2384,7 +2412,7 @@ async function loadDash() {
     // MAIL_PW_ secret, hashed the same way the wizard writes them.
     const ovr = cfg && cfg.accounts && typeof cfg.accounts === "object" ? Object.keys(cfg.accounts) : [];
     const missing = ovr.filter((a) => !has(mailPwSlug(a)));
-    cards.push(stat("Gmail accounts", (has("MAIL_ACCOUNTS") ? "MAIL_ACCOUNTS set" : "MAIL_ACCOUNTS missing") + " · " + pw + " app password" + (pw === 1 ? "" : "s"),
+    cards.push(stat("Mail accounts", (has("MAIL_ACCOUNTS") ? "MAIL_ACCOUNTS set" : "MAIL_ACCOUNTS missing") + " · " + pw + " app password" + (pw === 1 ? "" : "s"),
       missing.length ? "No MAIL_PW_ secret for " + missing.map(esc).join(", ") + " (listed under accounts: in config.yaml)." :
         (ovr.length ? ovr.length + " per-account override" + (ovr.length === 1 ? "" : "s") + " in config.yaml, all with a password secret." : "The address list itself is a secret and can't be read back."),
       !has("MAIL_ACCOUNTS") || !pw || missing.length ? "bad" : ""));
@@ -2394,7 +2422,7 @@ async function loadDash() {
         (has("EMAIL_TO") ? "EMAIL_TO" : "<s>EMAIL_TO</s>") + " · " + (has("EMAIL_FROM") ? "EMAIL_FROM" : "<s>EMAIL_FROM</s>"),
         has("RESEND_API_KEY") && has("EMAIL_TO") && has("EMAIL_FROM") ? "" : "bad"));
     } else {
-      cards.push(stat("Delivery", "Gmail · " + (pw ? "via your app password" : "needs an app password"),
+      cards.push(stat("Delivery", (delivery === "mailbox" ? "Your mailbox · " : "Gmail · ") + (pw ? "via your app password" : "needs an app password"),
         has("EMAIL_TO") ? "To the EMAIL_TO secret." : "To your first Gmail account.", pw ? "" : "bad"));
     }
   } else {

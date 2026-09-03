@@ -9,6 +9,8 @@ from mailtriage.models import Event, Triaged
 BACKENDS = {
     "email": mail.send,
     "gmail": gmail.send,
+    # Same SMTP transport; the host comes from the account's IMAP host.
+    "mailbox": gmail.send,
     "telegram": telegram.send,
     "slack": slack.send,
     "discord": discord.send,
@@ -21,6 +23,7 @@ BACKENDS = {
 BACKENDS_HTML = {
     "email": mail.send_html,
     "gmail": gmail.send_html,
+    "mailbox": gmail.send_html,
     "telegram": telegram.send_html,
     "slack": slack.send_html,
     "discord": discord.send_html,

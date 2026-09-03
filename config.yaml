@@ -53,14 +53,18 @@ weekly_review: ""
 # your own mailbox for it before sending -- so a slot never sends twice.
 catch_up_minutes: 120
 
-# Where the digest goes: "gmail", "email", "telegram", "slack", "discord"
-# or "ntfy". See README "Delivery options" for the setup of each.
+# Where the digest goes: "gmail", "mailbox", "email", "telegram", "slack",
+# "discord" or "ntfy". See README "Delivery options" for the setup of each.
 #
 # email  — requires the RESEND_API_KEY secret. email_from must be on a domain
 #          you have verified with Resend (https://resend.com/domains). Until
 #          you verify one, use Resend's shared sender "onboarding@resend.dev"
 #          — it needs no domain setup, but can only deliver to your own
 #          Resend-account email (set that as email_to). Can send to anyone.
+# mailbox — the same idea for any other IMAP account (Fastmail, iCloud, a work
+#          server): sends through that mailbox's own SMTP, derived from the
+#          IMAP host you put in MAIL_ACCOUNTS (or a third field there, e.g.
+#          "you@work.com|mail.work.com|smtp.work.com:465").
 # gmail  — no Resend account needed. Sends through your own Gmail via SMTP,
 #          using the app password you already set for reading that inbox
 #          (MAIL_PW_* — see MAIL_ACCOUNTS). email_from must be one of your
