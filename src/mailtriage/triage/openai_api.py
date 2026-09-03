@@ -9,6 +9,7 @@ from typing import Any
 from mailtriage.config import Config
 from mailtriage.delivery.http import post_json
 from mailtriage.errors import MailError
+from mailtriage.triage.usage import log_usage
 
 # cfg.model overrides this when non-empty.
 MODEL = "gpt-5.6-luna"
@@ -66,8 +67,11 @@ def call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[st
         raise MailError(f"OpenAI returned HTTP {status}: {body[:500]}")
 
     try:
-        content = json.loads(body)["choices"][0]["message"]["content"]
+        parsed = json.loads(body)
+        content = parsed["choices"][0]["message"]["content"]
         result: dict[str, Any] = json.loads(content)
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
         raise MailError(f"OpenAI returned a response mailtriage could not parse: {body[:500]}") from e
+    usage = parsed.get("usage") or {}
+    log_usage(usage.get("prompt_tokens"), usage.get("completion_tokens"))
     return result

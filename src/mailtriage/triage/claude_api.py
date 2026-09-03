@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from mailtriage.config import Config
 from mailtriage.errors import MailError
+from mailtriage.triage.usage import log_usage
 
 if TYPE_CHECKING:  # anthropic's own types, for annotations only — never imported at runtime
     from anthropic.types.message_param import MessageParam
@@ -72,6 +73,9 @@ def call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[st
             f"could not reach api.anthropic.com ({e}). The runner had no network or DNS failed. "
             "Re-run the workflow by hand."
         ) from e
+
+    usage = getattr(resp, "usage", None)
+    log_usage(getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None))
 
     # These are API-shape concerns, not triage-pipeline ones -- they belong here,
     # not in the shared dispatcher, so every backend can fail on its own terms.
