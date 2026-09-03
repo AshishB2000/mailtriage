@@ -803,8 +803,23 @@ footer a{color:var(--muted)}
         </div>
         <div class="f" id="f-draftLanguage">
           <label for="draftLanguage">Language</label>
-          <p class="hint">Leave as "auto" to match the sender's language.</p>
+          <p class="hint">Leave as "auto" to match the sender's language. This is what the AI <em>writes</em> in — the digest's own headings are set below.</p>
           <input type="text" id="draftLanguage" placeholder="auto" autocomplete="off">
+        </div>
+        <div class="f" id="f-language">
+          <label for="language">Digest language</label>
+          <p class="hint">The words mailtriage puts around your mail — section headings, badges, footers. Your mail itself is never translated.</p>
+          <select id="language">
+            <option value="en">English</option>
+            <option value="es">Español</option>
+            <option value="fr">Français</option>
+            <option value="de">Deutsch</option>
+            <option value="pt">Português</option>
+            <option value="it">Italiano</option>
+            <option value="nl">Nederlands</option>
+            <option value="hi">हिन्दी</option>
+            <option value="ja">日本語</option>
+          </select>
         </div>
         <div class="f" id="f-maxSentences">
           <label for="maxSentences">Max sentences</label>
@@ -1336,6 +1351,11 @@ function buildYaml(v) {
     "# Open the weekly review with a model-written paragraph (one extra call a",
     "# week); a failed call falls back to the plain review.",
     "weekly_narrative: " + (v.weekly_narrative ? "true" : "false"),
+    "",
+    "# Language of the digest's OWN words (headings, badges, footers) -- your",
+    "# mail is never translated, and what the AI writes is draft_style.language.",
+    "# en es fr de pt it nl hi ja; anything else warns and uses English.",
+    "language: " + yamlStr(v.language),
     ""
   ].join("\n");
 }
@@ -1604,6 +1624,7 @@ function applyConfig(cfg) {
   if (typeof cfg.nag_after_days === "number") $("#nagAfterDays").value = cfg.nag_after_days;
   if (typeof cfg.calendar === "boolean") $("#calendarOn").checked = cfg.calendar;
   if (typeof cfg.weekly_narrative === "boolean") $("#weeklyNarrative").checked = cfg.weekly_narrative;
+  if (cfg.language && $('#language option[value="' + cfg.language + '"]')) $("#language").value = cfg.language;
   if (typeof cfg.thread_context === "boolean") $("#threadContext").checked = cfg.thread_context;
   if (typeof cfg.sender_memory === "boolean") $("#senderMemory").checked = cfg.sender_memory;
   if (typeof cfg.show_unsubscribe === "boolean") $("#showUnsubscribe").checked = cfg.show_unsubscribe;
@@ -1922,6 +1943,7 @@ function collect() {
     nag_after_days: Math.max(1, +$("#nagAfterDays").value || 3),
     calendar: $("#calendarOn").checked,
     weekly_narrative: $("#weeklyNarrative").checked,
+    language: $("#language").value,
     thread_context: $("#threadContext").checked,
     sender_memory: $("#senderMemory").checked,
     show_unsubscribe: $("#showUnsubscribe").checked,

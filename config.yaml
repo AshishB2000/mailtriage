@@ -177,6 +177,13 @@ calendar: true
 # goes out.
 weekly_narrative: true
 
+# Language of the digest's OWN words -- section headings, badges, footers.
+# Your mail is never translated, and this is NOT what the AI writes replies
+# in (that's draft_style.language above). BCP-47 base codes with a table in
+# src/mailtriage/delivery/strings.py: en es fr de pt it nl hi ja. Anything
+# else prints a warning and falls back to English.
+language: "en"
+
 # Optional: more than one digest. Each profile covers a subset of your
 # MAIL_ACCOUNTS addresses and may override ANY key above (delivery,
 # telegram_chat_id, run_at, timezone, weekly_review, interests, avoid,

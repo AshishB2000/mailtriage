@@ -43,6 +43,7 @@ src/mailtriage/
                 WEEK_SYSTEM (snapshot-pinned), narrate_week() validates the
                 reply; also week_totals() + the two "time saved" constants
   delivery/     dispatch, http.py, text.py (the one plain-text renderer),
+                strings.py (the chrome, 9 languages, t(cfg, key)),
                 mail.py (Resend), gmail.py (own-Gmail SMTP),
                 telegram.py slack.py discord.py ntfy.py (chat/push channels)
   selfcheck.py  pre-flight assertions, run before any API spend
@@ -85,6 +86,10 @@ nag_after_days: int                calendar: bool (only matters with
                                       CALENDAR_ICS_URL set)
 weekly_narrative: bool             (model-written opening of --weekly; a
                                       failed call degrades to the plain review)
+language: str                      (BCP-47 base code for the digest CHROME
+                                      only -- unknown warns, falls back to en.
+                                      NOT draft_style.language, which is what
+                                      the model writes in)
 thread_context: bool               sender_memory: bool
 show_unsubscribe: bool             noise: {label: bool, archive: bool}
                                       (archive requires label; both off)
@@ -114,7 +119,8 @@ CALENDAR_ICS_URL    (optional; the URL is the credential -- never log it,
 ```
 
 **Delivery contract**: every module in `delivery/` exposes
-`send(cfg, kept, stamp="")` and `send_html(cfg, subject, html)`, and is
+`send(cfg, kept, stamp="", events=None)` and `send_html(cfg, subject, html)`,
+and is
 registered in BOTH dicts in `delivery/__init__.py`
 (`tests/test_contracts.py` pins `BACKENDS == BACKENDS_HTML == DELIVERIES`).
 The chat channels render `text.render()` with their own bold/link
@@ -194,6 +200,15 @@ are flat-rate, the default costs nothing extra.
 
 - **No state, no seen-list.** `window_hours` (15 shipped) is the dedupe; it must stay ≥
   the largest cron gap (12h) or mail is skipped forever.
+- **`digest_groups` returns section KEYS, not headings.** The middle element
+  of each tuple is `"needs_action:overdue"` / `"still_waiting"` / ..., and
+  `delivery.mail.section_heading(cfg, key)` is the only thing that reads
+  `cfg.language`. Keys stay English and stable so reply handling, `--dry-run`
+  and the tests never shift under a reader's language setting.
+- **COMMANDS_HINT and the label names are never translated.** They quote the
+  literal words the engine parses (`done 2`, `mailtriage/snooze-3d`);
+  translating them would tell the reader to type something no run understands.
+  Everything else in `delivery/mail.py` goes through `t()`.
 - **"Time saved" is an estimate and says so in the copy.** No run stores what
   it triaged, so `weekly.week_totals` reconstructs the week from Gmail
   (messages still carrying `cfg.label`, plus `count_done`'s), and

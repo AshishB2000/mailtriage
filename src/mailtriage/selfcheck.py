@@ -18,7 +18,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from mailtriage.commands import parse_commands, snooze_days, until_date
 from mailtriage.config import Config
-from mailtriage.delivery.mail import digest_groups, weekly_html
+from mailtriage.delivery.mail import digest_groups, section_heading, weekly_html
+from mailtriage.delivery.strings import STRINGS
 from mailtriage.drafts import DRAFT_SCHEMA, draft_schema, generate_drafts
 from mailtriage.errors import MailError
 from mailtriage.imap_pull import _classify_week_item, _older_than_window, _quote_mailbox, parse_message, within_window
@@ -331,8 +332,20 @@ def self_check() -> None:
     )
     dated: Triaged = {**_triaged_needs_action(0), "due": "2026-09-01"}
     groups = digest_groups([dated, _triaged_needs_action(1)], date(2026, 9, 3))
-    assert [h for _k, h, _i in groups] == ["Needs action · Overdue", "Needs action · No date"], (
+    assert [k for _kind, k, _i in groups] == ["needs_action:overdue", "needs_action:no_date"], (
         "digest_groups must split needs_action by due date once any item has one"
     )
+    # The section KEY stays English and stable; only section_heading() reads
+    # cfg.language. A reader on `language: fr` must still get a French heading
+    # AND the same key, or reply handling and the tests drift apart.
+    fr = Config(delivery="email", language="fr")
+    assert section_heading(fr, "needs_action:overdue") == "Action requise · En retard", (
+        "section_heading must translate a section key through delivery.strings"
+    )
+    assert section_heading(Config(delivery="email", language="zz"), "worth_reading") == "Worth reading", (
+        "an unknown language must fall back to English, never to a missing-key placeholder"
+    )
+    for code, table in STRINGS.items():
+        assert set(table) == set(STRINGS["en"]), f"language {code!r} does not have exactly the English key set"
 
     print("self-check: ok")

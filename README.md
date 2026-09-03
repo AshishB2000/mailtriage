@@ -492,6 +492,35 @@ draft_style:
 in one. Set `draft_replies: false` to turn drafting off entirely — see
 [Reply drafting](#reply-drafting) above.
 
+---
+
+## The digest in your language
+
+`language` in `config.yaml` sets the words **mailtriage itself** puts around
+your mail — section headings, the "still open" badge, "waiting 3 days", "Add
+to Google Calendar", the footers:
+
+```yaml
+language: "en"    # en es fr de pt it nl hi ja
+```
+
+Two things it deliberately does **not** touch:
+
+- **Your mail.** Subjects, senders and the model's one-line notes appear
+  exactly as they arrived or as the model wrote them. Nothing is translated
+  on the way past.
+- **What the AI writes.** That is `draft_style.language` (see
+  [Draft style](#draft-style)) — you can read a Japanese digest of mail you
+  reply to in English, or the reverse.
+
+BCP-47 base codes; a region tag is fine (`pt-BR` uses the `pt` table). A code
+with no table prints one warning and renders in English rather than failing
+the run — an English heading beats no digest. The reply commands
+(`done 2`, `mailtriage/snooze-3d`) stay in English in every language, because
+those are the literal words the engine parses. Adding a language is one row
+in `src/mailtriage/delivery/strings.py`; `tests/test_strings.py` fails if it
+is missing a key.
+
 **Drafts in your voice.** With `learn_voice: true` (default), before drafting
 a reply the engine reads up to 3 of your own most recent Sent messages to the
 same recipient (falling back to the same domain, then skipping), keeps only
@@ -873,6 +902,7 @@ src/mailtriage/
   commands.py        Gmail as the control plane: done/snooze/never/vip labels + replies to the digest
   calendar.py        today's events from a private ICS feed (CALENDAR_ICS_URL), stdlib parser
   weekly.py          the weekly review's model-written opening (prompt + validated reply)
+  delivery/strings.py  the digest's chrome in 9 languages -- t(cfg, key)
   triage/            the triage prompt (__init__.py)   <- the product
                        + 6 backends: claude_api, claude_cli, codex_cli, openai_api, gemini_api, gemini_cli
   drafts.py          the reply-drafting prompt + hostile-input-safe id mapping

@@ -323,7 +323,7 @@ def test_email_html_without_due_dates_has_no_groups():
 def test_digest_groups_sorts_dated_items_by_due():
     items = [_item("needs_action", subject="b", due="2026-09-30"), _item("needs_action", subject="a", due="2026-09-25")]
     groups = mail.digest_groups(items, date(2026, 9, 3))
-    assert [(k, h) for k, h, _ in groups] == [("action", "Needs action · Later")]
+    assert [(k, h) for k, h, _ in groups] == [("action", "needs_action:later")]
     assert [t["subject"] for t in groups[0][2]] == ["a", "b"]
 
 
