@@ -53,7 +53,8 @@ weekly_review: ""
 # your own mailbox for it before sending -- so a slot never sends twice.
 catch_up_minutes: 120
 
-# "email" (via Resend) or "gmail" (via your own Gmail's SMTP).
+# Where the digest goes: "gmail", "email", "telegram", "slack", "discord"
+# or "ntfy". See README "Delivery options" for the setup of each.
 #
 # email  — requires the RESEND_API_KEY secret. email_from must be on a domain
 #          you have verified with Resend (https://resend.com/domains). Until
@@ -66,6 +67,12 @@ catch_up_minutes: 120
 #          Gmail addresses and its MAIL_PW_* secret must be set. Best when
 #          emailing yourself: mail from your Gmail to your Gmail lands in
 #          the inbox, no domain to verify, no spam flag.
+# telegram — a bot you make with @BotFather; TELEGRAM_BOT_TOKEN secret plus
+#          telegram_chat_id below.
+# slack    — an incoming webhook; SLACK_WEBHOOK_URL secret.
+# discord  — a channel webhook; DISCORD_WEBHOOK_URL secret.
+# ntfy     — a topic on ntfy.sh (or your own server); NTFY_TOPIC_URL secret
+#          holding the full topic URL (the topic name is the credential).
 delivery: gmail
 
 # Addresses go in the EMAIL_TO / EMAIL_FROM repo secrets, not here -- this
@@ -77,6 +84,15 @@ delivery: gmail
 # can't be guessed, so both secrets are required.
 email_to: ""
 email_from: ""
+
+# delivery: telegram only -- the chat the bot posts to. Send the bot any
+# message, then read result[0].message.chat.id off
+# https://api.telegram.org/bot<TOKEN>/getUpdates.
+telegram_chat_id: ""
+
+# delivery: email / gmail only. "html" (default) or "text" for a plain-text
+# email -- the same rendering the chat channels get.
+digest_format: "html"
 
 subject_prefix: "mailtriage"
 
@@ -140,3 +156,22 @@ label: "mailtriage/action"
 # A carried item ("Still waiting on you") open for at least this many days
 # is flagged in bold with a "still open" badge.
 nag_after_days: 3
+
+# Optional: more than one digest. Each profile covers a subset of your
+# MAIL_ACCOUNTS addresses and may override ANY key above (delivery,
+# telegram_chat_id, run_at, timezone, weekly_review, interests, avoid,
+# rules, subject_prefix, ...). With profiles set, the run above happens once
+# per profile, each over just its accounts; subject_prefix defaults to
+# "<subject_prefix> · <profile name>". window_hours stays global -- keep it
+# >= the largest gap between ANY profile's run_at slots. Hand-edited; the
+# setup wizard leaves this block exactly as it finds it. See README "Two
+# digests: work and personal".
+# profiles:
+#   work:
+#     accounts: ["you@corp.com"]
+#     delivery: slack
+#     run_at: ["08:30", "13:00", "17:30"]
+#   personal:
+#     accounts: ["you@gmail.com"]
+#     run_at: ["19:00"]
+profiles: {}

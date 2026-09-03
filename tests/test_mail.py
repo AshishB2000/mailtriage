@@ -327,3 +327,32 @@ def test_weekly_html_shows_done_count_only_when_nonzero():
     week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item()]}})
     assert "marked done" not in mail.weekly_html(_cfg(), week)
     assert "4 marked done" in mail.weekly_html(_cfg(), week, done_count=4)
+
+# --- digest_format ---------------------------------------------------------
+
+
+def test_send_html_format_carries_a_text_part_too(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(mail, "post_json", lambda url, payload, headers=None: captured.update(payload) or (200, "{}"))
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
+    mail.send(_cfg(), [_item("needs_action", subject="Do it")])
+    assert "<html" in captured["html"]
+    assert "Do it — Alice <alice@example.com> — worth a look" in captured["text"]
+
+
+def test_send_text_format_omits_html(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(mail, "post_json", lambda url, payload, headers=None: captured.update(payload) or (200, "{}"))
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
+    mail.send(_cfg(digest_format="text"), [_item("needs_action", subject="Do it")])
+    assert "html" not in captured
+    assert captured["text"].startswith("Needs action\n\nDo it — ")
+    assert captured["subject"] == "mailtriage · 1 to act · 0 to read"
+
+
+def test_send_html_derives_its_text_part_from_the_html(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(mail, "post_json", lambda url, payload, headers=None: captured.update(payload) or (200, "{}"))
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
+    mail.send_html(_cfg(), "weekly", "<div>Your <b>week</b></div>")
+    assert captured["text"] == "Your week"

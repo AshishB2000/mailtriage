@@ -13,16 +13,18 @@ from email.message import EmailMessage
 
 from mailtriage.config import Config
 from mailtriage.delivery.mail import digest_subject, email_html
+from mailtriage.delivery.text import digest_text, html_to_text
 from mailtriage.errors import MailError
 from mailtriage.imap_pull import accounts_from_env, app_password, pw_env_var
 from mailtriage.models import Triaged
 
 
-def send_html(cfg: Config, subject: str, html_body: str) -> None:
-    """Send a prebuilt subject+HTML through the user's own Gmail SMTP.
-    Shared transport for both the normal digest (`send`, which builds the
-    html itself) and the weekly review (delivery.send_html -> here), so the
-    account-resolution/auth/SMTP logic lives in exactly one place."""
+def _send(cfg: Config, subject: str, text: str, html_body: str | None) -> None:
+    """Send through the user's own Gmail SMTP. Shared transport for the
+    normal digest (`send`) and the weekly review (delivery.send_html ->
+    `send_html`), so the account-resolution/auth/SMTP logic lives in exactly
+    one place. Always carries a plain-text part; the HTML alternative is
+    skipped for `digest_format: text`."""
     to, sender = cfg.email_to.strip(), cfg.email_from.strip()
     if not sender:
         try:
@@ -47,8 +49,9 @@ def send_html(cfg: Config, subject: str, html_body: str) -> None:
     msg["Subject"] = subject
     msg["From"] = sender
     msg["To"] = to
-    msg.set_content("Your mail client does not render HTML. See the HTML version.")
-    msg.add_alternative(html_body, subtype="html")
+    msg.set_content(text)
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
 
     try:
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as s:
@@ -64,5 +67,10 @@ def send_html(cfg: Config, subject: str, html_body: str) -> None:
         raise MailError(f"could not send via Gmail SMTP ({type(e).__name__}: {e}). Re-run the workflow.") from e
 
 
+def send_html(cfg: Config, subject: str, html_body: str) -> None:
+    _send(cfg, subject, html_to_text(html_body), html_body)
+
+
 def send(cfg: Config, triaged: list[Triaged], stamp: str = "") -> None:
-    send_html(cfg, digest_subject(cfg, triaged, stamp), email_html(cfg, triaged))
+    html_body = None if cfg.digest_format == "text" else email_html(cfg, triaged)
+    _send(cfg, digest_subject(cfg, triaged, stamp), digest_text(triaged), html_body)

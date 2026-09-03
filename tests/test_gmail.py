@@ -159,3 +159,29 @@ def test_send_raises_when_email_from_blank_and_mail_accounts_unset(monkeypatch):
     monkeypatch.delenv("MAIL_ACCOUNTS", raising=False)
     with pytest.raises(MailError, match="MAIL_ACCOUNTS"):
         gmail.send(_cfg(email_from=""), [_item("worth_reading")])
+
+
+def test_send_text_format_is_plain_only(monkeypatch):
+    monkeypatch.setenv(PW_VAR, "app password value")
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+
+    gmail.send(_cfg(digest_format="text"), [_item("needs_action", subject="Do it")])
+
+    msg = _FakeSMTP.instances[0].sent_msg
+    assert msg is not None
+    assert not msg.is_multipart()
+    assert msg.get_content_type() == "text/plain"
+    assert "Do it — Bob <bob@example.com> — worth a look" in msg.get_content()
+
+
+def test_send_html_format_has_a_real_text_alternative(monkeypatch):
+    monkeypatch.setenv(PW_VAR, "app password value")
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+
+    gmail.send(_cfg(), [_item("needs_action", subject="Do it")])
+
+    msg = _FakeSMTP.instances[0].sent_msg
+    assert msg is not None
+    plain = msg.get_body(preferencelist=("plain",))
+    assert plain is not None
+    assert "Do it — Bob <bob@example.com>" in plain.get_content()
