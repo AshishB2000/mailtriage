@@ -70,6 +70,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "check on stderr; exit 1 if any failed"
         ),
     )
+    ap.add_argument(
+        "--bench",
+        action="store_true",
+        help=(
+            "measure the triage prompt against a synthetic inbox with a known right answer "
+            "(mailtriage.bench). One real model call, no mailbox access, no delivery; prints a "
+            "verdict table and exits 1 if any expected action item was missed"
+        ),
+    )
     # Not argparse's built-in action="version": that calls sys.exit() from inside
     # parse_args(), before main() gets a chance to return normally. Handled below
     # instead, so main() stays the only place that prints and exits.
@@ -554,6 +563,50 @@ def _doctor_fixture() -> list[Email]:
     ]
 
 
+def run_bench(cfg: Config) -> int:
+    """Run the real provider over `bench.bench_inbox()` and print the verdict.
+
+    Every message is invented (see bench.py), so unlike every other stage
+    this one may print subjects: there is no reader's mail in it. That is the
+    whole point -- the prompt cannot be tuned against something unprintable.
+
+    Exit 1 when an expected action item was missed. Missing one is the worst
+    thing this product does, so it is the failing condition; extra items are
+    reported but do not fail the run.
+    """
+    from mailtriage.bench import NEEDS_ACTION, NOISE, bench_inbox, score
+    from mailtriage.triage import select_backend, triage
+
+    emails, expected = bench_inbox(_now())
+    name, _call = select_backend(cfg, os.environ)
+    print(f"bench: {len(emails)} synthetic message(s) through {name}.", file=sys.stderr)
+
+    kept = triage(cfg, emails, _now())
+    got = {t["idx"]: t["bucket"] for t in kept}
+
+    for i, want in enumerate(expected):
+        got_i = got.get(i, NOISE)
+        mark = "ok  " if got_i == want else "MISS" if want == NEEDS_ACTION else "diff"
+        print(f"  {mark} [{i}] want={want:<13} got={got_i:<13} {emails[i]['subject'][:58]}", file=sys.stderr)
+
+    result = score(expected, got)
+    print(
+        f"bench: action items {result['found']}/{result['actions']} found, {result['missed']} missed · "
+        f"noise wrongly actioned {result['false_action']} · noise returned at all {result['noise_returned']} · "
+        f"worth_reading {result['reading_found']}/{result['reading_total']}",
+        file=sys.stderr,
+    )
+    if result["missed"]:
+        print(
+            f"bench: FAIL — {result['missed']} action item(s) the reader would never have heard about. "
+            "The triage prompt in triage.build_system is what decides this.",
+            file=sys.stderr,
+        )
+        return 1
+    print("bench: PASS — every action item was found.", file=sys.stderr)
+    return 0
+
+
 def _check(name: str, ok: bool, detail: str) -> bool:
     print(f"doctor: {'PASS' if ok else 'FAIL'} {name} — {detail}", file=sys.stderr)
     return ok
@@ -658,6 +711,8 @@ def main(argv: list[str] | None = None) -> int:
             return _handle_due(load_config(args.config), _now(), event)
         if args.doctor:
             return run_doctor(args.config)
+        if args.bench:
+            return run_bench(load_config(args.config))
 
         cfg = load_config(args.config)
         if cfg.profiles:
