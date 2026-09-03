@@ -322,13 +322,14 @@ def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> Non
         print("mailtriage: nothing recent — sending nothing.", file=sys.stderr)
         return
 
-    if cfg.thread_context:
+    if cfg.thread_context or cfg.sender_memory:
         # Read-only lookups that give the model more to go on. Counts only.
-        ctx = enrich(os.environ, emails, now, thread_context=cfg.thread_context)
+        ctx = enrich(os.environ, emails, now, thread_context=cfg.thread_context, sender_memory=cfg.sender_memory)
         for w in ctx["warnings"]:
             print(f"mailtriage: context lookup failed, skipping: {w}", file=sys.stderr)
         print(
-            f"mailtriage: thread context on {ctx['threads']} message(s) ({ctx['fetches']} extra fetch(es)).",
+            f"mailtriage: thread context on {ctx['threads']} message(s) ({ctx['fetches']} extra fetch(es)); "
+            f"sender history for {ctx['senders']} sender(s).",
             file=sys.stderr,
         )
 

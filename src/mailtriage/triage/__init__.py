@@ -101,6 +101,7 @@ BUCKETS
 
 SIGNALS
 - attachments: invoices, contracts, e-sign requests and forms in attachments usually mean needs_action even when the body is short.
+- "you've replied to this sender N times": senders the reader has replied to before deserve the benefit of the doubt; senders they never reply to need a stronger reason to surface.
 
 HOW MANY TO RETURN
 - needs_action has no cap. Never drop a message that genuinely needs action just to keep the list short.
@@ -176,6 +177,9 @@ def _context_lines(em: Email) -> str:
     attachments = em.get("attachments") or []
     if attachments:
         out += "\n    attachments: " + ", ".join(attachments)
+    replied = em.get("replied_before") or 0
+    if replied:
+        out += f"\n    you've replied to this sender {replied} time{'s' if replied != 1 else ''}"
     thread = em.get("thread") or []
     if thread:
         out += "\n    earlier in this thread:\n" + "\n".join(f"      {ln}" for ln in thread)

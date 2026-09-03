@@ -54,11 +54,13 @@ class _FakeIMAP:
         *,
         threads: dict[str, list[bytes]] | None = None,  # thrid -> uids in \All
         all_messages: dict[bytes, bytes] | None = None,  # \All uid -> raw
+        sent_to: dict[str, int] | None = None,  # address -> how many Sent messages go to it
         login_error: Exception | None = None,
     ) -> None:
         self.host, self.port = host, port
         self._threads = threads or {}
         self._all = all_messages or {}
+        self._sent_to = sent_to or {}
         self._login_error = login_error
         self.select_calls: list[tuple[Any, ...]] = []
         self.uid_calls: list[tuple[str, tuple[Any, ...]]] = []
@@ -80,6 +82,10 @@ class _FakeIMAP:
             crit = args[1]
             if crit == "X-GM-THRID":
                 return "OK", [b" ".join(self._threads.get(args[2], []))]
+            if crit == "TO":
+                assert args[3] == "SINCE", "sender memory must be bounded by SINCE"
+                n = self._sent_to.get(args[2].strip('"'), 0)
+                return "OK", [b" ".join(str(i).encode() for i in range(1, n + 1))]
             raise AssertionError(f"unexpected SEARCH criteria: {args}")
         if cmd == "FETCH":
             assert "PEEK" in args[1], "context fetches must use BODY.PEEK, or they mark mail read"
@@ -138,7 +144,7 @@ def test_thread_context_adds_two_earlier_messages_oldest_first(monkeypatch: Any)
     )
     emails = [make_email(0)]
 
-    result = enrich(ENV, emails, NOW)
+    result = enrich(ENV, emails, NOW, sender_memory=False)
 
     assert result["warnings"] == []
     assert result["threads"] == 1 and result["fetches"] == 1
@@ -170,25 +176,85 @@ def test_thread_context_caps_at_newest_candidates(monkeypatch: Any) -> None:
 
     enrich(ENV, emails, NOW)
 
-    searched = [args[2] for cmd, args in factory.instances[0].uid_calls if cmd == "SEARCH"]
+    searched = [args[2] for cmd, args in factory.instances[0].uid_calls if cmd == "SEARCH" and args[1] == "X-GM-THRID"]
     assert searched == [str(9000 + i) for i in range(THREAD_CONTEXT_CAP)]
 
 
-def test_thread_context_off_never_connects(monkeypatch: Any) -> None:
+def test_both_off_never_connects(monkeypatch: Any) -> None:
     factory = _patch(monkeypatch, threads={"9000": [b"1", b"2"]})
 
-    result = enrich(ENV, [make_email(0)], NOW, thread_context=False)
+    result = enrich(ENV, [make_email(0)], NOW, thread_context=False, sender_memory=False)
 
     assert factory.instances == []
-    assert result == {"threads": 0, "fetches": 0, "warnings": []}
+    assert result == {"threads": 0, "fetches": 0, "senders": 0, "warnings": []}
 
 
 def test_no_thrid_is_skipped(monkeypatch: Any) -> None:
     factory = _patch(monkeypatch)
 
-    enrich(ENV, [make_email(0, thrid="")], NOW)
+    enrich(ENV, [make_email(0, thrid="")], NOW, sender_memory=False)
 
     assert factory.instances == []
+
+
+# --- sender memory --------------------------------------------------------
+
+
+def test_sender_memory_counts_sent_mail_per_distinct_sender(monkeypatch: Any) -> None:
+    factory = _patch(monkeypatch, sent_to={"bob@x.com": 3})
+    emails = [
+        make_email(0, **{"from": "Bob <Bob@X.com>"}),
+        make_email(1, **{"from": "bob@x.com"}),  # same address, different casing -- one lookup
+        make_email(2, **{"from": "stranger@y.com"}),
+    ]
+
+    result = enrich(ENV, emails, NOW, thread_context=False)
+
+    assert result["senders"] == 2
+    assert emails[0]["replied_before"] == 3 and emails[1]["replied_before"] == 3
+    assert "replied_before" not in emails[2]  # zero is left unset, so build_user prints nothing
+    fake = factory.instances[0]
+    assert fake.select_calls == [('"[Gmail]/Sent Mail"', True)]
+    searches = [args for cmd, args in fake.uid_calls if cmd == "SEARCH"]
+    assert searches == [
+        (None, "TO", '"bob@x.com"', "SINCE", "01-Mar-2026"),
+        (None, "TO", '"stranger@y.com"', "SINCE", "01-Mar-2026"),
+    ]
+
+
+def test_sender_memory_skips_own_address_and_noreply_senders(monkeypatch: Any) -> None:
+    factory = _patch(monkeypatch)
+    emails = [
+        make_email(0, **{"from": f"Me <{ACCOUNT}>"}),
+        make_email(1, **{"from": "no-reply@shop.com"}),
+        make_email(2, **{"from": "notifications@github.com"}),
+        make_email(3, **{"from": "donotreply@bank.com"}),
+    ]
+
+    result = enrich(ENV, emails, NOW, thread_context=False)
+
+    assert result["senders"] == 0
+    assert factory.instances == []  # nothing to look up -> no connection at all
+
+
+def test_sender_memory_caps_at_forty_newest_senders(monkeypatch: Any) -> None:
+    factory = _patch(monkeypatch)
+    emails = [make_email(i, **{"from": f"s{i}@x.com"}) for i in range(45)]
+
+    result = enrich(ENV, emails, NOW, thread_context=False)
+
+    assert result["senders"] == 40
+    searched = [args[2] for cmd, args in factory.instances[0].uid_calls if cmd == "SEARCH"]
+    assert searched[0] == '"s0@x.com"' and searched[-1] == '"s39@x.com"'
+
+
+def test_thread_and_sender_lookups_share_one_login(monkeypatch: Any) -> None:
+    factory = _patch(monkeypatch, threads={"9000": [b"1"]}, sent_to={"sender0@example.com": 1})
+
+    enrich(ENV, [make_email(0)], NOW)
+
+    assert len(factory.instances) == 1
+    assert factory.instances[0].select_calls == [('"[Gmail]/All Mail"', True), ('"[Gmail]/Sent Mail"', True)]
 
 
 def test_login_failure_is_a_warning_not_a_raise(monkeypatch: Any) -> None:

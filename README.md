@@ -630,6 +630,11 @@ picked; the Actions log only ever shows counts.
   are listed under each candidate, and the model is told that an invoice, a
   contract, an e-sign request or a form usually means `needs_action` even
   when the body is one line.
+- **Sender memory** (`sender_memory: true`, default) — for each candidate's
+  sender, how many messages you've sent them in the last 180 days (counted in
+  Sent Mail, newest 40 senders per run; your own addresses and noreply-style
+  senders are skipped). Senders you've replied to before get the benefit of
+  the doubt; senders you never reply to need a stronger reason to surface.
 
 ---
 

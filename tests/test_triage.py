@@ -135,6 +135,7 @@ BUCKETS
 
 SIGNALS
 - attachments: invoices, contracts, e-sign requests and forms in attachments usually mean needs_action even when the body is short.
+- "you've replied to this sender N times": senders the reader has replied to before deserve the benefit of the doubt; senders they never reply to need a stronger reason to surface.
 
 HOW MANY TO RETURN
 - needs_action has no cap. Never drop a message that genuinely needs action just to keep the list short.
@@ -232,6 +233,17 @@ def test_build_user_lists_attachments_under_candidate():
     em["attachments"] = ["invoice.pdf (application/pdf)", "sign-here.docx (application/msword)"]
     user = triage.build_user([em], now)
     assert "\n    attachments: invoice.pdf (application/pdf), sign-here.docx (application/msword)" in user
+
+
+def test_build_user_shows_reply_history_only_when_nonzero():
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+    a, b, c = make_email(0), make_email(1), make_email(2)
+    a["replied_before"] = 3
+    b["replied_before"] = 1
+    user = triage.build_user([a, b, c], now)
+    assert "\n    you've replied to this sender 3 times" in user.split("[1]")[0]
+    assert "you've replied to this sender 1 time\n" in user.split("[1]")[1] + "\n"
+    assert "replied" not in user.split("[2]")[1]
 
 
 def test_build_user_without_context_is_unchanged():

@@ -77,6 +77,7 @@ draft_replies: bool                draft_style: {tone, sign_off, language,
 rules: {always_ignore, always_surface, always_action}   accounts: {addr: {…}}
 carry_over: bool                   label: str
 nag_after_days: int
+thread_context: bool               sender_memory: bool
 thread_context: bool
 ```
 

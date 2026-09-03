@@ -29,6 +29,7 @@ class Email(_EmailBase, total=False):
     thrid: str  # Gmail X-GM-THRID from the fetch; "" when the server didn't return one
     thread: list[str]  # imap_pull.enrich: "<age> · <from>: <snippet>" for up to 2 earlier thread messages, oldest first
     attachments: list[str]  # "invoice.pdf (application/pdf)" per attached or named part, from the fetch itself
+    replied_before: int  # imap_pull.enrich: messages the reader sent to this sender in the last 180 days
 
 
 class PullResult(TypedDict):
@@ -44,6 +45,7 @@ class EnrichResult(TypedDict):
 
     threads: int  # candidates that got earlier-thread context
     fetches: int  # extra IMAP FETCH round trips spent on it
+    senders: int  # distinct senders looked up in \Sent
     warnings: list[dict[str, str]]
 
 

@@ -22,7 +22,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes, policy
 from email.message import EmailMessage
-from email.utils import format_datetime, parsedate_to_datetime
+from email.utils import format_datetime, parseaddr, parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote
 
@@ -516,32 +516,66 @@ def _thread_lines(M: imaplib.IMAP4_SSL, em: Email, now: datetime) -> tuple[list[
     return [line for _, line in earlier[-THREAD_PREV:]], 1
 
 
+SENDER_MEMORY_CAP = 40  # distinct sender addresses looked up in \Sent per run
+SENDER_MEMORY_DAYS = 180
+# Automated senders nobody replies to -- a Sent search for them is a wasted round trip.
+_NOREPLY_RE = re.compile(r"no-?reply|do-?not-?reply|notifications?@|mailer-daemon|bounce|^postmaster@", re.IGNORECASE)
+
+
+def _sender_addresses(items: list[Email], own: set[str], budget: int) -> list[str]:
+    """Distinct candidate sender addresses worth a \\Sent lookup, in the order
+    given (newest candidate first), skipping the reader's own accounts and
+    noreply-ish senders."""
+    out: list[str] = []
+    for em in items:
+        if len(out) >= budget:
+            break
+        addr = parseaddr(em["from"])[1].lower()
+        if not addr or addr in own or addr in out or _NOREPLY_RE.search(addr):
+            continue
+        out.append(addr)
+    return out
+
+
+def _sent_count(M: imaplib.IMAP4_SSL, addr: str, since: str) -> int:
+    """Messages in the selected \\Sent mailbox addressed to `addr` since `since`."""
+    _, data = M.uid("SEARCH", None, "TO", _quote_mailbox(addr), "SINCE", since)  # type: ignore[arg-type]
+    return len(data[0].split()) if data and data[0] else 0
+
+
 def enrich(
     environ: Mapping[str, str],
     emails: list[Email],
     now: datetime,
     *,
     thread_context: bool = True,
+    sender_memory: bool = True,
     host: str = "imap.gmail.com",
 ) -> EnrichResult:
     """Fill the optional context keys on `emails` in place, after `pull`:
-    `thread` (earlier messages of the same Gmail thread, from \\All).
+    `thread` (earlier messages of the same Gmail thread, from \\All) and
+    `replied_before` (how often the reader has written to that sender, from
+    \\Sent).
 
     Read-only throughout (`readonly=True`, `BODY.PEEK`), one login per
     account that has something to look up, and the same warn-and-continue
     shape as `pull`. Round trips are bounded by the caps above, and the
     counts returned are what `cli` prints -- never the content.
     """
-    threads = fetches = 0
+    threads = fetches = senders = 0
     warnings: list[dict[str, str]] = []
     by_account: dict[str, list[Email]] = {}
-    for em in emails:  # pull() sorted newest first, so the cap below favors the newest
+    for em in emails:  # pull() sorted newest first, so the caps below favor the newest
         by_account.setdefault(em["account"], []).append(em)
+    own = {a.lower() for a in by_account}
+    since = (now - timedelta(days=SENDER_MEMORY_DAYS)).strftime("%d-%b-%Y")
 
-    budget = THREAD_CONTEXT_CAP if thread_context else 0
+    thread_budget = THREAD_CONTEXT_CAP if thread_context else 0
+    sender_budget = SENDER_MEMORY_CAP if sender_memory else 0
     for account, items in by_account.items():
-        want_threads = [em for em in items if em.get("thrid")][:budget]
-        if not want_threads:
+        want_threads = [em for em in items if em.get("thrid")][:thread_budget]
+        want_senders = _sender_addresses(items, own, sender_budget)
+        if not want_threads and not want_senders:
             continue
         pw = environ.get(pw_env_var(account))
         if not pw:
@@ -559,16 +593,25 @@ def enrich(
                     for em in want_threads:
                         lines, n = _thread_lines(M, em, now)
                         fetches += n
-                        budget -= 1
+                        thread_budget -= 1
                         if lines:
                             em["thread"] = lines
                             threads += 1
+                if want_senders:
+                    M.select(_quote_mailbox(_find_sent_mailbox(list_lines)), readonly=True)
+                    counts = {addr: _sent_count(M, addr, since) for addr in want_senders}
+                    senders += len(counts)
+                    sender_budget -= len(counts)
+                    for em in items:
+                        n = counts.get(parseaddr(em["from"])[1].lower(), 0)
+                        if n:
+                            em["replied_before"] = n
             finally:
                 with contextlib.suppress(Exception):
                     M.logout()
         except Exception as e:  # imaplib raises many unrelated types — one bad account must not abort the rest
             warnings.append({"account": account, "error": f"{type(e).__name__}: {e}"})
-    return {"threads": threads, "fetches": fetches, "warnings": warnings}
+    return {"threads": threads, "fetches": fetches, "senders": senders, "warnings": warnings}
 
 
 def _replied_in_sent(M: imaplib.IMAP4_SSL, thrid: str, message_id: str) -> bool:

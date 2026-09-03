@@ -180,3 +180,7 @@ profiles: {}
 # Mail, for the newest 15 candidates each run) so it can tell a live
 # conversation from a stale one. Read-only; a few extra IMAP fetches.
 thread_context: true
+
+# Tell the model how often you've written to each sender in the last 180
+# days (counted in Sent Mail, newest 40 senders per run). Read-only.
+sender_memory: true
