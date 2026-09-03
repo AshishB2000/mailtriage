@@ -629,6 +629,19 @@ link.
 items you closed via the `done` label separately, since those have lost the
 `action` label it otherwise searches for.
 
+**Time saved.** The review carries one line — *"This week mailtriage handled
+34 messages and drafted 8 replies — roughly 83 minutes you did not spend on
+your inbox"*. Read it as the estimate it says it is, not a measurement:
+nothing times you. The counts are real (messages carrying the action label
+in the last 7 days, plus the ones you closed with `mailtriage/done`; drafts
+are the ones mailtriage itself pushed, found by a header it stamps, so a
+draft you wrote never counts). The minutes are those counts times two
+constants that live in one place, `MINUTES_PER_TRIAGED = 1.5` and
+`MINUTES_PER_DRAFT = 4.0` in `src/mailtriage/weekly.py` — roughly what it
+costs to open, read and decide on one message yourself, and to write a reply
+from scratch rather than edit a draft. Disagree with them? Edit those two
+numbers; they are not tuned to anything.
+
 **The weekly review, in words.** With `weekly_narrative: true` (default),
 the review opens with three model-written sentences — what got cleared,
 what is aging, who keeps not getting an answer — and up to three one-line

@@ -357,11 +357,40 @@ def _narrative_block(narrative: dict[str, Any] | None) -> str:
     <tr><td style="padding-top:22px;"><p style="font:400 16px/1.55 {SERIF};color:{INK};margin:0;white-space:pre-wrap;">{html.escape(narrative["summary"])}</p></td></tr>{patterns}"""
 
 
-def weekly_html(cfg: Config, week: WeekResult, done_count: int = 0, narrative: dict[str, Any] | None = None) -> str:
+def _saved_block(totals: dict[str, int] | None) -> str:
+    """The "This week mailtriage handled ..." line. Deliberately worded as an
+    estimate -- see weekly.MINUTES_PER_TRIAGED / MINUTES_PER_DRAFT, which are
+    the only place the two constants live."""
+    if not totals or not (totals["triaged"] or totals["drafts"]):
+        return ""
+    return f"""
+    <tr><td class="muted" style="font:400 13px/1.5 {SANS};color:{DIM};padding-top:20px;">{
+        _saved_text(totals)
+    }</td></tr>"""
+
+
+def _saved_text(totals: dict[str, int]) -> str:
+    t, d, m = totals["triaged"], totals["drafts"], totals["minutes"]
+    return (
+        f"This week mailtriage handled {t} message{'' if t == 1 else 's'} and drafted "
+        f"{d} repl{'y' if d == 1 else 'ies'} — roughly {m} minute{'' if m == 1 else 's'} "
+        "you did not spend on your inbox (an estimate, not a measurement)."
+    )
+
+
+def weekly_html(
+    cfg: Config,
+    week: WeekResult,
+    done_count: int = 0,
+    narrative: dict[str, Any] | None = None,
+    totals: dict[str, int] | None = None,
+) -> str:
     handled = sum(len(b["replied"]) + len(b["archived"]) for b in week["accounts"].values())
     still_open = sum(len(b["open"]) for b in week["accounts"].values())
-    blocks = _narrative_block(narrative) + "".join(
-        _week_account_block(account, buckets) for account, buckets in week["accounts"].items()
+    blocks = (
+        _narrative_block(narrative)
+        + _saved_block(totals)
+        + "".join(_week_account_block(account, buckets) for account, buckets in week["accounts"].items())
     )
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

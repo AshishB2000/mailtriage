@@ -403,6 +403,25 @@ def test_invite_numbers_only_matches_invitation_looking_needs_action():
     assert mail.invite_numbers(events, items, date(2026, 9, 3)) == {0: 2}
 
 
+def test_weekly_html_time_saved_line_is_worded_as_an_estimate():
+    week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item()]}})
+    html = mail.weekly_html(_cfg(), week, totals={"triaged": 34, "drafts": 8, "minutes": 83})
+    assert "This week mailtriage handled 34 messages and drafted 8 replies" in html
+    assert "roughly 83 minutes" in html
+    assert "an estimate, not a measurement" in html
+
+
+def test_weekly_html_time_saved_singulars_and_zero():
+    week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item()]}})
+    one = mail.weekly_html(_cfg(), week, totals={"triaged": 1, "drafts": 1, "minutes": 1})
+    assert "handled 1 message and drafted 1 reply" in one and "roughly 1 minute " in one
+    # Nothing triaged and nothing drafted: the line is omitted, not "0 messages".
+    assert "This week mailtriage handled" not in mail.weekly_html(
+        _cfg(), week, totals={"triaged": 0, "drafts": 0, "minutes": 0}
+    )
+    assert "This week mailtriage handled" not in mail.weekly_html(_cfg(), week)
+
+
 def test_weekly_html_narrative_opens_the_review_escaped():
     week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item("open one")]}})
     narrative = {"summary": "You cleared <b>two</b>.\nOne is aging.", "patterns": ["Alice <always> waits"]}

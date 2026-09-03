@@ -16,6 +16,29 @@ from mailtriage.triage import CallFn
 
 MAX_PATTERNS = 3
 
+# The two numbers behind the weekly "time saved" line, in one place because
+# they are an ESTIMATE, not a measurement: nothing times the reader. 1.5 =
+# roughly what opening, reading and deciding on one message costs when you do
+# it yourself; 4 = writing a reply from scratch instead of editing a draft.
+# The README says exactly this, in these words -- change both together.
+MINUTES_PER_TRIAGED = 1.5
+MINUTES_PER_DRAFT = 4.0
+
+
+def minutes_saved(triaged: int, drafts: int) -> int:
+    return round(triaged * MINUTES_PER_TRIAGED + drafts * MINUTES_PER_DRAFT)
+
+
+def week_totals(week: WeekResult, done_count: int, drafts: int) -> dict[str, int]:
+    """The "This week mailtriage handled ..." numbers. No run stores a count of
+    what it triaged, so the week's total is reconstructed from Gmail: every
+    message still carrying the action label (pull_week's three buckets), plus
+    the ones closed with the done label, which have lost it."""
+    labeled = sum(len(b["replied"]) + len(b["archived"]) + len(b["open"]) for b in week["accounts"].values())
+    triaged = labeled + done_count
+    return {"triaged": triaged, "drafts": drafts, "minutes": minutes_saved(triaged, drafts)}
+
+
 WEEK_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {

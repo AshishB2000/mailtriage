@@ -17,6 +17,7 @@ from mailtriage.errors import MailError
 from mailtriage.imap_pull import (
     already_delivered,
     check_login,
+    count_drafts,
     enrich,
     label_actions,
     label_noise,
@@ -28,6 +29,7 @@ from mailtriage.imap_pull import (
 )
 from mailtriage.models import Email, Event, Triaged, WeekResult
 from mailtriage.schedule import current_slot, due, local_zone
+from mailtriage.weekly import week_totals
 
 UNSUBSCRIBE_CAP = 20  # senders in the digest's noise footer
 
@@ -174,12 +176,21 @@ def _print_digest(cfg: Config, kept: list[Triaged], today: date, events: list[Ev
             print(f"  {it['sender']} · {it['link']}")
 
 
-def _print_weekly(week: WeekResult, done_count: int = 0, narrative: dict[str, Any] | None = None) -> None:
+def _print_weekly(
+    week: WeekResult,
+    done_count: int = 0,
+    narrative: dict[str, Any] | None = None,
+    totals: dict[str, int] | None = None,
+) -> None:
+    from mailtriage.delivery.mail import _saved_text
+
     if narrative:
         print(narrative["summary"])
         for p in narrative["patterns"]:
             print(f"  - {p}")
         print()
+    if totals and (totals["triaged"] or totals["drafts"]):
+        print(_saved_text(totals))
     if done_count:
         print(f"{done_count} marked done via the mailtriage/done label")
     for account, buckets in week["accounts"].items():
@@ -264,13 +275,20 @@ def run_weekly(cfg: Config, dry_run: bool = False, only: set[str] | None = None)
         return
 
     narrative = _week_narrative(cfg, week, done_count, now)
+    # An estimate, and the log says so -- see weekly.MINUTES_PER_*.
+    totals = week_totals(week, done_count, count_drafts(os.environ, now))
+    print(
+        f"mailtriage: this week {totals['triaged']} triaged, {totals['drafts']} drafted "
+        f"(~{totals['minutes']} min, estimated).",
+        file=sys.stderr,
+    )
 
     if dry_run:
-        _print_weekly(week, done_count, narrative)
+        _print_weekly(week, done_count, narrative, totals)
         return
 
     head = f"{cfg.subject_prefix} · {stamp}" if stamp else cfg.subject_prefix
-    send_html(cfg, f"{head} · weekly review", weekly_html(cfg, week, done_count, narrative))
+    send_html(cfg, f"{head} · weekly review", weekly_html(cfg, week, done_count, narrative, totals))
     done_part = f", {done_count} done" if done_count else ""
     print(
         f"mailtriage: weekly review delivered ({handled} handled{done_part}, {still_open} open) via {cfg.delivery}.",

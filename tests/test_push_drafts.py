@@ -7,10 +7,11 @@ IMAP4_SSL stands in, mirroring how test_gmail.py fakes smtplib.SMTP.
 from __future__ import annotations
 
 import imaplib
+from datetime import datetime, timezone
 from email import message_from_bytes, policy
 from typing import Any, cast
 
-from mailtriage.imap_pull import push_drafts
+from mailtriage.imap_pull import DRAFT_MARKER, count_drafts, push_drafts
 from mailtriage.models import Email, Triaged
 
 SENDER = "alice@gmail.com"
@@ -274,3 +275,74 @@ def test_push_drafts_skips_items_without_a_draft_or_not_needs_action(monkeypatch
 
     assert warnings == []
     assert factory.instances == []  # never even connects when there's nothing to push
+
+
+# --- the draft marker + count_drafts (sub-project F) ---------------------
+
+
+def test_pushed_draft_carries_the_marker_header(monkeypatch: Any) -> None:
+    """count_drafts finds drafts by this header, so push_drafts must stamp it
+    -- a subject heuristic would miscount the moment the reader edits one."""
+    monkeypatch.setenv(PW_VAR, "pw")
+    factory = _patch_imap(monkeypatch)
+
+    push_drafts({PW_VAR: "pw"}, [make_triaged(0)], [make_email(0)])
+
+    raw = factory.instances[0].appended[0][3]
+    assert message_from_bytes(raw, policy=policy.default).get(DRAFT_MARKER) == "draft"
+
+
+class _CountIMAP:
+    """Minimal stand-in: LIST advertises \\Drafts, SEARCH returns `uids`."""
+
+    def __init__(self, host: str, port: int, *, uids: bytes = b"", login_error: Exception | None = None) -> None:
+        self._uids, self._login_error = uids, login_error
+        self.select_calls: list[Any] = []
+        self.search_args: list[Any] = []
+
+    def login(self, user: str, pw: str) -> tuple[str, list[bytes]]:
+        if self._login_error:
+            raise self._login_error
+        return "OK", [b"ok"]
+
+    def select(self, mailbox: str = "INBOX", readonly: bool = False) -> tuple[str, list[bytes]]:
+        self.select_calls.append((mailbox, readonly))
+        return "OK", [b"1"]
+
+    def uid(self, command: str, *args: Any) -> tuple[str, list[Any]]:
+        self.search_args.append((command, args))
+        return "OK", [self._uids]
+
+    def logout(self) -> tuple[str, list[bytes]]:
+        return "OK", [b"bye"]
+
+    def list(self, *a: object, **k: object) -> tuple[str, list[bytes]]:
+        return "OK", [b'(\\HasNoChildren \\Drafts) "/" "[Gmail]/Drafts"']
+
+
+def test_count_drafts_searches_drafts_readonly_by_marker_and_date(monkeypatch: Any) -> None:
+    made: list[_CountIMAP] = []
+
+    def factory(host: str, port: int) -> _CountIMAP:
+        inst = _CountIMAP(host, port, uids=b"11 12 13")
+        made.append(inst)
+        return inst
+
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", factory)
+    now = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
+
+    assert count_drafts({"MAIL_ACCOUNTS": SENDER, PW_VAR: "pw"}, now) == 3
+
+    assert made[0].select_calls == [('"[Gmail]/Drafts"', True)]  # read-only, Drafts only
+    cmd, args = made[0].search_args[0]
+    assert cmd == "SEARCH"
+    assert args == (None, "HEADER", DRAFT_MARKER, "draft", "SINCE", "30-Aug-2026")
+
+
+def test_count_drafts_never_raises_on_a_dead_or_unconfigured_account(monkeypatch: Any) -> None:
+    """One cosmetic line of the weekly review must never cost the review."""
+    now = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
+    assert count_drafts({}, now) == 0  # no MAIL_ACCOUNTS at all
+
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda h, p: _CountIMAP(h, p, login_error=OSError("refused")))
+    assert count_drafts({"MAIL_ACCOUNTS": SENDER, PW_VAR: "pw"}, now) == 0

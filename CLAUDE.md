@@ -40,7 +40,8 @@ src/mailtriage/
   calendar.py   today's events from the CALENDAR_ICS_URL feed -- stdlib ICS
                 parser (DAILY/WEEKLY rules only), warns and never fails a run
   weekly.py     the weekly review's model-written opening: WEEK_SCHEMA,
-                WEEK_SYSTEM (snapshot-pinned), narrate_week() validates the reply
+                WEEK_SYSTEM (snapshot-pinned), narrate_week() validates the
+                reply; also week_totals() + the two "time saved" constants
   delivery/     dispatch, http.py, text.py (the one plain-text renderer),
                 mail.py (Resend), gmail.py (own-Gmail SMTP),
                 telegram.py slack.py discord.py ntfy.py (chat/push channels)
@@ -193,6 +194,15 @@ are flat-rate, the default costs nothing extra.
 
 - **No state, no seen-list.** `window_hours` (15 shipped) is the dedupe; it must stay ≥
   the largest cron gap (12h) or mail is skipped forever.
+- **"Time saved" is an estimate and says so in the copy.** No run stores what
+  it triaged, so `weekly.week_totals` reconstructs the week from Gmail
+  (messages still carrying `cfg.label`, plus `count_done`'s), and
+  `imap_pull.count_drafts` counts drafts by the `DRAFT_MARKER`
+  (`X-Mailtriage`) header `push_drafts` stamps -- a header, not a subject
+  match, so an edited draft still counts and the reader's own never does.
+  The two minute constants live only in `weekly.py` and are named in the
+  README; don't scatter copies. `count_drafts` never raises: a cosmetic line
+  must never cost someone their review.
 - **The no-double-send guard is a mailbox search, not a file.** `due()`
   accepts a slot for `catch_up_minutes` (120) because GitHub's cron skips
   hours; that lets two hourly firings share a slot, so every *scheduled*

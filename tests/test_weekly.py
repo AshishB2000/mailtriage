@@ -9,7 +9,16 @@ from typing import Any, cast
 
 from mailtriage.config import Config
 from mailtriage.models import WeekItem, WeekResult
-from mailtriage.weekly import WEEK_SCHEMA, WEEK_SYSTEM, build_week_user, narrate_week
+from mailtriage.weekly import (
+    MINUTES_PER_DRAFT,
+    MINUTES_PER_TRIAGED,
+    WEEK_SCHEMA,
+    WEEK_SYSTEM,
+    build_week_user,
+    minutes_saved,
+    narrate_week,
+    week_totals,
+)
 
 CFG = Config(delivery="email")
 TODAY = date(2026, 9, 6)
@@ -76,6 +85,24 @@ def test_narrate_week_returns_none_for_an_unusable_reply():
         "summary": "ok",
         "patterns": [],
     }
+
+
+# --- time saved -----------------------------------------------------------
+
+
+def test_week_totals_counts_every_labeled_message_plus_done():
+    # WEEK has 1 replied + 0 archived + 2 open = 3 still carrying the label,
+    # plus 2 closed with the done label (which have lost it) = 5 triaged.
+    assert week_totals(WEEK, 2, 4) == {"triaged": 5, "drafts": 4, "minutes": round(5 * 1.5 + 4 * 4)}
+
+
+def test_minutes_saved_uses_the_two_named_constants():
+    assert minutes_saved(0, 0) == 0
+    assert minutes_saved(10, 0) == round(10 * MINUTES_PER_TRIAGED)
+    assert minutes_saved(0, 10) == round(10 * MINUTES_PER_DRAFT)
+    assert (MINUTES_PER_TRIAGED, MINUTES_PER_DRAFT) == (1.5, 4.0), (
+        "the README names these two numbers -- change both together"
+    )
 
 
 def test_week_schema_is_strict():
