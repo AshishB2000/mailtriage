@@ -143,6 +143,9 @@ class Config:
     # A carried item open for at least this many days is flagged "still open"
     # (bold row + badge) in the digest's "Still waiting on you" section.
     nag_after_days: int = 3
+    # Put today's calendar at the top of the digest. Only does anything when
+    # the CALENDAR_ICS_URL secret (a private ICS feed URL) is set.
+    calendar: bool = True
     # Show the model up to 2 earlier messages of a candidate's Gmail thread
     # (read from All Mail, newest 15 candidates per run) so it can tell a
     # live conversation from a stale one. Read-only, a few extra fetches.
@@ -206,7 +209,14 @@ class Config:
         if not isinstance(cu, int) or isinstance(cu, bool) or not 60 <= cu <= 360:
             raise MailError(f"'catch_up_minutes' in {origin} must be a whole number from 60 to 360 (got {cu!r}).")
 
-        for name in ("draft_replies", "carry_over", "thread_context", "sender_memory", "show_unsubscribe"):
+        for name in (
+            "draft_replies",
+            "carry_over",
+            "thread_context",
+            "sender_memory",
+            "show_unsubscribe",
+            "calendar",
+        ):
             value = getattr(cfg, name)
             if not isinstance(value, bool):
                 raise MailError(f"'{name}' in {origin} must be true or false (got {value!r}).")

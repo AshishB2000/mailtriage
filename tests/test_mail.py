@@ -10,7 +10,7 @@ import pytest
 from mailtriage.config import Config
 from mailtriage.delivery import mail
 from mailtriage.errors import MailError
-from mailtriage.models import Triaged, WeekItem, WeekResult
+from mailtriage.models import Event, Triaged, WeekItem, WeekResult
 
 
 def _item(bucket: str, subject: str = "hi", **overrides: object) -> Triaged:
@@ -349,6 +349,58 @@ def test_email_html_footer_explains_label_and_reply_commands():
         "&quot;done 2&quot;",
     ):
         assert needle in html
+
+
+# --- Today block (sub-project F) ------------------------------------------
+
+
+def _event(summary: str, start: str = "2026-09-03T09:00:00+02:00", end: str = "", **over: object) -> Event:
+    base: Event = {
+        "summary": summary,
+        "location": "",
+        "url": "",
+        "start": start,
+        "end": end or start,
+        "all_day": False,
+    }
+    return cast(Event, {**base, **over})
+
+
+def test_email_html_today_block_sits_above_mail_and_links_the_invite():
+    events = [
+        _event("Holiday", start="2026-09-03", end="2026-09-04", all_day=True),
+        _event("Standup", end="2026-09-03T09:30:00+02:00", location="Room 4", url="https://meet.example/x"),
+    ]
+    items = [
+        _item("worth_reading", subject="a read"),
+        _item("needs_action", subject="Invitation: Standup @ Thu Sep 3, 2026 9am (alice@example.com)"),
+    ]
+    html = mail.email_html(_cfg(), items, today=date(2026, 9, 3), events=events)
+    assert html.index("Today") < html.index("Holiday") < html.index("Standup") < html.index("Needs action")
+    assert "All day" in html and "09:00–09:30" in html and "Room 4" in html
+    assert 'href="https://meet.example/x"' in html
+    assert "invite in your inbox: #1" in html  # needs_action is #1, worth_reading is #2
+
+
+def test_email_html_today_block_escapes_and_caps():
+    events = [_event(f"<b>{i}</b>") for i in range(20)]
+    html = mail.email_html(_cfg(), [_item("needs_action")], events=events)
+    assert "<b>0</b>" not in html and "&lt;b&gt;0&lt;/b&gt;" in html
+    assert "&lt;b&gt;11&lt;/b&gt;" in html and "&lt;b&gt;12&lt;/b&gt;" not in html
+
+
+def test_email_html_without_events_has_no_today_block():
+    assert "Today" not in mail.email_html(_cfg(), [_item("needs_action")])
+
+
+def test_invite_numbers_only_matches_invitation_looking_needs_action():
+    events = [_event("Standup"), _event("Retro")]
+    items = [
+        _item("needs_action", subject="Re: Standup notes"),  # not an invitation
+        _item("worth_reading", subject="Invitation: Retro"),  # wrong bucket
+        _item("needs_action", subject="Updated invitation: Standup @ Fri"),
+    ]
+    assert mail.invite_numbers(events, items, date(2026, 9, 3)) == {0: 2}
 
 
 def test_weekly_html_shows_done_count_only_when_nonzero():

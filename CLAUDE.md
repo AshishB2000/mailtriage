@@ -37,6 +37,8 @@ src/mailtriage/
   drafts.py     reply-drafting prompt + hostile-input-safe id mapping
   commands.py   Gmail as the control plane: done/snooze/never/vip labels,
                 replies to the digest ("done 3"), never/vip sender derivation
+  calendar.py   today's events from the CALENDAR_ICS_URL feed -- stdlib ICS
+                parser (DAILY/WEEKLY rules only), warns and never fails a run
   delivery/     dispatch, http.py, text.py (the one plain-text renderer),
                 mail.py (Resend), gmail.py (own-Gmail SMTP),
                 telegram.py slack.py discord.py ntfy.py (chat/push channels)
@@ -76,7 +78,8 @@ draft_replies: bool                draft_style: {tone, sign_off, language,
 draft_variants: 1 | 2                 max_sentences, learn_voice}
 rules: {always_ignore, always_surface, always_action}   accounts: {addr: {…}}
 carry_over: bool                   label: str
-nag_after_days: int
+nag_after_days: int                calendar: bool (only matters with
+                                      CALENDAR_ICS_URL set)
 thread_context: bool               sender_memory: bool
 show_unsubscribe: bool             noise: {label: bool, archive: bool}
                                       (archive requires label; both off)
@@ -101,6 +104,8 @@ one of: CLAUDE_CODE_OAUTH_TOKEN  ANTHROPIC_API_KEY  CODEX_AUTH_JSON
 RESEND_API_KEY      MAIL_ACCOUNTS      MAIL_PW_<HASH> (one per address)
 one of, by delivery: TELEGRAM_BOT_TOKEN  SLACK_WEBHOOK_URL  DISCORD_WEBHOOK_URL
                      NTFY_TOPIC_URL   (the wizard PUTs exactly the chosen one)
+CALENDAR_ICS_URL    (optional; the URL is the credential -- never log it,
+                     calendar.py reports a failed fetch by type name only)
 ```
 
 **Delivery contract**: every module in `delivery/` exposes

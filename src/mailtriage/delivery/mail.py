@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html
 import os
+import re
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -15,12 +16,69 @@ from mailtriage.config import Config
 from mailtriage.delivery.http import post_json
 from mailtriage.delivery.text import digest_text, html_to_text
 from mailtriage.errors import MailError
-from mailtriage.models import Triaged, WeekItem, WeekResult
+from mailtriage.models import Event, Triaged, WeekItem, WeekResult
 from mailtriage.schedule import local_zone
 
 INK, DIM, RULE, PAPER = "#16161a", "#6b6b76", "#e4e2dd", "#faf9f7"
 SERIF = "Georgia,'Times New Roman',serif"
 SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
+
+MAX_EVENTS = 12  # "Today" rows per digest; the rest of a packed day is left to the calendar itself
+_INVITE_RE = re.compile(r"^(updated )?invitation:|rsvp", re.IGNORECASE)
+
+
+def invite_numbers(events: list[Event], triaged: list[Triaged], today: date) -> dict[int, int]:
+    """event index -> digest item number, for events whose summary appears in
+    the subject of a needs_action item that looks like a calendar invitation
+    ("Invitation: Standup @ Thu ...", "Updated invitation: ...", "... RSVP").
+    Same #N numbering as digest_groups, so the link in the Today block points
+    at the right row."""
+    numbered: list[tuple[int, Triaged]] = []
+    n = 1
+    for _kind, _heading, items in digest_groups(triaged, today):
+        numbered.extend((n + i, it) for i, it in enumerate(items))
+        n += len(items)
+    out: dict[int, int] = {}
+    for i, ev in enumerate(events):
+        summary = ev["summary"].strip().lower()
+        if not summary:
+            continue
+        for num, it in numbered:
+            subject = it["subject"]
+            if it["bucket"] == "needs_action" and _INVITE_RE.search(subject) and summary in subject.lower():
+                out[i] = num
+                break
+    return out
+
+
+def event_time(ev: Event) -> str:
+    """ "All day", or "09:00–09:30" (just "09:00" for a zero-length event)."""
+    if ev["all_day"]:
+        return "All day"
+    start, end = datetime.fromisoformat(ev["start"]), datetime.fromisoformat(ev["end"])
+    return f"{start:%H:%M}–{end:%H:%M}" if end > start else f"{start:%H:%M}"
+
+
+def _today_block(events: list[Event], invites: dict[int, int]) -> str:
+    if not events:
+        return ""
+    rows = ""
+    for i, ev in enumerate(events[:MAX_EVENTS]):
+        title = html.escape(ev["summary"] or "(untitled)")
+        if ev["url"]:
+            title = (
+                f'<a href="{html.escape(ev["url"], quote=True)}" style="color:{INK};text-decoration:none;">{title}</a>'
+            )
+        extra = f" &nbsp;·&nbsp; {html.escape(ev['location'])}" if ev["location"] else ""
+        if i in invites:
+            extra += (
+                f' &nbsp;·&nbsp; <span class="muted" style="color:{DIM};">invite in your inbox: #{invites[i]}</span>'
+            )
+        rows += f"""
+      <tr><td style="padding:0 0 10px 0;font:400 14px/1.5 {SANS};color:{INK};">
+        <span class="muted" style="display:inline-block;min-width:96px;color:{DIM};font-variant-numeric:tabular-nums;">{html.escape(event_time(ev))}</span>{title}{extra}
+      </td></tr>"""
+    return _section("Today", rows)
 
 
 def _draft_block(draft: str, has_full: bool = False) -> str:
@@ -199,11 +257,15 @@ COMMANDS_HINT = (
 )
 
 
-def email_html(cfg: Config, triaged: list[Triaged], today: date | None = None) -> str:
+def email_html(
+    cfg: Config, triaged: list[Triaged], today: date | None = None, events: list[Event] | None = None
+) -> str:
     needs_action = [t for t in triaged if t["bucket"] == "needs_action"]
     worth_reading = [t for t in triaged if t["bucket"] == "worth_reading"]
     today = today or datetime.now(local_zone(cfg.timezone)).date()
-    sections, n = "", 1
+    events = events or []
+    # Today's calendar sits above the mail: the day's shape first, then the debts.
+    sections, n = _today_block(events, invite_numbers(events, triaged, today)), 1
     # Carried debts sit right after Needs action, before Worth reading --
     # they're the oldest items in the digest, closest to the top on purpose.
     for kind, heading, items in digest_groups(triaged, today):
@@ -361,6 +423,6 @@ def send_html(cfg: Config, subject: str, html_body: str) -> None:
     _send(cfg, subject, html_to_text(html_body), html_body)
 
 
-def send(cfg: Config, triaged: list[Triaged], stamp: str = "") -> None:
-    html_body = None if cfg.digest_format == "text" else email_html(cfg, triaged)
+def send(cfg: Config, triaged: list[Triaged], stamp: str = "", events: list[Event] | None = None) -> None:
+    html_body = None if cfg.digest_format == "text" else email_html(cfg, triaged, events=events)
     _send(cfg, digest_subject(cfg, triaged, stamp), digest_text(triaged), html_body)

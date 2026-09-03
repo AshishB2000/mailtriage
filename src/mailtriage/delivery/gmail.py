@@ -16,7 +16,7 @@ from mailtriage.delivery.mail import digest_subject, email_html
 from mailtriage.delivery.text import digest_text, html_to_text
 from mailtriage.errors import MailError
 from mailtriage.imap_pull import accounts_from_env, app_password, pw_env_var
-from mailtriage.models import Triaged
+from mailtriage.models import Event, Triaged
 
 
 def _send(cfg: Config, subject: str, text: str, html_body: str | None) -> None:
@@ -71,6 +71,6 @@ def send_html(cfg: Config, subject: str, html_body: str) -> None:
     _send(cfg, subject, html_to_text(html_body), html_body)
 
 
-def send(cfg: Config, triaged: list[Triaged], stamp: str = "") -> None:
-    html_body = None if cfg.digest_format == "text" else email_html(cfg, triaged)
+def send(cfg: Config, triaged: list[Triaged], stamp: str = "", events: list[Event] | None = None) -> None:
+    html_body = None if cfg.digest_format == "text" else email_html(cfg, triaged, events=events)
     _send(cfg, digest_subject(cfg, triaged, stamp), digest_text(triaged), html_body)

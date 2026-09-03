@@ -16,7 +16,7 @@ from mailtriage.delivery.http import post
 from mailtriage.delivery.mail import digest_subject
 from mailtriage.delivery.text import html_to_text, render
 from mailtriage.errors import MailError
-from mailtriage.models import Triaged
+from mailtriage.models import Event, Triaged
 
 PRIORITY_ACTION, PRIORITY_DEFAULT = "4", "3"
 
@@ -58,7 +58,7 @@ def _post(text: str, title: str, click: str, priority: str) -> None:
         )
 
 
-def send(cfg: Config, kept: list[Triaged], stamp: str = "") -> None:
+def send(cfg: Config, kept: list[Triaged], stamp: str = "", events: list[Event] | None = None) -> None:
     actions = [t for t in kept if t["bucket"] == "needs_action"]
     first = (actions or kept)[0]["link"] if kept else ""
     _post(

@@ -228,6 +228,7 @@ workflows, go ahead and enable them."**
 | one `MAIL_PW_*` per address | the app password for that address (see step 4) |
 | `EMAIL_TO` *(optional)* | where the digest is delivered. For `delivery: gmail`, defaults to your first `MAIL_ACCOUNTS` address if unset |
 | `EMAIL_FROM` *(optional)* | who it's sent from. Same default as above for `delivery: gmail`; required for `delivery: email` (Resend) |
+| `CALENDAR_ICS_URL` *(optional)* | a private ICS feed URL — see [Your day](#your-day) |
 
 **The `MAIL_PW_*` names are the most error-prone step.** Each is
 `MAIL_PW_` + the first 16 hex characters (upper-cased) of a BLAKE2b-128 hash
@@ -670,6 +671,35 @@ picked; the Actions log only ever shows counts.
 
 ---
 
+## Your day
+
+Set the `CALENDAR_ICS_URL` secret and every digest opens with a **Today**
+block — the day's events in your `timezone`, all-day ones first, time ·
+title · location, capped at 12. When an event's title matches a calendar
+invitation sitting in your needs-action list ("Invitation: …", "Updated
+invitation: …", anything with "RSVP"), the row says *invite in your inbox:
+#N* so you can find it.
+
+**Where to find the URL (Google Calendar):** Settings → *Settings for my
+calendars* → pick the calendar → *Integrate calendar* → **Secret address in
+iCal format**. It is a secret because the URL *is* the credential: anyone
+holding it can read that calendar. That is why it lives in an encrypted
+Actions secret like your API keys, never in `config.yaml`, and why the
+engine's log never prints it — a failed fetch is reported by error type
+only. The setup wizard has a **Calendar** field that seals and uploads it
+for you. Any private ICS feed works, not just Google's.
+
+Nothing is stored: the feed is fetched fresh on each run (20-second
+timeout, 5 MB cap), parsed with the standard library, and dropped. A feed
+that is down or malformed prints a warning and the digest still goes out
+without the block. Recurring events are expanded for today only, for
+`FREQ=DAILY` and `FREQ=WEEKLY` rules (`INTERVAL`, `BYDAY`, `UNTIL`, `COUNT`,
+`EXDATE`); monthly/yearly rules and other exotica are skipped rather than
+guessed at. `calendar: false` in `config.yaml` turns the block off without
+deleting the secret.
+
+---
+
 ## The 60-day caveat
 
 GitHub automatically disables scheduled workflows on a repo after **60 days
@@ -819,6 +849,7 @@ src/mailtriage/
   rules.py           VIP-sender rules, checked deterministically around the model
   imap_pull.py       account/password lookup, IMAP fetch, time-window filter, push_drafts
   commands.py        Gmail as the control plane: done/snooze/never/vip labels + replies to the digest
+  calendar.py        today's events from a private ICS feed (CALENDAR_ICS_URL), stdlib parser
   triage/            the triage prompt (__init__.py)   <- the product
                        + 6 backends: claude_api, claude_cli, codex_cli, openai_api, gemini_api, gemini_cli
   drafts.py          the reply-drafting prompt + hostile-input-safe id mapping

@@ -916,6 +916,23 @@ footer a{color:var(--muted)}
     </div>
 
     <div class="sect">
+      <h3>Your day</h3>
+      <label class="toggle">
+        <input type="checkbox" id="calendarOn" checked>
+        <span>Put today's calendar at the top of the digest</span>
+      </label>
+      <div class="f" id="f-calendarIcs" style="margin-top:14px">
+        <label for="calendarIcs">Calendar (optional)</label>
+        <p class="hint">Google Calendar → Settings → your calendar → <strong>Secret address in iCal format</strong>. The URL is the credential, so it's stored as the encrypted <code>CALENDAR_ICS_URL</code> secret. Leave blank to keep whatever's already set, or to skip the calendar.</p>
+        <div class="reveal">
+          <input type="password" id="calendarIcs" class="mono" placeholder="https://calendar.google.com/calendar/ical/…/private-…/basic.ics" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="calendarIcs">Show</button>
+        </div>
+        <div class="msg"></div>
+      </div>
+    </div>
+
+    <div class="sect">
       <h3>Digest size</h3>
       <div class="f">
         <label for="count">Max items per digest <span id="countOut" style="color:var(--accent);font-variant-numeric:tabular-nums">8</span></label>
@@ -1307,6 +1324,10 @@ function buildYaml(v) {
     "noise:",
     "  label: " + ((v.noise || {}).label ? "true" : "false"),
     "  archive: " + ((v.noise || {}).archive ? "true" : "false"),
+    "",
+    "# Today's calendar at the top of the digest -- needs the CALENDAR_ICS_URL",
+    "# secret (a private ICS feed URL); does nothing without it.",
+    "calendar: " + (v.calendar ? "true" : "false"),
     ""
   ].join("\n");
 }
@@ -1573,6 +1594,7 @@ function applyConfig(cfg) {
   if (typeof cfg.carry_over === "boolean") $("#carryOver").checked = cfg.carry_over;
   if (cfg.label != null && cfg.label !== "") $("#label").value = cfg.label;
   if (typeof cfg.nag_after_days === "number") $("#nagAfterDays").value = cfg.nag_after_days;
+  if (typeof cfg.calendar === "boolean") $("#calendarOn").checked = cfg.calendar;
   if (typeof cfg.thread_context === "boolean") $("#threadContext").checked = cfg.thread_context;
   if (typeof cfg.sender_memory === "boolean") $("#senderMemory").checked = cfg.sender_memory;
   if (typeof cfg.show_unsubscribe === "boolean") $("#showUnsubscribe").checked = cfg.show_unsubscribe;
@@ -1889,6 +1911,7 @@ function collect() {
     carry_over: $("#carryOver").checked,
     label: $("#label").value.trim(),
     nag_after_days: Math.max(1, +$("#nagAfterDays").value || 3),
+    calendar: $("#calendarOn").checked,
     thread_context: $("#threadContext").checked,
     sender_memory: $("#senderMemory").checked,
     show_unsubscribe: $("#showUnsubscribe").checked,
@@ -1933,6 +1956,8 @@ function validate() {
 
   if ($$(".run-at-time").some((i) => !i.value)) fail("runAt", "Every digest time needs a value.");
   if (!v.label) fail("label", "Needed — this is the Gmail label carried-over mail gets.");
+  const ics = $("#calendarIcs").value.trim();
+  if (ics && !/^https?:\/\/\S+$/.test(ics)) fail("calendarIcs", "This should be the full https:// address of the ICS feed.");
 
   let firstAcctBad = null;
   const seen = new Set();
@@ -1981,6 +2006,9 @@ $("#go3").addEventListener("click", async () => {
   }
   if (v.email_to) S.secrets.EMAIL_TO = v.email_to;
   if (v.email_from) S.secrets.EMAIL_FROM = v.email_from;
+  // The calendar feed URL is the credential -- sealed like every other secret.
+  const ics = $("#calendarIcs").value.trim();
+  if (ics) S.secrets.CALENDAR_ICS_URL = ics;
   const accounts = collectAccounts();
   S.secrets.MAIL_ACCOUNTS = accounts.map((a) => a.email).join(",");
   v.accounts = {};

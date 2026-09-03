@@ -31,6 +31,13 @@ def test_defaults_match_shipped_config():
     assert cfg.nag_after_days == 3
 
 
+def test_calendar_defaults_on_and_must_be_bool():
+    assert Config.from_mapping(MINIMAL).calendar is True
+    assert Config.from_mapping({**MINIMAL, "calendar": False}).calendar is False
+    with pytest.raises(MailError, match="calendar"):
+        Config.from_mapping({**MINIMAL, "calendar": "yes"})
+
+
 def test_nag_after_days_must_be_a_positive_int():
     assert Config.from_mapping({**MINIMAL, "nag_after_days": 7}).nag_after_days == 7
     for bad in (0, -1, "3", True, 2.5):

@@ -146,6 +146,7 @@ def test_secret_names_appear_in_wizard_and_readme():
         "GEMINI_OAUTH_JSON",
         "MAIL_ACCOUNTS",
         "RESEND_API_KEY",
+        "CALENDAR_ICS_URL",
     ):
         assert name in WIZARD, f"secret '{name}' missing from the wizard"
         assert name in readme, f"secret '{name}' missing from the README setup docs"
@@ -289,6 +290,7 @@ def test_wizard_never_persists_secrets_to_localstorage():
         "hook",
         "ntfy",
         "tg",
+        "ics",
     ):
         assert forbidden not in keep_line.lower(), (
             f"localStorage KEEP list appears to persist a secret field ('{forbidden}' found in: {keep_line.strip()})"

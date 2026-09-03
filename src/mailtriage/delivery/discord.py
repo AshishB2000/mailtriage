@@ -15,7 +15,7 @@ from mailtriage.delivery.http import post_json
 from mailtriage.delivery.mail import digest_subject
 from mailtriage.delivery.text import chunk, html_to_text, render
 from mailtriage.errors import MailError
-from mailtriage.models import Triaged
+from mailtriage.models import Event, Triaged
 
 DISCORD_LIMIT = 1900  # hard cap is 2000 chars per message
 SUPPRESS_EMBEDS = 4
@@ -61,7 +61,7 @@ def _post(text: str) -> None:
             )
 
 
-def send(cfg: Config, kept: list[Triaged], stamp: str = "") -> None:
+def send(cfg: Config, kept: list[Triaged], stamp: str = "", events: list[Event] | None = None) -> None:
     _post(discord_markdown(cfg, kept, stamp))
 
 

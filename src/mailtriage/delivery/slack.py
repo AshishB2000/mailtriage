@@ -13,7 +13,7 @@ from mailtriage.delivery.http import post_json
 from mailtriage.delivery.mail import digest_subject
 from mailtriage.delivery.text import chunk, html_to_text, render
 from mailtriage.errors import MailError
-from mailtriage.models import Triaged
+from mailtriage.models import Event, Triaged
 
 SLACK_LIMIT = 3000  # a webhook message over ~4000 chars is truncated; 3000 leaves room
 
@@ -56,7 +56,7 @@ def _post(text: str) -> None:
             )
 
 
-def send(cfg: Config, kept: list[Triaged], stamp: str = "") -> None:
+def send(cfg: Config, kept: list[Triaged], stamp: str = "", events: list[Event] | None = None) -> None:
     _post(slack_mrkdwn(cfg, kept, stamp))
 
 

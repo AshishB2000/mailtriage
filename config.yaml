@@ -166,6 +166,11 @@ label: "mailtriage/action"
 # is flagged in bold with a "still open" badge.
 nag_after_days: 3
 
+# Show today's calendar at the top of the digest. Needs the CALENDAR_ICS_URL
+# secret (Google Calendar -> Settings -> your calendar -> "Secret address in
+# iCal format"); with no secret set this does nothing. See README.md.
+calendar: true
+
 # Optional: more than one digest. Each profile covers a subset of your
 # MAIL_ACCOUNTS addresses and may override ANY key above (delivery,
 # telegram_chat_id, run_at, timezone, weekly_review, interests, avoid,

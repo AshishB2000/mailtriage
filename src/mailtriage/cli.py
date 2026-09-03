@@ -9,6 +9,7 @@ from datetime import date, datetime, timezone
 from email.utils import parseaddr
 
 from mailtriage import __version__
+from mailtriage.calendar import today_events
 from mailtriage.commands import apply_label_commands, count_done, derive_sender_rules, handle_replies, with_sender_rules
 from mailtriage.config import Config, load_config
 from mailtriage.errors import MailError
@@ -24,7 +25,7 @@ from mailtriage.imap_pull import (
     pull_week,
     push_drafts,
 )
-from mailtriage.models import Email, Triaged, WeekResult
+from mailtriage.models import Email, Event, Triaged, WeekResult
 from mailtriage.schedule import current_slot, due, local_zone
 
 UNSUBSCRIBE_CAP = 20  # senders in the digest's noise footer
@@ -122,11 +123,29 @@ def _handle_due(cfg: Config, now: datetime, event: str) -> int:
     return 3
 
 
-def _print_digest(cfg: Config, kept: list[Triaged], today: date) -> None:
+def _print_digest(cfg: Config, kept: list[Triaged], today: date, events: list[Event] | None = None) -> None:
     # Same section order and #N numbering as the HTML (delivery.mail owns
     # both), so a --dry-run transcript reads like the email would.
-    from mailtriage.delivery.mail import calendar_link, digest_groups, waiting_days
+    from mailtriage.delivery.mail import (
+        MAX_EVENTS,
+        calendar_link,
+        digest_groups,
+        event_time,
+        invite_numbers,
+        waiting_days,
+    )
 
+    events = events or []
+    if events:
+        print("Today")
+        invites = invite_numbers(events, kept, today)
+        for i, ev in enumerate(events[:MAX_EVENTS]):
+            line = f"  {event_time(ev)} · {ev['summary'] or '(untitled)'}"
+            if ev["location"]:
+                line += f" · {ev['location']}"
+            if i in invites:
+                line += f" · invite in your inbox: #{invites[i]}"
+            print(line)
     n = 1
     for kind, heading, items in digest_groups(kept, today):
         print(heading)
@@ -435,11 +454,15 @@ def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> Non
         print(f"mailtriage: {len(noise)} unsubscribe link(s) in the noise footer.", file=sys.stderr)
         kept = kept + noise
 
+    # Today's calendar rides along with a digest; it never conjures one up on
+    # its own (the "kept none -> send nothing" return above still stands).
+    events = today_events(os.environ, cfg, now)
+
     if dry_run:
-        _print_digest(cfg, kept, today)
+        _print_digest(cfg, kept, today, events)
         return
 
-    send(cfg, kept, stamp)
+    send(cfg, kept, stamp, events)
     print(f"mailtriage: delivered {len(kept)} item(s) via {cfg.delivery}.", file=sys.stderr)
 
 
