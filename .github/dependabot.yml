@@ -1,0 +1,9 @@
+# Keeps the commit-SHA pins in .github/workflows/*.yml current. Forks don't
+# run Dependabot by default; bumps land upstream and reach forks through
+# upstream-sync.yml.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
