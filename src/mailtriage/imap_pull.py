@@ -141,6 +141,22 @@ def snippet_of(msg: EmailMessage, limit: int = 200) -> str:
     return " ".join(text.split())[:limit]
 
 
+def attachments_of(msg: EmailMessage, limit: int = 10) -> list[str]:
+    """'name (content/type)' for every part that is an attachment or carries a
+    filename (inline images with a name count; unnamed body parts don't)."""
+    out: list[str] = []
+    for part in msg.walk():
+        if part.is_multipart():
+            continue
+        name = part.get_filename()
+        if not name and "attachment" not in str(part.get("Content-Disposition", "")).lower():
+            continue
+        out.append(f"{name or 'unnamed'} ({part.get_content_type()})")
+        if len(out) == limit:
+            break
+    return out
+
+
 def _email_from_msg(msg: EmailMessage, addr: str, flags: str, dt: datetime, uid: str) -> Email:
     return {
         "account": addr,
@@ -155,6 +171,7 @@ def _email_from_msg(msg: EmailMessage, addr: str, flags: str, dt: datetime, uid:
         "reply_to": str(msg.get("Reply-To", "") or msg.get("From", "")),
         "uid": uid,
         "thrid": _extract_thrid(flags),
+        "attachments": attachments_of(msg),
     }
 
 

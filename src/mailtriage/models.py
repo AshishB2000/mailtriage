@@ -28,6 +28,7 @@ class Email(_EmailBase, total=False):
 
     thrid: str  # Gmail X-GM-THRID from the fetch; "" when the server didn't return one
     thread: list[str]  # imap_pull.enrich: "<age> · <from>: <snippet>" for up to 2 earlier thread messages, oldest first
+    attachments: list[str]  # "invoice.pdf (application/pdf)" per attached or named part, from the fetch itself
 
 
 class PullResult(TypedDict):

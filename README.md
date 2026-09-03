@@ -626,6 +626,10 @@ picked; the Actions log only ever shows counts.
   of that thread (sender, age, a short snippet), read from All Mail. Capped
   at the newest 15 candidates per run so a busy inbox stays a handful of extra
   fetches.
+- **Attachments** (always on, no extra fetch) — attachment names and types
+  are listed under each candidate, and the model is told that an invoice, a
+  contract, an e-sign request or a form usually means `needs_action` even
+  when the body is one line.
 
 ---
 

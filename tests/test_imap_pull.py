@@ -130,6 +130,47 @@ def test_parse_message_seen_flag_marks_read():
     assert rec["unread"] is False
 
 
+def test_parse_message_reads_thrid_and_has_no_attachments_for_plain_text():
+    rec = parse_message(RAW, "me@gmail.com", "1 (UID 7 X-GM-THRID 1234567 FLAGS () BODY[]", NOW, 13)
+    assert rec is not None
+    assert rec["thrid"] == "1234567"
+    assert rec["attachments"] == []
+
+
+MULTIPART = (
+    b"From: Billing <billing@vendor.com>\r\n"
+    b"Subject: Invoice 42\r\n"
+    b"Date: Fri, 28 Aug 2026 09:00:00 +0000\r\n"
+    b"Message-ID: <inv42@vendor.com>\r\n"
+    b'Content-Type: multipart/mixed; boundary="B"\r\n'
+    b"\r\n"
+    b"--B\r\n"
+    b"Content-Type: text/plain; charset=utf-8\r\n"
+    b"\r\n"
+    b"See attached.\r\n"
+    b"--B\r\n"
+    b"Content-Type: application/pdf\r\n"
+    b'Content-Disposition: attachment; filename="invoice-42.pdf"\r\n'
+    b"Content-Transfer-Encoding: base64\r\n"
+    b"\r\n"
+    b"JVBERi0=\r\n"
+    b"--B\r\n"
+    b"Content-Type: image/png\r\n"
+    b'Content-Disposition: inline; filename="logo.png"\r\n'
+    b"Content-Transfer-Encoding: base64\r\n"
+    b"\r\n"
+    b"iVBORw0=\r\n"
+    b"--B--\r\n"
+)
+
+
+def test_parse_message_lists_attachments_and_named_inline_parts():
+    rec = parse_message(MULTIPART, "me@gmail.com", "1 (FLAGS () BODY[]", NOW, 13)
+    assert rec is not None
+    assert rec["snippet"] == "See attached."
+    assert rec["attachments"] == ["invoice-42.pdf (application/pdf)", "logo.png (image/png)"]
+
+
 def test_parse_message_out_of_window_returns_none():
     old = RAW.replace(b"28 Aug 2026", b"20 Aug 2026")
     assert parse_message(old, "me@gmail.com", "1 (FLAGS () BODY[]", NOW, 13) is None

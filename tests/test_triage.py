@@ -133,6 +133,9 @@ BUCKETS
 - worth_reading: a real human or real content worth a glance, with nothing the reader needs to do about it.
 - Anything else — newsletters, promotions, receipts, automated notifications — is noise. Do not return noise at all. There is no third bucket for it; simply omit it.
 
+SIGNALS
+- attachments: invoices, contracts, e-sign requests and forms in attachments usually mean needs_action even when the body is short.
+
 HOW MANY TO RETURN
 - needs_action has no cap. Never drop a message that genuinely needs action just to keep the list short.
 - worth_reading: return at most {CFG.reading_count}, and you are explicitly permitted — and expected — to return fewer. Most windows do not contain {CFG.reading_count} things worth reading; feeds and mailing lists post on their own schedule, not this reader's. An honest short list beats a padded one: if a worth_reading item is only there to reach {CFG.reading_count}, leaving it out makes the digest strictly better. Padding is the failure that kills this product — it trains the reader to stop opening it. Returning an empty worth_reading list is valid and correct.
@@ -221,6 +224,14 @@ def test_build_user_renders_thread_context_indented_under_candidate():
     block = user.split("[1]")[0]
     assert "    earlier in this thread:\n      2d ago · Bob <bob@x.com>: first ask\n      5h ago · Me" in block
     assert "earlier in this thread" not in user.split("[1]")[1]  # only under the candidate that has it
+
+
+def test_build_user_lists_attachments_under_candidate():
+    now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+    em = make_email(0)
+    em["attachments"] = ["invoice.pdf (application/pdf)", "sign-here.docx (application/msword)"]
+    user = triage.build_user([em], now)
+    assert "\n    attachments: invoice.pdf (application/pdf), sign-here.docx (application/msword)" in user
 
 
 def test_build_user_without_context_is_unchanged():
