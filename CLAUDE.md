@@ -115,6 +115,25 @@ as a `// vector:` comment. The pre-hash `MAIL_PW_<SLUG>` (address upper-cased,
 non-alphanumerics → `_`) is **deprecated**: `imap_pull.app_password` still
 reads it as a fallback so old forks keep working; nothing writes it.
 
+**The wizard reads as well as writes.** Its Dashboard screen
+(docs/index.html, `loadDash`) is a read-only view of the fork through the
+same REST API: `GET .../actions/workflows/digest.yml` (state, for the
+60-day disable + `PUT .../enable`), `.../workflows/digest.yml/runs?per_page=10`
+plus `.../runs/{id}/jobs` (a run whose "Send digest" step was skipped is
+shown as *not a slot*), `.../actions/secrets` (names only -- it never sees a
+value), `.../commits?per_page=1&sha=<default_branch>` (60-day timer),
+`.../contents/config.yaml` (next slot, computed client-side from
+`run_at`/`timezone`/`weekly_review` with Intl only -- the "next slot" half
+of `schedule.due`, no catch-up), and
+`GET /repos/AshishB2000/mailtriage/compare/main...<owner>:<default_branch>`
+(`behind_by`). Its buttons `POST .../workflows/digest.yml/dispatches` with
+`inputs: {mode}` -- `MODES` in the wizard is pinned to digest.yml's `mode`
+options by `tests/test_contracts.py`; a 422 (fork's workflow predates the
+input) retries input-less -- and `.../workflows/upstream-sync.yml/dispatches`.
+`docs/sample-digest.html` is the preview it iframes: rendered by
+`scripts/render_sample.py` through the real `email_html`, and
+`tests/test_sample.py` fails if the committed file drifts from the template.
+
 **The workflow must stay at `.github/workflows/digest.yml`** — the wizard
 dispatches it by that literal filename.
 

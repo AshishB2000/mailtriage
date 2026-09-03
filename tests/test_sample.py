@@ -8,12 +8,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def _render():
+def _render() -> str:
     spec = importlib.util.spec_from_file_location("render_sample", ROOT / "scripts" / "render_sample.py")
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod.render()
+    html: str = mod.render()
+    return html
 
 
 def test_committed_sample_matches_current_template():
