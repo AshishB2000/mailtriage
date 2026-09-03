@@ -34,10 +34,13 @@ on:
       # default must stay the normal run. "doctor" runs `mailtriage --doctor`:
       # config, each account's IMAP login, the provider on a fixed fixture,
       # and one real test message through delivery -- PASS/FAIL per check.
+      # "bench" scores the triage prompt against the synthetic inbox in
+      # mailtriage/bench.py: one model call, no mailbox, no delivery, and
+      # nothing private in the log because none of that mail is real.
       mode:
         description: "What to run"
         type: choice
-        options: [digest, weekly, doctor]
+        options: [digest, weekly, doctor, bench]
         default: digest
 
 permissions:
@@ -157,5 +160,6 @@ jobs:
           case "$MODE" in
             weekly) mailtriage --weekly ;;
             doctor) mailtriage --doctor ;;
+            bench) mailtriage --bench ;;
             *) mailtriage ;;
           esac

@@ -331,8 +331,12 @@ def test_wizard_modes_match_digest_yml_dispatch_input():
     workflow = (ROOT / ".github" / "workflows" / "digest.yml").read_text(encoding="utf-8")
     m = re.search(r"^\s+mode:\n(?:.*\n)*?\s+options: \[([^\]]*)\]", workflow, re.MULTILINE)
     assert m, "digest.yml has no workflow_dispatch `mode` input with an options list"
-    assert [o.strip() for o in m.group(1).split(",")] == _wizard_const_list("MODES") == ["digest", "weekly", "doctor"]
-    for mode in ("digest", "weekly", "doctor"):
+    assert (
+        [o.strip() for o in m.group(1).split(",")]
+        == _wizard_const_list("MODES")
+        == ["digest", "weekly", "doctor", "bench"]
+    )
+    for mode in ("digest", "weekly", "doctor", "bench"):
         assert f'data-mode="{mode}"' in WIZARD, f"dashboard has no button for mode {mode!r}"
 
 

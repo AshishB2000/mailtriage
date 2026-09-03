@@ -1021,6 +1021,7 @@ footer a{color:var(--muted)}
         <button class="btn btn-accent" data-mode="digest">Run now</button>
         <button class="btn btn-ghost" data-mode="doctor">Run doctor</button>
         <button class="btn btn-ghost" data-mode="weekly">Send weekly review</button>
+        <button class="btn btn-ghost" data-mode="bench">Score the triage</button>
       </div>
       <p class="status" id="dashRunStatus"></p>
     </div>
@@ -1073,7 +1074,7 @@ const WORKFLOW = "digest.yml";
 const SYNC_WORKFLOW = "upstream-sync.yml";
 // digest.yml's workflow_dispatch `mode` input, in its declared order. Pinned
 // against the workflow file by tests/test_contracts.py.
-const MODES = ["digest", "weekly", "doctor"];
+const MODES = ["digest", "weekly", "doctor", "bench"];
 
 // carry_over/label aren't exposed in the wizard UI yet -- written as fixed
 // defaults, same precedent as draft_replies below. Change by hand later.
