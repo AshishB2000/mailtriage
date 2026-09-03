@@ -143,6 +143,17 @@ class Config:
     # A carried item open for at least this many days is flagged "still open"
     # (bold row + badge) in the digest's "Still waiting on you" section.
     nag_after_days: int = 3
+    # Put today's calendar at the top of the digest. Only does anything when
+    # the CALENDAR_ICS_URL secret (a private ICS feed URL) is set.
+    calendar: bool = True
+    # Open the weekly review with a model-written paragraph (one extra call
+    # a week). A failed call falls back to the plain review, never no review.
+    weekly_narrative: bool = True
+    # BCP-47 base code for the digest's own words -- section headings,
+    # badges, footers. NOT what the model writes in: that is
+    # draft_style.language. Unknown code warns and falls back to "en".
+    # See delivery/strings.py for the languages that have a table.
+    language: str = "en"
     # Show the model up to 2 earlier messages of a candidate's Gmail thread
     # (read from All Mail, newest 15 candidates per run) so it can tell a
     # live conversation from a stale one. Read-only, a few extra fetches.
@@ -206,7 +217,15 @@ class Config:
         if not isinstance(cu, int) or isinstance(cu, bool) or not 60 <= cu <= 360:
             raise MailError(f"'catch_up_minutes' in {origin} must be a whole number from 60 to 360 (got {cu!r}).")
 
-        for name in ("draft_replies", "carry_over", "thread_context", "sender_memory", "show_unsubscribe"):
+        for name in (
+            "draft_replies",
+            "carry_over",
+            "thread_context",
+            "sender_memory",
+            "show_unsubscribe",
+            "calendar",
+            "weekly_narrative",
+        ):
             value = getattr(cfg, name)
             if not isinstance(value, bool):
                 raise MailError(f"'{name}' in {origin} must be true or false (got {value!r}).")
@@ -227,6 +246,7 @@ class Config:
             "timezone",
             "weekly_review",
             "label",
+            "language",
             "telegram_chat_id",
             "digest_format",
         ):
@@ -261,7 +281,20 @@ class Config:
         # circular import. Calling it from inside a function (after config.py
         # has already finished loading) sidesteps that -- config.py stays
         # import-light at module scope either way.
+        # `known` would shadow the local set of field names above.
+        from mailtriage.delivery.strings import LANGUAGES
+        from mailtriage.delivery.strings import known as known_language
         from mailtriage.schedule import local_zone, max_gap_pair
+
+        # A warning, not an error: an unknown language still gets a digest,
+        # in English. Failing the run over the wording of a heading would be
+        # a worse trade than an English heading.
+        if not known_language(cfg.language):
+            print(
+                f"mailtriage: no translation for language {cfg.language!r} in {origin}; "
+                f"using English. Available: {', '.join(LANGUAGES)}.",
+                file=sys.stderr,
+            )
 
         try:
             local_zone(cfg.timezone)

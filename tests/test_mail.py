@@ -10,7 +10,7 @@ import pytest
 from mailtriage.config import Config
 from mailtriage.delivery import mail
 from mailtriage.errors import MailError
-from mailtriage.models import Triaged, WeekItem, WeekResult
+from mailtriage.models import Event, Triaged, WeekItem, WeekResult
 
 
 def _item(bucket: str, subject: str = "hi", **overrides: object) -> Triaged:
@@ -323,7 +323,7 @@ def test_email_html_without_due_dates_has_no_groups():
 def test_digest_groups_sorts_dated_items_by_due():
     items = [_item("needs_action", subject="b", due="2026-09-30"), _item("needs_action", subject="a", due="2026-09-25")]
     groups = mail.digest_groups(items, date(2026, 9, 3))
-    assert [(k, h) for k, h, _ in groups] == [("action", "Needs action · Later")]
+    assert [(k, h) for k, h, _ in groups] == [("action", "needs_action:later")]
     assert [t["subject"] for t in groups[0][2]] == ["a", "b"]
 
 
@@ -349,6 +349,93 @@ def test_email_html_footer_explains_label_and_reply_commands():
         "&quot;done 2&quot;",
     ):
         assert needle in html
+
+
+# --- Today block (sub-project F) ------------------------------------------
+
+
+def _event(summary: str, start: str = "2026-09-03T09:00:00+02:00", end: str = "", **over: object) -> Event:
+    base: Event = {
+        "summary": summary,
+        "location": "",
+        "url": "",
+        "start": start,
+        "end": end or start,
+        "all_day": False,
+    }
+    return cast(Event, {**base, **over})
+
+
+def test_email_html_today_block_sits_above_mail_and_links_the_invite():
+    events = [
+        _event("Holiday", start="2026-09-03", end="2026-09-04", all_day=True),
+        _event("Standup", end="2026-09-03T09:30:00+02:00", location="Room 4", url="https://meet.example/x"),
+    ]
+    items = [
+        _item("worth_reading", subject="a read"),
+        _item("needs_action", subject="Invitation: Standup @ Thu Sep 3, 2026 9am (alice@example.com)"),
+    ]
+    html = mail.email_html(_cfg(), items, today=date(2026, 9, 3), events=events)
+    assert html.index("Today") < html.index("Holiday") < html.index("Standup") < html.index("Needs action")
+    assert "All day" in html and "09:00–09:30" in html and "Room 4" in html
+    assert 'href="https://meet.example/x"' in html
+    assert "invite in your inbox: #1" in html  # needs_action is #1, worth_reading is #2
+
+
+def test_email_html_today_block_escapes_and_caps():
+    events = [_event(f"<b>{i}</b>") for i in range(20)]
+    html = mail.email_html(_cfg(), [_item("needs_action")], events=events)
+    assert "<b>0</b>" not in html and "&lt;b&gt;0&lt;/b&gt;" in html
+    assert "&lt;b&gt;11&lt;/b&gt;" in html and "&lt;b&gt;12&lt;/b&gt;" not in html
+
+
+def test_email_html_without_events_has_no_today_block():
+    assert "Today" not in mail.email_html(_cfg(), [_item("needs_action")])
+
+
+def test_invite_numbers_only_matches_invitation_looking_needs_action():
+    events = [_event("Standup"), _event("Retro")]
+    items = [
+        _item("needs_action", subject="Re: Standup notes"),  # not an invitation
+        _item("worth_reading", subject="Invitation: Retro"),  # wrong bucket
+        _item("needs_action", subject="Updated invitation: Standup @ Fri"),
+    ]
+    assert mail.invite_numbers(events, items, date(2026, 9, 3)) == {0: 2}
+
+
+def test_weekly_html_time_saved_line_is_worded_as_an_estimate():
+    week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item()]}})
+    html = mail.weekly_html(_cfg(), week, totals={"triaged": 34, "drafts": 8, "minutes": 83})
+    assert "This week mailtriage handled 34 messages and drafted 8 replies" in html
+    assert "roughly 83 minutes" in html
+    assert "an estimate, not a measurement" in html
+
+
+def test_weekly_html_time_saved_singulars_and_zero():
+    week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item()]}})
+    one = mail.weekly_html(_cfg(), week, totals={"triaged": 1, "drafts": 1, "minutes": 1})
+    assert "handled 1 message and drafted 1 reply" in one and "roughly 1 minute " in one
+    # Nothing triaged and nothing drafted: the line is omitted, not "0 messages".
+    assert "This week mailtriage handled" not in mail.weekly_html(
+        _cfg(), week, totals={"triaged": 0, "drafts": 0, "minutes": 0}
+    )
+    assert "This week mailtriage handled" not in mail.weekly_html(_cfg(), week)
+
+
+def test_weekly_html_narrative_opens_the_review_escaped():
+    week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item("open one")]}})
+    narrative = {"summary": "You cleared <b>two</b>.\nOne is aging.", "patterns": ["Alice <always> waits"]}
+    html = mail.weekly_html(_cfg(), week, narrative=narrative)
+    assert "You cleared &lt;b&gt;two&lt;/b&gt;." in html and "<b>two</b>" not in html
+    assert "Alice &lt;always&gt; waits" in html and "Patterns" in html
+    assert html.index("Your week") < html.index("You cleared") < html.index("Patterns") < html.index("open one")
+
+
+def test_weekly_html_narrative_without_patterns_has_no_patterns_heading():
+    week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item()]}})
+    html = mail.weekly_html(_cfg(), week, narrative={"summary": "Quiet week.", "patterns": []})
+    assert "Quiet week." in html and "Patterns" not in html
+    assert "Quiet week." not in mail.weekly_html(_cfg(), week)
 
 
 def test_weekly_html_shows_done_count_only_when_nonzero():

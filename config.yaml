@@ -166,6 +166,24 @@ label: "mailtriage/action"
 # is flagged in bold with a "still open" badge.
 nag_after_days: 3
 
+# Show today's calendar at the top of the digest. Needs the CALENDAR_ICS_URL
+# secret (Google Calendar -> Settings -> your calendar -> "Secret address in
+# iCal format"); with no secret set this does nothing. See README.md.
+calendar: true
+
+# Open the weekly review with a model-written paragraph -- what got cleared,
+# what is aging, who keeps not getting an answer -- plus up to three
+# patterns. One extra model call a week; if it fails the plain review still
+# goes out.
+weekly_narrative: true
+
+# Language of the digest's OWN words -- section headings, badges, footers.
+# Your mail is never translated, and this is NOT what the AI writes replies
+# in (that's draft_style.language above). BCP-47 base codes with a table in
+# src/mailtriage/delivery/strings.py: en es fr de pt it nl hi ja. Anything
+# else prints a warning and falls back to English.
+language: "en"
+
 # Optional: more than one digest. Each profile covers a subset of your
 # MAIL_ACCOUNTS addresses and may override ANY key above (delivery,
 # telegram_chat_id, run_at, timezone, weekly_review, interests, avoid,

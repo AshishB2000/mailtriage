@@ -7,14 +7,17 @@ import os
 import sys
 from datetime import date, datetime, timezone
 from email.utils import parseaddr
+from typing import Any
 
 from mailtriage import __version__
+from mailtriage.calendar import today_events
 from mailtriage.commands import apply_label_commands, count_done, derive_sender_rules, handle_replies, with_sender_rules
 from mailtriage.config import Config, load_config
 from mailtriage.errors import MailError
 from mailtriage.imap_pull import (
     already_delivered,
     check_login,
+    count_drafts,
     enrich,
     label_actions,
     label_noise,
@@ -24,8 +27,9 @@ from mailtriage.imap_pull import (
     pull_week,
     push_drafts,
 )
-from mailtriage.models import Email, Triaged, WeekResult
+from mailtriage.models import Email, Event, Triaged, WeekResult
 from mailtriage.schedule import current_slot, due, local_zone
+from mailtriage.weekly import week_totals
 
 UNSUBSCRIBE_CAP = 20  # senders in the digest's noise footer
 
@@ -122,39 +126,75 @@ def _handle_due(cfg: Config, now: datetime, event: str) -> int:
     return 3
 
 
-def _print_digest(cfg: Config, kept: list[Triaged], today: date) -> None:
-    # Same section order and #N numbering as the HTML (delivery.mail owns
-    # both), so a --dry-run transcript reads like the email would.
-    from mailtriage.delivery.mail import calendar_link, digest_groups, waiting_days
+def _print_digest(cfg: Config, kept: list[Triaged], today: date, events: list[Event] | None = None) -> None:
+    # Same section order, #N numbering and (localized) headings as the HTML
+    # -- delivery.mail owns all three, so a --dry-run transcript reads like
+    # the email would in the reader's own language.
+    from mailtriage.delivery.mail import (
+        MAX_EVENTS,
+        calendar_link,
+        digest_groups,
+        event_time,
+        invite_numbers,
+        section_heading,
+        waiting_days,
+    )
+    from mailtriage.delivery.strings import t
 
+    events = events or []
+    if events:
+        print(t(cfg, "today"))
+        invites = invite_numbers(events, kept, today)
+        for i, ev in enumerate(events[:MAX_EVENTS]):
+            line = f"  {event_time(cfg, ev)} · {ev['summary'] or '(untitled)'}"
+            if ev["location"]:
+                line += f" · {ev['location']}"
+            if i in invites:
+                line += " · " + t(cfg, "invite_in_inbox", n=invites[i])
+            print(line)
     n = 1
-    for kind, heading, items in digest_groups(kept, today):
-        print(heading)
+    for kind, key, items in digest_groups(kept, today):
+        print(section_heading(cfg, key))
         for it in items:
             line = f"  #{n} {it['subject']} · {it['sender']}"
             if kind == "carried":
                 days = waiting_days(it["date"])
-                line += f" · waiting {days} day{'' if days == 1 else 's'}"
+                line += " · " + t(cfg, "waiting", days=t(cfg, "days", n=days))
                 if days >= cfg.nag_after_days:
-                    line += " · STILL OPEN"
+                    line += " · " + t(cfg, "still_open").upper()
             if it["note"]:
                 line += f" · {it['note']}"
             print(line)
             if it.get("due"):
-                print(f"    Due {it['due']} · {calendar_link(it)}")
+                print(f"    {t(cfg, 'due', date=it['due'])} · {calendar_link(it)}")
             if it["draft"]:
-                print(f"    Draft reply: {it['draft']}")
+                print(f"    {t(cfg, 'draft_reply')}: {it['draft']}")
                 if it.get("draft_full"):
-                    print("    (a fuller version is in Drafts)")
+                    print(f"    ({t(cfg, 'draft_full')})")
             n += 1
-    noise = [t for t in kept if t["bucket"] == "noise"]
+    noise = [x for x in kept if x["bucket"] == "noise"]
     if noise:  # unnumbered: not addressable by a reply, just links
-        print("Noise this week (unsubscribe links)")
+        print(t(cfg, "noise_this_week"))
         for it in noise:
             print(f"  {it['sender']} · {it['link']}")
 
 
-def _print_weekly(week: WeekResult, done_count: int = 0) -> None:
+def _print_weekly(
+    cfg: Config,
+    week: WeekResult,
+    done_count: int = 0,
+    narrative: dict[str, Any] | None = None,
+    totals: dict[str, int] | None = None,
+) -> None:
+    from mailtriage.delivery.mail import _saved_text
+
+    if narrative:
+        print(narrative["summary"])
+        for p in narrative["patterns"]:
+            print(f"  - {p}")
+        print()
+    if totals and (totals["triaged"] or totals["drafts"]):
+        print(_saved_text(cfg, totals))
     if done_count:
         print(f"{done_count} marked done via the mailtriage/done label")
     for account, buckets in week["accounts"].items():
@@ -192,6 +232,22 @@ def _slot_already_delivered(cfg: Config, stamp: str, now: datetime) -> bool:
     return False
 
 
+def _week_narrative(cfg: Config, week: WeekResult, done_count: int, now: datetime) -> dict[str, Any] | None:
+    """The model-written opening, or None. A provider error here is a
+    warning, never a lost review -- the plain roll-up still goes out."""
+    if not cfg.weekly_narrative:
+        return None
+    from mailtriage.triage import select_backend
+    from mailtriage.weekly import narrate_week
+
+    try:
+        _name, call = select_backend(cfg, os.environ)
+        return narrate_week(cfg, call, week, done_count, now.astimezone(local_zone(cfg.timezone)).date())
+    except MailError as e:
+        print(f"mailtriage: weekly narrative failed, sending the plain review: {e}", file=sys.stderr)
+        return None
+
+
 def run_weekly(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> None:
     # Imported here, not at module scope: mirrors run()'s lazy delivery
     # import (weekly_html lives in delivery.mail, alongside the Resend
@@ -222,12 +278,21 @@ def run_weekly(cfg: Config, dry_run: bool = False, only: set[str] | None = None)
         print("mailtriage: nothing this week — sending nothing.", file=sys.stderr)
         return
 
+    narrative = _week_narrative(cfg, week, done_count, now)
+    # An estimate, and the log says so -- see weekly.MINUTES_PER_*.
+    totals = week_totals(week, done_count, count_drafts(os.environ, now))
+    print(
+        f"mailtriage: this week {totals['triaged']} triaged, {totals['drafts']} drafted "
+        f"(~{totals['minutes']} min, estimated).",
+        file=sys.stderr,
+    )
+
     if dry_run:
-        _print_weekly(week, done_count)
+        _print_weekly(cfg, week, done_count, narrative, totals)
         return
 
     head = f"{cfg.subject_prefix} · {stamp}" if stamp else cfg.subject_prefix
-    send_html(cfg, f"{head} · weekly review", weekly_html(cfg, week, done_count))
+    send_html(cfg, f"{head} · weekly review", weekly_html(cfg, week, done_count, narrative, totals))
     done_part = f", {done_count} done" if done_count else ""
     print(
         f"mailtriage: weekly review delivered ({handled} handled{done_part}, {still_open} open) via {cfg.delivery}.",
@@ -435,11 +500,15 @@ def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> Non
         print(f"mailtriage: {len(noise)} unsubscribe link(s) in the noise footer.", file=sys.stderr)
         kept = kept + noise
 
+    # Today's calendar rides along with a digest; it never conjures one up on
+    # its own (the "kept none -> send nothing" return above still stands).
+    events = today_events(os.environ, cfg, now)
+
     if dry_run:
-        _print_digest(cfg, kept, today)
+        _print_digest(cfg, kept, today, events)
         return
 
-    send(cfg, kept, stamp)
+    send(cfg, kept, stamp, events)
     print(f"mailtriage: delivered {len(kept)} item(s) via {cfg.delivery}.", file=sys.stderr)
 
 

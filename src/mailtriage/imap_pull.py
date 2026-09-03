@@ -32,6 +32,11 @@ from urllib.parse import quote
 from mailtriage.errors import MailError as MailError
 from mailtriage.models import Email, EnrichResult, PullResult, Triaged, WeekItem, WeekResult
 
+# Header stamped on every draft push_drafts appends, and the one thing
+# count_drafts searches for -- the weekly "time saved" line counts drafts
+# mailtriage wrote, never one the reader wrote themselves.
+DRAFT_MARKER = "X-Mailtriage"
+
 
 def pw_env_var(addr: str) -> str:
     """Repo-secret name holding `addr`'s app password.
@@ -388,6 +393,10 @@ def _build_draft_message(account: str, src: Email, draft: str, suffix: str = "")
     if not subject.lower().startswith("re:"):
         subject = "Re: " + subject
     msg["Subject"] = subject + suffix
+    # The marker count_drafts searches for. A header, not a subject heuristic:
+    # the reader can rewrite a draft's subject entirely and it still counts,
+    # and a draft they wrote themselves never does.
+    msg[DRAFT_MARKER] = "draft"
     message_id = src["message_id"]
     if message_id:
         msg["In-Reply-To"] = message_id
@@ -395,6 +404,34 @@ def _build_draft_message(account: str, src: Email, draft: str, suffix: str = "")
     msg["Date"] = format_datetime(datetime.now(timezone.utc))
     msg.set_content(draft)
     return msg
+
+
+def count_drafts(environ: Mapping[str, str], now: datetime, days: int = 7, host: str = "imap.gmail.com") -> int:
+    """How many drafts mailtriage pushed in the last `days` days, across every
+    account's \\Drafts mailbox -- found by the `DRAFT_MARKER` header
+    `push_drafts` stamps, so a draft the reader wrote themselves never counts.
+    Search only, read-only, nothing fetched. Never raises: this is one
+    cosmetic line of the weekly review, and an unset MAIL_ACCOUNTS or a dead
+    account contributes 0 rather than costing the reader their review."""
+    since = (now - timedelta(days=days)).strftime("%d-%b-%Y")
+    total = 0
+    try:
+        accounts = accounts_from_env(environ)
+    except MailError:
+        return 0
+    for addr, pw in accounts:
+        with contextlib.suppress(Exception):  # imaplib raises many unrelated types; a count never fails a run
+            M = imaplib.IMAP4_SSL(host, 993)
+            try:
+                M.login(addr, pw)
+                M.select(_quote_mailbox(_find_drafts_mailbox(M.list()[1] or [])), readonly=True)
+                # None = default charset, same imaplib stub quirk as _replied_in_sent.
+                _, data = M.uid("SEARCH", None, "HEADER", DRAFT_MARKER, "draft", "SINCE", since)  # type: ignore[arg-type]
+                total += len(data[0].split() if data and data[0] else [])
+            finally:
+                with contextlib.suppress(Exception):
+                    M.logout()
+    return total
 
 
 def push_drafts(

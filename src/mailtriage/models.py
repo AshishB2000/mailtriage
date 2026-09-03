@@ -99,3 +99,15 @@ class WeekResult(TypedDict):
 
     accounts: dict[str, dict[str, list["WeekItem"]]]
     warnings: list[dict[str, str]]
+
+
+class Event(TypedDict):
+    """One of today's calendar events, from `calendar.parse_events`. Times are
+    ISO 8601 in cfg.timezone; a date-only "YYYY-MM-DD" when all_day."""
+
+    summary: str
+    location: str
+    url: str
+    start: str
+    end: str
+    all_day: bool

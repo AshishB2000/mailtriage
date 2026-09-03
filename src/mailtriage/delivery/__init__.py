@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from mailtriage.config import Config
 from mailtriage.delivery import discord, gmail, mail, ntfy, slack, telegram
-from mailtriage.models import Triaged
+from mailtriage.models import Event, Triaged
 
 BACKENDS = {
     "email": mail.send,
@@ -28,8 +28,8 @@ BACKENDS_HTML = {
 }
 
 
-def send(cfg: Config, triaged: list[Triaged], stamp: str = "") -> None:
-    BACKENDS[cfg.delivery](cfg, triaged, stamp)
+def send(cfg: Config, triaged: list[Triaged], stamp: str = "", events: list[Event] | None = None) -> None:
+    BACKENDS[cfg.delivery](cfg, triaged, stamp, events)
 
 
 def send_html(cfg: Config, subject: str, html: str) -> None:

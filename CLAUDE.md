@@ -37,7 +37,13 @@ src/mailtriage/
   drafts.py     reply-drafting prompt + hostile-input-safe id mapping
   commands.py   Gmail as the control plane: done/snooze/never/vip labels,
                 replies to the digest ("done 3"), never/vip sender derivation
+  calendar.py   today's events from the CALENDAR_ICS_URL feed -- stdlib ICS
+                parser (DAILY/WEEKLY rules only), warns and never fails a run
+  weekly.py     the weekly review's model-written opening: WEEK_SCHEMA,
+                WEEK_SYSTEM (snapshot-pinned), narrate_week() validates the
+                reply; also week_totals() + the two "time saved" constants
   delivery/     dispatch, http.py, text.py (the one plain-text renderer),
+                strings.py (the chrome, 9 languages, t(cfg, key)),
                 mail.py (Resend), gmail.py (own-Gmail SMTP),
                 telegram.py slack.py discord.py ntfy.py (chat/push channels)
   selfcheck.py  pre-flight assertions, run before any API spend
@@ -76,7 +82,14 @@ draft_replies: bool                draft_style: {tone, sign_off, language,
 draft_variants: 1 | 2                 max_sentences, learn_voice}
 rules: {always_ignore, always_surface, always_action}   accounts: {addr: {…}}
 carry_over: bool                   label: str
-nag_after_days: int
+nag_after_days: int                calendar: bool (only matters with
+                                      CALENDAR_ICS_URL set)
+weekly_narrative: bool             (model-written opening of --weekly; a
+                                      failed call degrades to the plain review)
+language: str                      (BCP-47 base code for the digest CHROME
+                                      only -- unknown warns, falls back to en.
+                                      NOT draft_style.language, which is what
+                                      the model writes in)
 thread_context: bool               sender_memory: bool
 show_unsubscribe: bool             noise: {label: bool, archive: bool}
                                       (archive requires label; both off)
@@ -101,10 +114,13 @@ one of: CLAUDE_CODE_OAUTH_TOKEN  ANTHROPIC_API_KEY  CODEX_AUTH_JSON
 RESEND_API_KEY      MAIL_ACCOUNTS      MAIL_PW_<HASH> (one per address)
 one of, by delivery: TELEGRAM_BOT_TOKEN  SLACK_WEBHOOK_URL  DISCORD_WEBHOOK_URL
                      NTFY_TOPIC_URL   (the wizard PUTs exactly the chosen one)
+CALENDAR_ICS_URL    (optional; the URL is the credential -- never log it,
+                     calendar.py reports a failed fetch by type name only)
 ```
 
 **Delivery contract**: every module in `delivery/` exposes
-`send(cfg, kept, stamp="")` and `send_html(cfg, subject, html)`, and is
+`send(cfg, kept, stamp="", events=None)` and `send_html(cfg, subject, html)`,
+and is
 registered in BOTH dicts in `delivery/__init__.py`
 (`tests/test_contracts.py` pins `BACKENDS == BACKENDS_HTML == DELIVERIES`).
 The chat channels render `text.render()` with their own bold/link
@@ -184,6 +200,24 @@ are flat-rate, the default costs nothing extra.
 
 - **No state, no seen-list.** `window_hours` (15 shipped) is the dedupe; it must stay ≥
   the largest cron gap (12h) or mail is skipped forever.
+- **`digest_groups` returns section KEYS, not headings.** The middle element
+  of each tuple is `"needs_action:overdue"` / `"still_waiting"` / ..., and
+  `delivery.mail.section_heading(cfg, key)` is the only thing that reads
+  `cfg.language`. Keys stay English and stable so reply handling, `--dry-run`
+  and the tests never shift under a reader's language setting.
+- **COMMANDS_HINT and the label names are never translated.** They quote the
+  literal words the engine parses (`done 2`, `mailtriage/snooze-3d`);
+  translating them would tell the reader to type something no run understands.
+  Everything else in `delivery/mail.py` goes through `t()`.
+- **"Time saved" is an estimate and says so in the copy.** No run stores what
+  it triaged, so `weekly.week_totals` reconstructs the week from Gmail
+  (messages still carrying `cfg.label`, plus `count_done`'s), and
+  `imap_pull.count_drafts` counts drafts by the `DRAFT_MARKER`
+  (`X-Mailtriage`) header `push_drafts` stamps -- a header, not a subject
+  match, so an edited draft still counts and the reader's own never does.
+  The two minute constants live only in `weekly.py` and are named in the
+  README; don't scatter copies. `count_drafts` never raises: a cosmetic line
+  must never cost someone their review.
 - **The no-double-send guard is a mailbox search, not a file.** `due()`
   accepts a slot for `catch_up_minutes` (120) because GitHub's cron skips
   hours; that lets two hourly firings share a slot, so every *scheduled*

@@ -228,6 +228,7 @@ workflows, go ahead and enable them."**
 | one `MAIL_PW_*` per address | the app password for that address (see step 4) |
 | `EMAIL_TO` *(optional)* | where the digest is delivered. For `delivery: gmail`, defaults to your first `MAIL_ACCOUNTS` address if unset |
 | `EMAIL_FROM` *(optional)* | who it's sent from. Same default as above for `delivery: gmail`; required for `delivery: email` (Resend) |
+| `CALENDAR_ICS_URL` *(optional)* | a private ICS feed URL — see [Your day](#your-day) |
 
 **The `MAIL_PW_*` names are the most error-prone step.** Each is
 `MAIL_PW_` + the first 16 hex characters (upper-cased) of a BLAKE2b-128 hash
@@ -491,6 +492,35 @@ draft_style:
 in one. Set `draft_replies: false` to turn drafting off entirely — see
 [Reply drafting](#reply-drafting) above.
 
+---
+
+## The digest in your language
+
+`language` in `config.yaml` sets the words **mailtriage itself** puts around
+your mail — section headings, the "still open" badge, "waiting 3 days", "Add
+to Google Calendar", the footers:
+
+```yaml
+language: "en"    # en es fr de pt it nl hi ja
+```
+
+Two things it deliberately does **not** touch:
+
+- **Your mail.** Subjects, senders and the model's one-line notes appear
+  exactly as they arrived or as the model wrote them. Nothing is translated
+  on the way past.
+- **What the AI writes.** That is `draft_style.language` (see
+  [Draft style](#draft-style)) — you can read a Japanese digest of mail you
+  reply to in English, or the reverse.
+
+BCP-47 base codes; a region tag is fine (`pt-BR` uses the `pt` table). A code
+with no table prints one warning and renders in English rather than failing
+the run — an English heading beats no digest. The reply commands
+(`done 2`, `mailtriage/snooze-3d`) stay in English in every language, because
+those are the literal words the engine parses. Adding a language is one row
+in `src/mailtriage/delivery/strings.py`; `tests/test_strings.py` fails if it
+is missing a key.
+
 **Drafts in your voice.** With `learn_voice: true` (default), before drafting
 a reply the engine reads up to 3 of your own most recent Sent messages to the
 same recipient (falling back to the same domain, then skipping), keeps only
@@ -628,6 +658,28 @@ link.
 items you closed via the `done` label separately, since those have lost the
 `action` label it otherwise searches for.
 
+**Time saved.** The review carries one line — *"This week mailtriage handled
+34 messages and drafted 8 replies — roughly 83 minutes you did not spend on
+your inbox"*. Read it as the estimate it says it is, not a measurement:
+nothing times you. The counts are real (messages carrying the action label
+in the last 7 days, plus the ones you closed with `mailtriage/done`; drafts
+are the ones mailtriage itself pushed, found by a header it stamps, so a
+draft you wrote never counts). The minutes are those counts times two
+constants that live in one place, `MINUTES_PER_TRIAGED = 1.5` and
+`MINUTES_PER_DRAFT = 4.0` in `src/mailtriage/weekly.py` — roughly what it
+costs to open, read and decide on one message yourself, and to write a reply
+from scratch rather than edit a draft. Disagree with them? Edit those two
+numbers; they are not tuned to anything.
+
+**The weekly review, in words.** With `weekly_narrative: true` (default),
+the review opens with three model-written sentences — what got cleared,
+what is aging, who keeps not getting an answer — and up to three one-line
+patterns ("Priya's requests always wait a week"). The model sees only what
+the review itself shows: per-account counts, the open items' subject,
+sender and age, and the handled ones. One extra call a week; if it fails
+the plain review still goes out, with a warning in the log. Set it to
+`false` to skip the call.
+
 ---
 
 ## Inbox intelligence
@@ -667,6 +719,35 @@ picked; the Actions log only ever shows counts.
   happens on `--dry-run`. This is the one place mailtriage changes your inbox
   beyond adding a label; try `label` alone for a week before turning on
   `archive`.
+
+---
+
+## Your day
+
+Set the `CALENDAR_ICS_URL` secret and every digest opens with a **Today**
+block — the day's events in your `timezone`, all-day ones first, time ·
+title · location, capped at 12. When an event's title matches a calendar
+invitation sitting in your needs-action list ("Invitation: …", "Updated
+invitation: …", anything with "RSVP"), the row says *invite in your inbox:
+#N* so you can find it.
+
+**Where to find the URL (Google Calendar):** Settings → *Settings for my
+calendars* → pick the calendar → *Integrate calendar* → **Secret address in
+iCal format**. It is a secret because the URL *is* the credential: anyone
+holding it can read that calendar. That is why it lives in an encrypted
+Actions secret like your API keys, never in `config.yaml`, and why the
+engine's log never prints it — a failed fetch is reported by error type
+only. The setup wizard has a **Calendar** field that seals and uploads it
+for you. Any private ICS feed works, not just Google's.
+
+Nothing is stored: the feed is fetched fresh on each run (20-second
+timeout, 5 MB cap), parsed with the standard library, and dropped. A feed
+that is down or malformed prints a warning and the digest still goes out
+without the block. Recurring events are expanded for today only, for
+`FREQ=DAILY` and `FREQ=WEEKLY` rules (`INTERVAL`, `BYDAY`, `UNTIL`, `COUNT`,
+`EXDATE`); monthly/yearly rules and other exotica are skipped rather than
+guessed at. `calendar: false` in `config.yaml` turns the block off without
+deleting the secret.
 
 ---
 
@@ -819,6 +900,9 @@ src/mailtriage/
   rules.py           VIP-sender rules, checked deterministically around the model
   imap_pull.py       account/password lookup, IMAP fetch, time-window filter, push_drafts
   commands.py        Gmail as the control plane: done/snooze/never/vip labels + replies to the digest
+  calendar.py        today's events from a private ICS feed (CALENDAR_ICS_URL), stdlib parser
+  weekly.py          the weekly review's model-written opening (prompt + validated reply)
+  delivery/strings.py  the digest's chrome in 9 languages -- t(cfg, key)
   triage/            the triage prompt (__init__.py)   <- the product
                        + 6 backends: claude_api, claude_cli, codex_cli, openai_api, gemini_api, gemini_cli
   drafts.py          the reply-drafting prompt + hostile-input-safe id mapping

@@ -7,11 +7,24 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+import pytest
 import yaml
 
 from mailtriage.cli import main, run, run_weekly
 from mailtriage.config import Config
 from mailtriage.models import Email, Triaged, WeekResult
+
+
+@pytest.fixture(autouse=True)
+def _no_real_provider(monkeypatch: Any) -> None:
+    """Belt and braces: whatever secrets the developer's shell exports, no
+    test in this file may reach a real model. Tests that care stub
+    select_backend themselves, on top of this."""
+    import mailtriage.triage as triage_module
+
+    monkeypatch.setattr(
+        triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
+    )
 
 
 def test_self_check_exits_zero(capsys: Any) -> None:
@@ -75,7 +88,7 @@ def test_dry_run_prints_not_sends(monkeypatch: Any, capsys: Any) -> None:
         triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
     )
 
-    def _boom_send(cfg: Config, kept: list[Triaged]) -> None:
+    def _boom_send(cfg: Config, kept: list[Triaged], stamp: str = "", events: Any = None) -> None:
         raise AssertionError("send must not be called on a dry run")
 
     def _boom_push(environ: Any, kept: list[Triaged], emails: list[Email]) -> list[dict[str, str]]:
@@ -108,7 +121,11 @@ def test_dry_run_prints_drafts(monkeypatch: Any, capsys: Any) -> None:
         return {"items": [{"id": 0, "draft": "Sounds good, see you then."}]}
 
     monkeypatch.setattr(triage_module, "select_backend", lambda cfg, environ: ("stub", fake_call))
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: (_ for _ in ()).throw(AssertionError("no send")))
+    monkeypatch.setattr(
+        delivery_module,
+        "send",
+        lambda cfg, kept, stamp="", events=None: (_ for _ in ()).throw(AssertionError("no send")),
+    )
     monkeypatch.setattr(
         cli_module, "push_drafts", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no push on dry run"))
     )
@@ -146,7 +163,7 @@ def test_run_pushes_drafts_and_prints_push_warnings_then_still_delivers(monkeypa
     monkeypatch.setattr(cli_module, "push_drafts", fake_push_drafts)
 
     sent: list[Any] = []
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="": sent.append(kept))
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="", events=None: sent.append(kept))
 
     cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", carry_over=False)
     run(cfg, dry_run=False)
@@ -190,7 +207,11 @@ def test_carried_alone_never_triggers_a_digest(monkeypatch: Any, capsys: Any) ->
         raise AssertionError("pull_open_actions must not run when there are no new kept items")
 
     monkeypatch.setattr(cli_module, "pull_open_actions", _boom_open_actions)
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: (_ for _ in ()).throw(AssertionError("no send")))
+    monkeypatch.setattr(
+        delivery_module,
+        "send",
+        lambda cfg, kept, stamp="", events=None: (_ for _ in ()).throw(AssertionError("no send")),
+    )
 
     cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", carry_over=True)
     run(cfg, dry_run=False)
@@ -214,7 +235,11 @@ def test_new_and_carried_both_appear_in_the_digest(monkeypatch: Any, capsys: Any
     monkeypatch.setattr(
         cli_module, "pull_open_actions", lambda *a, **k: {"messages": [_open_action_email(0)], "warnings": []}
     )
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: (_ for _ in ()).throw(AssertionError("no send")))
+    monkeypatch.setattr(
+        delivery_module,
+        "send",
+        lambda cfg, kept, stamp="", events=None: (_ for _ in ()).throw(AssertionError("no send")),
+    )
 
     cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", carry_over=True)
     run(cfg, dry_run=True)
@@ -250,7 +275,11 @@ def test_dry_run_reads_carried_but_never_labels(monkeypatch: Any, capsys: Any) -
         return {"messages": [], "warnings": []}
 
     monkeypatch.setattr(cli_module, "pull_open_actions", fake_open_actions)
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: (_ for _ in ()).throw(AssertionError("no send")))
+    monkeypatch.setattr(
+        delivery_module,
+        "send",
+        lambda cfg, kept, stamp="", events=None: (_ for _ in ()).throw(AssertionError("no send")),
+    )
 
     cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", carry_over=True)
     run(cfg, dry_run=True)
@@ -275,7 +304,7 @@ def test_rule_forced_item_produces_a_digest_even_when_model_kept_nothing(monkeyp
     )
 
     sent: list[Any] = []
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="": sent.append(kept))
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="", events=None: sent.append(kept))
 
     cfg = Config(
         delivery="email",
@@ -523,7 +552,11 @@ def test_run_drops_done_snoozed_and_reply_messages_from_candidates(monkeypatch: 
         return []
 
     monkeypatch.setattr(triage_module, "triage", fake_triage)
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: (_ for _ in ()).throw(AssertionError("no send")))
+    monkeypatch.setattr(
+        delivery_module,
+        "send",
+        lambda cfg, kept, stamp="", events=None: (_ for _ in ()).throw(AssertionError("no send")),
+    )
     _quiet_control_plane(
         monkeypatch,
         cli_module,
@@ -558,7 +591,7 @@ def test_never_and_vip_labels_become_rules_for_this_run(monkeypatch: Any, capsys
         triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
     )
     sent: list[Any] = []
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: sent.append(kept))
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="", events=None: sent.append(kept))
     _quiet_control_plane(
         monkeypatch, cli_module, senders={"never": {"sender0@example.com"}, "vip": {"boss@corp.com"}, "warnings": []}
     )
@@ -612,7 +645,11 @@ def test_dry_run_prints_numbered_items_with_due_and_waiting(monkeypatch: Any, ca
     monkeypatch.setattr(
         cli_module, "pull_open_actions", lambda *a, **k: {"messages": [_open_action_email(0)], "warnings": []}
     )
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: (_ for _ in ()).throw(AssertionError("no send")))
+    monkeypatch.setattr(
+        delivery_module,
+        "send",
+        lambda cfg, kept, stamp="", events=None: (_ for _ in ()).throw(AssertionError("no send")),
+    )
     _quiet_control_plane(monkeypatch, cli_module)
 
     run(Config(delivery="email", carry_over=True, nag_after_days=3), dry_run=True)
@@ -623,13 +660,117 @@ def test_dry_run_prints_numbered_items_with_due_and_waiting(monkeypatch: Any, ca
     assert "#2 open action 0" in out and "waiting" in out and "STILL OPEN" in out  # 2026-08-20 is long past
 
 
+def _narrative_call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
+    assert "still open" in user  # the open item's subject reaches the model
+    return {"summary": "You cleared two things. One is aging. Boss keeps waiting.", "patterns": ["Boss always waits"]}
+
+
+def test_weekly_narrative_opens_the_review(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    week = _week_result(acct={"replied": [_open_item("r", 1)], "archived": [], "open": [_open_item("still open", 4)]})
+    monkeypatch.setattr(cli_module, "pull_week", lambda environ, now, label, only=None: week)
+    monkeypatch.setattr(cli_module, "count_done", lambda environ, now, only=None: {"done": 0, "warnings": []})
+    monkeypatch.setattr(triage_module, "select_backend", lambda cfg, environ: ("stub", _narrative_call))
+    sent: list[Any] = []
+    monkeypatch.setattr(delivery_module, "send_html", lambda cfg, subject, html: sent.append(html))
+
+    cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com")
+    run_weekly(cfg, dry_run=False)
+    assert "Boss keeps waiting." in sent[0] and "Boss always waits" in sent[0]
+    assert sent[0].index("Boss keeps waiting.") < sent[0].index("1 replied")  # above the account blocks
+
+    run_weekly(cfg, dry_run=True)
+    out = capsys.readouterr().out
+    assert out.index("Boss keeps waiting.") < out.index("  - Boss always waits") < out.index("acct —")
+
+
+def test_weekly_narrative_failure_falls_back_to_the_plain_review(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+    from mailtriage.errors import MailError
+
+    week = _week_result(acct={"replied": [], "archived": [], "open": [_open_item("still open", 4)]})
+    monkeypatch.setattr(cli_module, "pull_week", lambda environ, now, label, only=None: week)
+    monkeypatch.setattr(cli_module, "count_done", lambda environ, now, only=None: {"done": 0, "warnings": []})
+
+    def boom(cfg: Config, s: str, u: str, schema: dict[str, Any]) -> dict[str, Any]:
+        raise MailError("Anthropic rate-limited this run")
+
+    monkeypatch.setattr(triage_module, "select_backend", lambda cfg, environ: ("stub", boom))
+    sent: list[Any] = []
+    monkeypatch.setattr(delivery_module, "send_html", lambda cfg, subject, html: sent.append(html))
+
+    run_weekly(Config(delivery="email", email_to="me@example.com", email_from="bot@example.com"), dry_run=False)
+
+    assert len(sent) == 1 and "still open" in sent[0]
+    assert "weekly narrative failed, sending the plain review: Anthropic rate-limited" in capsys.readouterr().err
+
+
+def test_weekly_narrative_off_makes_no_model_call(monkeypatch: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    week = _week_result(acct={"replied": [], "archived": [], "open": [_open_item("still open", 4)]})
+    monkeypatch.setattr(cli_module, "pull_week", lambda environ, now, label, only=None: week)
+    monkeypatch.setattr(cli_module, "count_done", lambda environ, now, only=None: {"done": 0, "warnings": []})
+    monkeypatch.setattr(
+        triage_module, "select_backend", lambda cfg, environ: (_ for _ in ()).throw(AssertionError("no provider"))
+    )
+    monkeypatch.setattr(delivery_module, "send_html", lambda cfg, subject, html: None)
+
+    run_weekly(
+        Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", weekly_narrative=False),
+        dry_run=False,
+    )
+
+
+def test_dry_run_prints_today_block_and_passes_events_to_send(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    monkeypatch.setattr(
+        cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email(0)], "warnings": []}
+    )
+    monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [_triaged(0)])
+    monkeypatch.setattr(
+        triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
+    )
+    events = [
+        {
+            "summary": "Standup",
+            "location": "Room 4",
+            "url": "",
+            "start": "2026-08-28T09:00:00+00:00",
+            "end": "2026-08-28T09:30:00+00:00",
+            "all_day": False,
+        }
+    ]
+    monkeypatch.setattr(cli_module, "today_events", lambda environ, cfg, now: events)
+    sent: list[Any] = []
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="", events=None: sent.append(events))
+    _quiet_control_plane(monkeypatch, cli_module)
+
+    run(Config(delivery="email", carry_over=False, draft_replies=False), dry_run=True)
+    out = capsys.readouterr().out
+    assert out.index("Today") < out.index("09:00–09:30 · Standup · Room 4") < out.index("#1 subject-0")
+
+    run(Config(delivery="email", carry_over=False, draft_replies=False), dry_run=False)
+    assert sent == [events]
+
+
 def test_weekly_counts_done_labels(monkeypatch: Any, capsys: Any) -> None:
     import mailtriage.cli as cli_module
     import mailtriage.delivery as delivery_module
 
     week = _week_result(acct={"replied": [], "archived": [], "open": []})
     monkeypatch.setattr(cli_module, "pull_week", lambda environ, now, label, only=None: week)
-    monkeypatch.setattr(cli_module, "count_done", lambda environ, now: {"done": 3, "warnings": []})
+    monkeypatch.setattr(cli_module, "count_done", lambda environ, now, only=None: {"done": 3, "warnings": []})
     sent: list[Any] = []
     monkeypatch.setattr(delivery_module, "send_html", lambda cfg, subject, html: sent.append(html))
 
@@ -682,7 +823,9 @@ def _stub_profile_pipeline(monkeypatch: Any) -> tuple[list[Any], list[Any]]:
         triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
     )
     monkeypatch.setattr(
-        delivery_module, "send", lambda cfg, kept, stamp="": sends.append((cfg.subject_prefix, cfg.delivery))
+        delivery_module,
+        "send",
+        lambda cfg, kept, stamp="", events=None: sends.append((cfg.subject_prefix, cfg.delivery)),
     )
     return pulls, sends
 
@@ -735,7 +878,7 @@ def test_failing_profile_is_reported_and_the_rest_still_run(monkeypatch: Any, tm
     monkeypatch.delenv("GITHUB_EVENT_NAME", raising=False)
     _pulls, sends = _stub_profile_pipeline(monkeypatch)
 
-    def flaky_send(cfg: Config, kept: list[Triaged], stamp: str = "") -> None:
+    def flaky_send(cfg: Config, kept: list[Triaged], stamp: str = "", events: Any = None) -> None:
         if cfg.delivery == "slack":
             raise MailError("SLACK_WEBHOOK_URL is not set.")
         sends.append((cfg.subject_prefix, cfg.delivery))

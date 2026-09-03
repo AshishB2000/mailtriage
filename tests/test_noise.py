@@ -158,7 +158,7 @@ def _run_with(monkeypatch: Any, noise: dict[str, bool], dry_run: bool) -> list[t
         return len(idxs), []
 
     monkeypatch.setattr(cli_module, "label_noise", fake_label_noise)
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="": None)
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="", events=None: None)
     cfg = Config(
         delivery="email",
         email_to="me@example.com",
