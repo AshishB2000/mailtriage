@@ -35,6 +35,8 @@ src/mailtriage/
                   __init__.py: prompt + schema + pick() + PROVIDERS
                   claude_api.py claude_cli.py codex_cli.py openai_api.py gemini_api.py gemini_cli.py
   drafts.py     reply-drafting prompt + hostile-input-safe id mapping
+  commands.py   Gmail as the control plane: done/snooze/never/vip labels,
+                replies to the digest ("done 3"), never/vip sender derivation
   delivery/     dispatch, http.py, mail.py (Resend), gmail.py (own-Gmail SMTP)
   selfcheck.py  pre-flight assertions, run before any API spend
   cli.py        argparse; the only module that prints and exits
@@ -68,6 +70,17 @@ provider: str                      model: str
 draft_replies: bool                draft_style: {tone, sign_off, language,
                                       max_sentences}
 rules: {always_ignore, always_surface, always_action}   accounts: {addr: {…}}
+carry_over: bool                   label: str
+nag_after_days: int
+```
+
+**Label names** are fixed literals in `commands.py`, quoted in the digest
+footer (`delivery/mail.py` COMMANDS_HINT) and the README -- change all three
+together:
+
+```
+mailtriage/done   mailtriage/snooze-<N>d (1..90) | -1w | -2w   mailtriage/until-YYYY-MM-DD
+mailtriage/never  mailtriage/vip                                mailtriage/handled
 ```
 
 A sibling branch adds `carry_over: bool` and `label: str` with those exact
@@ -157,6 +170,21 @@ are flat-rate, the default costs nothing extra.
 - **`CODEX_AUTH_JSON` tokens rotate**, and a stateless CI runner can't write
   the rotated value back to the secret. That's not a bug to fix — the 401
   error message already tells the user to re-run `codex login` and re-paste.
+- **Digest items are numbered by `delivery.mail.digest_groups`, once.** The
+  HTML, the `--dry-run` text and a reply's `#N` all come from that order.
+  `_number()` renders the number as its own `<a href=gmail-link>#N</a>`, and
+  `commands.item_map` reads `#N` straight off that anchor (and Gmail's
+  `#N <url>` plain-text rendition) -- adjacency is what stops a "#3" the
+  reader typed from pairing with the wrong link. Change both together.
+- **`done`/snoozed messages are dropped from the run's candidates**
+  (`apply_label_commands` returns their INBOX uids), not just un-labeled.
+  An in-window item the reader just closed would otherwise be re-triaged
+  and re-labeled as if nothing happened.
+- **`until-*` label mailboxes are DELETEd once they've woken.** The only
+  DELETE in the codebase; it removes an emptied label, never a message.
+- **`Triaged.due` is optional (total=False base class)**, not a required
+  key: Python 3.10 has no `typing.NotRequired`, and carried/rule-forced
+  items never have one. Read it with `t.get("due", "")`.
 - **Drafting never sends and never touches an existing message.**
   `push_drafts` only `APPEND`s to the account's `\Drafts` mailbox; INBOX
   stays `select(..., readonly=True)` for the whole run; there is no SMTP call
