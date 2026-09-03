@@ -151,6 +151,21 @@ def test_push_drafts_appends_with_reply_headers(monkeypatch: Any) -> None:
     assert "Sounds good." in msg.get_content()
 
 
+def test_push_drafts_two_variants_become_two_threaded_drafts(monkeypatch: Any) -> None:
+    monkeypatch.setenv(PW_VAR, "pw")
+    factory = _patch_imap(monkeypatch)
+
+    emails = [make_email(0)]
+    triaged = [make_triaged(0, draft="Short one.", draft_full="The full, longer reply.")]
+
+    push_drafts({PW_VAR: "pw"}, triaged, emails)
+
+    msgs = [message_from_bytes(raw, policy=policy.default) for _m, _f, _d, raw in factory.instances[0].appended]
+    assert [m["Subject"] for m in msgs] == ["Re: real subject 0 [A short]", "Re: real subject 0 [B full]"]
+    assert [m.get_content().strip() for m in msgs] == ["Short one.", "The full, longer reply."]
+    assert all(m["In-Reply-To"] == emails[0]["message_id"] for m in msgs)
+
+
 def test_push_drafts_discovers_localized_drafts_mailbox_name(monkeypatch: Any) -> None:
     monkeypatch.setenv(PW_VAR, "pw")
     factory = _patch_imap(

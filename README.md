@@ -84,6 +84,12 @@ send after a quick human read. You'll find it two places:
 Set `draft_replies: false` in `config.yaml` to turn this off — the digest
 still triages normally, it just stops drafting.
 
+**Two drafts per item.** With `draft_variants: 2`, the model writes a `short`
+variant (the minimum polite reply, one or two sentences) and a `full` one
+(covers every point). Both are pushed to Drafts as separate threaded drafts,
+subjects ending in ` [A short]` and ` [B full]`; the digest shows the short
+one and notes that a fuller version is waiting in Drafts. Default is `1`.
+
 ---
 
 ## What it looks like

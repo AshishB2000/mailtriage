@@ -54,6 +54,7 @@ class _TriagedOptional(TypedDict, total=False):
     # carried and rule-forced items never have one, and every existing
     # Triaged literal stays valid. Read it with t.get("due", "").
     due: str  # "YYYY-MM-DD" or "": model-authored, validated by triage.pick()
+    draft_full: str  # the longer variant when draft_variants == 2; `draft` is then the short one
 
 
 class Triaged(_TriagedOptional):

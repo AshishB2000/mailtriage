@@ -366,14 +366,14 @@ def _quote_mailbox(name: str) -> str:
     return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _build_draft_message(account: str, src: Email, draft: str) -> EmailMessage:
+def _build_draft_message(account: str, src: Email, draft: str, suffix: str = "") -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = account
     msg["To"] = src["reply_to"]
     subject = src["subject"]
     if not subject.lower().startswith("re:"):
         subject = "Re: " + subject
-    msg["Subject"] = subject
+    msg["Subject"] = subject + suffix
     message_id = src["message_id"]
     if message_id:
         msg["In-Reply-To"] = message_id
@@ -417,8 +417,12 @@ def push_drafts(
                 mailbox = _quote_mailbox(_find_drafts_mailbox(M.list()[1] or []))
                 for t in items:
                     src = emails[t["idx"]]
-                    msg = _build_draft_message(account, src, t["draft"])
-                    M.append(mailbox, "\\Draft", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+                    full = t.get("draft_full", "")
+                    # Two variants -> two separate threaded drafts, told apart by subject.
+                    variants = [(t["draft"], " [A short]"), (full, " [B full]")] if full else [(t["draft"], "")]
+                    for draft, suffix in variants:
+                        msg = _build_draft_message(account, src, draft, suffix)
+                        M.append(mailbox, "\\Draft", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
             finally:
                 with contextlib.suppress(Exception):
                     M.logout()

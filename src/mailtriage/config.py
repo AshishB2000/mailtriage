@@ -121,6 +121,9 @@ class Config:
     # tone/sign_off/language/max_sentences for AI-drafted replies. Partial
     # mappings merge over DRAFT_STYLE_DEFAULTS.
     draft_style: dict[str, Any] = field(default_factory=lambda: dict(DRAFT_STYLE_DEFAULTS))
+    # 1 = one draft per needs_action item. 2 = a short and a full variant,
+    # both pushed to Gmail Drafts; the digest shows the short one.
+    draft_variants: int = 1
     # Hard VIP-sender rules, checked deterministically -- see rules.py.
     rules: dict[str, list[str]] = field(default_factory=lambda: {k: [] for k in RULE_KEYS})
     # Per-account overrides keyed by lowercased address: interests/avoid
@@ -195,6 +198,9 @@ class Config:
             value = getattr(cfg, name)
             if not isinstance(value, bool):
                 raise MailError(f"'{name}' in {origin} must be true or false (got {value!r}).")
+
+        if cfg.draft_variants not in (1, 2) or isinstance(cfg.draft_variants, bool):
+            raise MailError(f"'draft_variants' in {origin} must be 1 or 2 (got {cfg.draft_variants!r}).")
 
         # str() rather than a type error: YAML turns a bare value into whatever
         # type it looks like (e.g. an unquoted prefix or address).

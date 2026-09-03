@@ -142,6 +142,13 @@ def test_draft_style_partial_mapping_merges_over_defaults():
     }
 
 
+@pytest.mark.parametrize("bad", [0, 3, True, "2"])
+def test_draft_variants_must_be_1_or_2(bad):
+    with pytest.raises(MailError, match="draft_variants"):
+        Config.from_mapping({**MINIMAL, "draft_variants": bad})
+    assert Config.from_mapping({**MINIMAL, "draft_variants": 2}).draft_variants == 2
+
+
 def test_draft_style_learn_voice_must_be_bool():
     with pytest.raises(MailError, match="learn_voice"):
         Config.from_mapping({**MINIMAL, "draft_style": {"learn_voice": "yes"}})

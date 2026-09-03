@@ -21,32 +21,45 @@ TONE_GUIDANCE: dict[str, str] = {
     "casual": "Tone: casual and easygoing -- contractions are fine, keep it conversational.",
 }
 
-DRAFT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "items": {
-            "type": "array",
-            "description": "Drafted replies. May be empty -- skip any message a reply isn't the right action for.",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "integer",
-                        "description": "The bracketed index of the email, copied exactly.",
-                    },
-                    "draft": {
-                        "type": "string",
-                        "description": "The drafted reply: plain text, ready to send after a quick human read.",
-                    },
-                },
-                "required": ["id", "draft"],
-                "additionalProperties": False,
-            },
+
+def draft_schema(variants: int = 1) -> dict[str, Any]:
+    """The reply shape: one `draft` per item, or `short` + `full` when
+    draft_variants is 2. Same strictness rules as TRIAGE_SCHEMA."""
+    if variants == 2:
+        props: dict[str, Any] = {
+            "short": {"type": "string", "description": "The minimum polite reply: one or two sentences, plain text."},
+            "full": {"type": "string", "description": "A complete reply covering every point, plain text."},
         }
-    },
-    "required": ["items"],
-    "additionalProperties": False,
-}
+    else:
+        props = {
+            "draft": {
+                "type": "string",
+                "description": "The drafted reply: plain text, ready to send after a quick human read.",
+            }
+        }
+    return {
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "description": "Drafted replies. May be empty -- skip any message a reply isn't the right action for.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer", "description": "The bracketed index of the email, copied exactly."},
+                        **props,
+                    },
+                    "required": ["id", *props],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        "required": ["items"],
+        "additionalProperties": False,
+    }
+
+
+DRAFT_SCHEMA: dict[str, Any] = draft_schema(1)
 
 
 def _style_lines(style: dict[str, Any]) -> list[str]:
@@ -117,6 +130,13 @@ RULES
             "of the global style above.\n\n" + "\n\n".join(blocks)
         )
 
+    if cfg.draft_variants == 2:
+        parts.append(
+            "VARIANTS\n"
+            "Write two versions of each reply: `short`, the minimum polite reply in one or two sentences, and "
+            "`full`, a complete reply that covers every point within the length rules above."
+        )
+
     if voice:
         parts.append(_voice_section(voice))
 
@@ -153,17 +173,23 @@ def generate_drafts(
     if not needs_action:
         return
 
-    reply = call(cfg, build_draft_system(cfg, voice), build_draft_user(emails, needs_action), DRAFT_SCHEMA)
+    two = cfg.draft_variants == 2
+    reply = call(
+        cfg, build_draft_system(cfg, voice), build_draft_user(emails, needs_action), draft_schema(2 if two else 1)
+    )
 
     valid_idx = {t["idx"] for t in needs_action}
-    drafts_by_idx: dict[int, str] = {}
+    drafts_by_idx: dict[int, tuple[str, str]] = {}  # idx -> (draft shown, fuller variant or "")
     for got in reply.get("items", []):
         i = got.get("id")
         if not isinstance(i, int) or isinstance(i, bool) or i not in valid_idx or i in drafts_by_idx:
             continue
-        d = got.get("draft")
-        drafts_by_idx[i] = str(d) if d else ""
+        d = got.get("short") if two else got.get("draft")
+        f = got.get("full") if two else ""
+        drafts_by_idx[i] = (str(d) if d else "", str(f) if f else "")
 
     for t in needs_action:
         if t["idx"] in drafts_by_idx:
-            t["draft"] = drafts_by_idx[t["idx"]]
+            t["draft"], full = drafts_by_idx[t["idx"]]
+            if full:
+                t["draft_full"] = full

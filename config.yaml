@@ -112,6 +112,11 @@ model: ""
 # Gmail drafts folder; never sends.
 draft_replies: true
 
+# 1 = one draft per needs-action email. 2 = a short and a full variant, both
+# pushed to Gmail Drafts (subjects end in "[A short]" / "[B full]"); the
+# digest shows the short one.
+draft_variants: 1
+
 # Reply tone/sign-off/language/length for AI-drafted replies. Any key you
 # omit keeps its default below. "language" is "auto" (match the sender's
 # language) unless set to a specific language name.

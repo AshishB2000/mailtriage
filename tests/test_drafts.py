@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from mailtriage.config import Config
-from mailtriage.drafts import build_draft_system, build_draft_user, generate_drafts
+from mailtriage.drafts import DRAFT_SCHEMA, build_draft_system, build_draft_user, draft_schema, generate_drafts
 from mailtriage.errors import MailError
 from mailtriage.models import Email, Triaged
 
@@ -192,6 +192,35 @@ def test_build_draft_system_appends_voice_examples_per_item():
         in tail
     )
     assert '<voice for="[7]">' in tail and "Dear Ms. Lee" in tail
+
+
+def test_draft_schema_one_variant_is_the_default_schema():
+    assert draft_schema(1) == DRAFT_SCHEMA
+    assert set(DRAFT_SCHEMA["properties"]["items"]["items"]["properties"]) == {"id", "draft"}
+
+
+def test_two_variants_schema_prompt_and_parsing():
+    cfg = Config(delivery="email", interests="rockets and clocks", draft_variants=2)
+    emails = [make_email(0), make_email(1)]
+    triaged = [make_triaged(0), make_triaged(1)]
+    seen: dict[str, Any] = {}
+
+    def fake_call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
+        seen["system"], seen["schema"] = system, schema
+        return {"items": [{"id": 0, "short": "Yes, Tuesday.", "full": "Hi,\n\nTuesday works, 10am.\n\nThanks,"}]}
+
+    generate_drafts(cfg, fake_call, emails, triaged)
+
+    item = seen["schema"]["properties"]["items"]["items"]
+    assert set(item["properties"]) == {"id", "short", "full"} and set(item["required"]) == {"id", "short", "full"}
+    assert "VARIANTS" in seen["system"] and "`short`" in seen["system"] and "`full`" in seen["system"]
+    assert triaged[0]["draft"] == "Yes, Tuesday."
+    assert triaged[0]["draft_full"] == "Hi,\n\nTuesday works, 10am.\n\nThanks,"
+    assert triaged[1]["draft"] == "" and "draft_full" not in triaged[1]
+
+
+def test_one_variant_prompt_has_no_variants_section():
+    assert "VARIANTS" not in build_draft_system(CFG)
 
 
 def test_generate_drafts_passes_voice_into_system_prompt():

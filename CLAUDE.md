@@ -73,12 +73,11 @@ catch_up_minutes: int (60..360)    (how late the hourly gate still fires a slot)
 subject_prefix: str                email_to: str        email_from: str
 provider: str                      model: str
 draft_replies: bool                draft_style: {tone, sign_off, language,
-                                      max_sentences, learn_voice}
+draft_variants: 1 | 2                 max_sentences, learn_voice}
 rules: {always_ignore, always_surface, always_action}   accounts: {addr: {…}}
 carry_over: bool                   label: str
 nag_after_days: int
 thread_context: bool               sender_memory: bool
-thread_context: bool
 ```
 
 **Label names** are fixed literals in `commands.py`, quoted in the digest

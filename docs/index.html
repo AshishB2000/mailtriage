@@ -781,6 +781,12 @@ footer a{color:var(--muted)}
       </label>
       <p class="hint" style="margin:6px 0 0">Into the digest and your Gmail Drafts folder — never sent.</p>
 
+      <label class="toggle" style="margin-top:12px">
+        <input type="checkbox" id="draftVariants">
+        <span>Two drafts per reply: a short one and a full one</span>
+      </label>
+      <p class="hint" style="margin:4px 0 0">Both land in Gmail Drafts (subjects end in [A short] / [B full]); the digest shows the short one.</p>
+
       <div id="draftStyleBox" style="margin-top:16px">
         <div class="f">
           <span class="lgnd">Tone</span>
@@ -1235,6 +1241,10 @@ function buildYaml(v) {
     "# AI drafts a reply for every needs-action email -- into the digest and",
     "# your Gmail drafts folder; never sends.",
     "draft_replies: " + (v.draft_replies ? "true" : "false"),
+    "",
+    "# 1 = one draft per needs-action email. 2 = a short and a full variant,",
+    "# both pushed to Gmail Drafts; the digest shows the short one.",
+    "draft_variants: " + v.draft_variants,
     "",
     "# Reply tone/sign-off/language/length for AI-drafted replies -- edit by",
     "# hand any time. See README.md for the full syntax.",
@@ -1837,6 +1847,7 @@ function collect() {
     profiles_raw: S.profilesRaw || "",
     provider: selectedProvider(),
     draft_replies: $("#draftReplies").checked,
+    draft_variants: $("#draftVariants").checked ? 2 : 1,
     draft_style: collectDraftStyle(),
     rules: {
       always_ignore: collectRuleList("rulesIgnore"),

@@ -23,14 +23,19 @@ SERIF = "Georgia,'Times New Roman',serif"
 SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
 
 
-def _draft_block(draft: str) -> str:
+def _draft_block(draft: str, has_full: bool = False) -> str:
     if not draft:
         return ""
+    fuller = (
+        f'<div style="font:400 12px/1.4 {SANS};color:{DIM};margin:6px 0 0 0;">A fuller version is in Drafts.</div>'
+        if has_full
+        else ""
+    )
     # white-space:pre-wrap keeps the model's paragraph breaks without a <br>-injection risk.
     return f"""
         <div class="muted" style="margin:10px 0 0 0;padding:10px 12px;border-left:2px solid {RULE};">
           <div style="font:700 11px/1 {SANS};letter-spacing:.08em;color:{DIM};text-transform:uppercase;">Draft reply</div>
-          <p style="font:400 14px/1.5 {SANS};color:{DIM};margin:6px 0 0 0;white-space:pre-wrap;">{html.escape(draft)}</p>
+          <p style="font:400 14px/1.5 {SANS};color:{DIM};margin:6px 0 0 0;white-space:pre-wrap;">{html.escape(draft)}</p>{fuller}
         </div>"""
 
 
@@ -127,7 +132,7 @@ def _rows(items: list[Triaged], start: int) -> str:
       <tr><td style="padding:0 0 26px 0;">
         {_number(n, it["link"])}<a href="{html.escape(it["link"], quote=True)}" style="font:700 18px/1.35 {SERIF};color:{INK};text-decoration:none;">{html.escape(it["subject"])}</a>
         <div class="muted" style="font:400 13px/1.4 {SANS};color:{DIM};padding-top:4px;">{dot}{html.escape(it["sender"])} &nbsp;·&nbsp; {html.escape(it["account"])}</div>{_due_line(it)}
-        <p style="font:400 15px/1.55 {SERIF};color:{INK};margin:8px 0 0 0;">{html.escape(it["note"])}</p>{_draft_block(it["draft"])}
+        <p style="font:400 15px/1.55 {SERIF};color:{INK};margin:8px 0 0 0;">{html.escape(it["note"])}</p>{_draft_block(it["draft"], bool(it.get("draft_full")))}
       </td></tr>"""
     return out
 

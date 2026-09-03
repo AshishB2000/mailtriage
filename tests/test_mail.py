@@ -203,6 +203,13 @@ def test_email_html_shows_escaped_draft():
     assert "white-space:pre-wrap" in html
 
 
+def test_email_html_notes_fuller_draft_only_when_present():
+    with_full = mail.email_html(_cfg(), [_item("needs_action", draft="short", draft_full="long")])
+    assert "A fuller version is in Drafts." in with_full
+    without = mail.email_html(_cfg(), [_item("needs_action", draft="short")])
+    assert "fuller version" not in without
+
+
 def test_email_html_omits_draft_block_when_no_draft():
     html = mail.email_html(_cfg(), [_item("needs_action", draft="")])
     assert "Draft reply" not in html

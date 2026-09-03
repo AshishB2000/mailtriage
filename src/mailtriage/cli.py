@@ -140,6 +140,8 @@ def _print_digest(cfg: Config, kept: list[Triaged], today: date) -> None:
                 print(f"    Due {it['due']} · {calendar_link(it)}")
             if it["draft"]:
                 print(f"    Draft reply: {it['draft']}")
+                if it.get("draft_full"):
+                    print("    (a fuller version is in Drafts)")
             n += 1
 
 

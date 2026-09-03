@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta, timezone
 from mailtriage.commands import parse_commands, snooze_days, until_date
 from mailtriage.config import Config
 from mailtriage.delivery.mail import digest_groups, weekly_html
-from mailtriage.drafts import DRAFT_SCHEMA, generate_drafts
+from mailtriage.drafts import DRAFT_SCHEMA, draft_schema, generate_drafts
 from mailtriage.errors import MailError
 from mailtriage.imap_pull import _classify_week_item, _older_than_window, _quote_mailbox, parse_message, within_window
 from mailtriage.models import Email, Triaged, WeekResult
@@ -168,6 +168,7 @@ def self_check() -> None:
                 _assert_strict_schema(v)
 
     _assert_strict_schema(DRAFT_SCHEMA)
+    _assert_strict_schema(draft_schema(2))
 
     # 7. generate_drafts is the security layer for drafts, same discipline as
     # pick(): a bool id, an out-of-range id, and a duplicate id must all be
