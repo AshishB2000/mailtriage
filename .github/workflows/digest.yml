@@ -133,7 +133,7 @@ jobs:
         run: npm install -g @google/gemini-cli
 
       # Secrets a forker sets: ONE of the six AI-auth secrets (see above),
-      # MAIL_ACCOUNTS, one MAIL_PW_<HASH> per Gmail address (imap_pull.py
+      # MAIL_ACCOUNTS, one MAIL_PW_<HASH> per mail address (imap_pull.py
       # derives the hash from the address), and the chosen delivery's one
       # secret (RESEND_API_KEY / TELEGRAM_BOT_TOKEN / SLACK_WEBHOOK_URL /
       # DISCORD_WEBHOOK_URL / NTFY_TOPIC_URL; gmail needs none). The

@@ -66,7 +66,7 @@ have UI for should still get an explicit default in `buildYaml()`, never be
 left out of the file.
 
 ```
-delivery: "email" | "gmail" | "telegram" | "slack" | "discord" | "ntfy"
+delivery: "email" | "gmail" | "mailbox" | "telegram" | "slack" | "discord" | "ntfy"
 telegram_chat_id: str              digest_format: "html" | "text"
 profiles: {name: {accounts: [addr, …], <any key here as an override>}}
 interests: str (multiline)
@@ -112,6 +112,8 @@ one of: CLAUDE_CODE_OAUTH_TOKEN  ANTHROPIC_API_KEY  CODEX_AUTH_JSON
         OPENAI_API_KEY           GEMINI_API_KEY      GEMINI_OAUTH_JSON
                                                        (exactly one AI secret)
 RESEND_API_KEY      MAIL_ACCOUNTS      MAIL_PW_<HASH> (one per address)
+   MAIL_ACCOUNTS entry: "addr" | "addr|imap.host[:port]" | "addr|imap.host|smtp.host[:port]"
+   (always TLS; the hash is over the ADDRESS only, so Gmail secrets never change)
 one of, by delivery: TELEGRAM_BOT_TOKEN  SLACK_WEBHOOK_URL  DISCORD_WEBHOOK_URL
                      NTFY_TOPIC_URL   (the wizard PUTs exactly the chosen one)
 CALENDAR_ICS_URL    (optional; the URL is the credential -- never log it,
@@ -129,6 +131,21 @@ HTML (the weekly review) as `text.html_to_text()`. Chunk limits: Telegram
 3900 (hard cap 4096, `parse_mode: HTML`, never MarkdownV2), Slack 3000,
 Discord 1900 (cap 2000, `flags: 4` suppresses embeds). `NTFY_TOPIC_URL` is
 a secret because the topic name IS the credential.
+
+**The capability layer (imap_pull, "capabilities" section)**: `connect()`
+opens every IMAP connection in this codebase and returns `(M, Caps)`. `Caps`
+is read once from `CAPABILITY` (plus INBOX's `PERMANENTFLAGS` for
+`keywords`), and `Caps.mode` is `gmail` / `keywords` / `folders`. **No caller
+touches `X-GM-*` directly** -- not here, not in commands.py, not in a new
+module. Go through `search_label`, `store_label`, `create_label`,
+`label_criteria`, `thread_uids`, `same_thread_present`, `archive_message`,
+`all_mailboxes`, `sent_mailbox`, `drafts_mailbox`, `archive_mailbox`,
+`select_inbox`, `webmail_link`. A server that answers no CAPABILITY is
+trusted to be what its host name says -- which is why every pre-D2 Gmail test
+fake still exercises the Gmail path unchanged. `folders` mode is the floor:
+labels become a `mailtriage/action` folder entered with `MOVE` (never COPY +
+`\Deleted`), and commands.py skips its whole control plane there with one
+`UNSUPPORTED` warning per account.
 
 **Profiles**: `Config.profile(name)` re-runs `from_mapping` over the base's
 fields plus the overrides, so an override is validated by the same rules as
@@ -237,6 +254,14 @@ are flat-rate, the default costs nothing extra.
 - **`triage/` never imports `anthropic` at module top.** `--self-check` must
   pass with the SDK uninstalled; the import lives inside `claude_api.call` only.
 - **`delivery/mail.py` is named `mail`, never `email`** — shadows stdlib.
+- **`delivery: gmail` stays on smtp.gmail.com:587 STARTTLS**, not the 465 the
+  rest of `imap_pull.SMTP_HOSTS` prefers: it is the pair that has delivered
+  every digest so far. `mailbox` is the same code path with the host derived
+  from the account's IMAP host (or its third MAIL_ACCOUNTS field).
+- **Keywords are atoms**: `imap_pull.keyword_for` maps `mailtriage/until-2026-09-10`
+  to `$MailtriageUntil20260910` (no `/`, no `-`, no spaces, or the STORE is a
+  syntax error), and `commands.label_from_keyword` maps it back — a snooze
+  wakes by that round trip, so change both together.
 - **The wizard carries `profiles:` through verbatim** (`profilesBlock` in
   docs/index.html slices the raw text; `buildYaml` writes it back). It has
   no UI for profiles on purpose, and re-serializing a parse of the block
