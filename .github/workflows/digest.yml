@@ -29,6 +29,16 @@ on:
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
+    inputs:
+      # "digest" is what the setup wizard's input-less dispatch gets, so the
+      # default must stay the normal run. "doctor" runs `mailtriage --doctor`:
+      # config, each account's IMAP login, the provider on a fixed fixture,
+      # and one real test message through delivery -- PASS/FAIL per check.
+      mode:
+        description: "What to run"
+        type: choice
+        options: [digest, weekly, doctor]
+        default: digest
 
 permissions:
   contents: read
@@ -80,11 +90,17 @@ jobs:
         id: gate
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          MODE_INPUT: ${{ github.event.inputs.mode }}
         run: |
-          set +e
-          mode=$(mailtriage --due)
-          rc=$?
-          set -e
+          if [ -n "$MODE_INPUT" ]; then
+            mode="$MODE_INPUT"
+            rc=0
+          else
+            set +e
+            mode=$(mailtriage --due)
+            rc=$?
+            set -e
+          fi
           case "$rc" in
             0) echo "due=true" >> "$GITHUB_OUTPUT"; echo "mode=$mode" >> "$GITHUB_OUTPUT" ;;
             3) echo "due=false" >> "$GITHUB_OUTPUT" ;;
@@ -123,21 +139,21 @@ jobs:
       # can't enumerate them -- export the whole secrets bag into the
       # environment instead. This is also how CODEX_AUTH_JSON reaches
       # codex_cli.py -- it reads the env var directly, no separate step needed.
+      #
+      # GITHUB_EVENT_NAME is what tells the engine a scheduled run from a
+      # manual one: only scheduled digests get the slot stamp + double-send
+      # guard described at the top of this file.
       - name: Send digest
         if: steps.gate.outputs.due == 'true'
         env:
           ALL_SECRETS: ${{ toJSON(secrets) }}
           MODE: ${{ steps.gate.outputs.mode }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           # Values stay masked in logs; shlex.quote prevents shell injection.
           eval "$(python -c 'import json,os,shlex; print("\n".join(f"export {k}={shlex.quote(v)}" for k,v in json.loads(os.environ["ALL_SECRETS"]).items() if k!="github_token"))')"
-          if [ "$MODE" = "weekly" ]; then
-            mailtriage --weekly
-          else
-            mailtriage
-          fi
-      #
-      # GITHUB_EVENT_NAME is what tells the engine a scheduled run from a
-      # manual one: only scheduled digests get the slot stamp + double-send
-      # guard described at the top of this file.
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          case "$MODE" in
+            weekly) mailtriage --weekly ;;
+            doctor) mailtriage --doctor ;;
+            *) mailtriage ;;
+          esac

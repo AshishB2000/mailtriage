@@ -10,6 +10,7 @@ accounts. The maintainer never pays for anyone else's inference.
 .venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/mypy && .venv/bin/python -m pytest -q
                                     # THE GATE — all four, before every push
 .venv/bin/mailtriage --self-check   # assertions only, no network, no API, no creds
+.venv/bin/mailtriage --doctor       # PASS/FAIL per check: config, IMAP login, provider (one small call), delivery (one real send)
 .venv/bin/mailtriage --dry-run      # real fetch + triage, prints instead of sends
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
@@ -61,8 +62,8 @@ window_hours: int                  run_at: list[str] ("HH:MM", wizard
                                       auto-derives this from run_at — see
                                       schedule.max_gap_hours)
 timezone: str (IANA)               weekly_review: str ("" or "<day> HH:MM")
-subject_prefix: str                email_to: str        email_from: str
 catch_up_minutes: int (60..360)    (how late the hourly gate still fires a slot)
+subject_prefix: str                email_to: str        email_from: str
 provider: str                      model: str
 draft_replies: bool                draft_style: {tone, sign_off, language,
                                       max_sentences}
@@ -124,7 +125,6 @@ are flat-rate, the default costs nothing extra.
 
 - **No state, no seen-list.** `window_hours` (15 shipped) is the dedupe; it must stay ≥
   the largest cron gap (12h) or mail is skipped forever.
-- **Empty digest sends nothing and exits 0.** "Nothing today" mails train users
 - **The no-double-send guard is a mailbox search, not a file.** `due()`
   accepts a slot for `catch_up_minutes` (120) because GitHub's cron skips
   hours; that lets two hourly firings share a slot, so every *scheduled*
@@ -134,6 +134,7 @@ are flat-rate, the default costs nothing extra.
   workflow_dispatch) and `--dry-run` are unstamped and unguarded -- the
   Send step in digest.yml must keep passing GITHUB_EVENT_NAME for this to
   work at all. The guard is best-effort: a dead account never vetoes a send.
+- **Empty digest sends nothing and exits 0.** "Nothing today" mails train users
   to unsubscribe.
 - **A failed account warns and the run continues** — one bad login never blanks
   the digest. The broad `except Exception` per account is deliberate (imaplib
