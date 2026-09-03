@@ -21,25 +21,15 @@ MODEL = ""
 
 
 def call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
-    # `--system-prompt` replaces Claude Code's own agent persona with ours, so
-    # the model is a triager, not a coding agent handed a list of emails.
-    # `--model` is passed ONLY when the user set one: the subscription is
-    # flat-rate, so the CLI's default model costs nothing extra, and the
-    # working v1 invocation never pinned one. Pinning claude-sonnet-5 here
-    # coincided with runs that returned zero items from 37 candidates on CLI
-    # 2.1.259 (live, 2026-09-02) -- see the diagnostics line below.
-    argv = [
-        "claude",
-        "-p",
-        user,
-        "--system-prompt",
-        system,
-        "--output-format",
-        "json",
-        "--json-schema",
-        json.dumps(schema),
-        "--no-session-persistence",
-    ]
+    # EXACTLY the argv of the last invocation that delivered a digest
+    # (1.0.0, live 2026-09-01: 3 items). Two later variants each returned 0
+    # items from 30+ candidates on the same inbox: pinning `--model
+    # claude-sonnet-5` (v2/v3, three runs 2026-09-02) and splitting the
+    # prompt into `--system-prompt` + `-p` (PR #14, 2026-09-03, CLI
+    # 2.1.259). One prompt, no model, no system-prompt flag. `--model` is
+    # passed only when the user set `model:` themselves.
+    prompt = system + "\n\n" + user
+    argv = ["claude", "-p", prompt, "--output-format", "json", "--json-schema", json.dumps(schema)]
     if cfg.model:
         argv += ["--model", cfg.model]
     try:

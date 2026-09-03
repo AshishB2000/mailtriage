@@ -99,9 +99,10 @@ def test_call_honors_model_override(monkeypatch):
     assert "claude-custom-9000" in seen["args"]
 
 
-def test_call_uses_system_prompt_flag_and_no_model_by_default(monkeypatch, capsys):
-    """v1's working invocation never pinned a model; --system-prompt keeps the
-    model a triager rather than Claude Code's coding persona."""
+def test_call_uses_single_prompt_and_no_model_by_default(monkeypatch, capsys):
+    """Pinned to the argv of the last invocation that delivered a digest
+    (1.0.0): one -p prompt holding system+user, no --model, no
+    --system-prompt. Both extras coincided with 0-item live runs."""
     fake = _StubCompletedProcess(
         0,
         stdout=json.dumps(
@@ -124,9 +125,9 @@ def test_call_uses_system_prompt_flag_and_no_model_by_default(monkeypatch, capsy
     claude_cli.call(CFG, "SYSTEM TEXT", "USER TEXT", SCHEMA)
     args = seen["args"]
     assert "--model" not in args
-    assert args[args.index("--system-prompt") + 1] == "SYSTEM TEXT"
-    assert args[args.index("-p") + 1] == "USER TEXT"
-    assert "--no-session-persistence" in args
+    assert "--system-prompt" not in args
+    assert args[args.index("-p") + 1] == "SYSTEM TEXT\n\nUSER TEXT"
+    assert args[:2] == ["claude", "-p"]
 
     err = capsys.readouterr().err
     assert "claude CLI envelope" in err and "'models': ['claude-x']" in err and "'structured': True" in err

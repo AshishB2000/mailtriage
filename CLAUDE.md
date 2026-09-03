@@ -102,11 +102,14 @@ failure). `worth_reading` caps at `reading_count`, enforced client-side in
 sender/subject/link from the real Email, never from the model.
 
 Model: `claude-sonnet-5` (API path). This is headline triage on the user's
-bill; don't upgrade to Opus without a reason. **The CLI backends (claude,
-codex, gemini) pass no `--model` unless `model:` is set** — subscriptions
-are flat-rate so the CLI default costs nothing extra, and pinning
-`claude-sonnet-5` on the claude CLI coincided with three live runs that
-returned 0 items from 37 candidates (2026-09-02, CLI 2.1.259). Don't re-pin.
+bill; don't upgrade to Opus without a reason. **The claude CLI argv is pinned to the one that has delivered a digest**
+(`claude -p <system+user> --output-format json --json-schema …`, 1.0.0,
+live 2026-09-01): no `--model` unless `model:` is set, no `--system-prompt`.
+Each extra coincided with live runs returning 0 items from 30+ candidates
+(`--model claude-sonnet-5`: 3 runs 2026-09-02; `--system-prompt` split:
+2026-09-03, CLI 2.1.259). `tests/test_claude_cli.py` pins the argv. Codex and
+gemini CLIs likewise pass no model unless `model:` is set — subscriptions
+are flat-rate, the default costs nothing extra.
 
 ## Things that look wrong but are deliberate
 
