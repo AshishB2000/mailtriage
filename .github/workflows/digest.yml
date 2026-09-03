@@ -12,9 +12,16 @@ name: digest
 #
 # Two things about GitHub's scheduler you should know before filing a bug:
 #  1. It drifts (a run can fire 5-30 minutes late, occasionally more) and
-#     under heavy load it can skip an hour entirely. Either way nothing is
-#     lost -- a skipped hour's digest arrives at the next slot instead,
-#     because config.yaml's window_hours overlaps between runs.
+#     under heavy load it skips hours outright (one run in five hours,
+#     observed 2026-09-03). The gate accepts a slot for `catch_up_minutes`
+#     (config.yaml, default 120) after it, so the hour after a skipped one
+#     still sends that slot's digest. Because two hourly firings can then
+#     both fall inside one slot's window, each scheduled digest's subject
+#     carries its slot ("mailtriage · Thu 03 Sep 08:00 · ...") and the engine
+#     looks for that subject in your own mailbox before sending -- a slot
+#     never sends twice, with no state file. If a slot is missed for longer
+#     than catch_up_minutes, its mail still arrives at the next slot:
+#     window_hours overlaps between runs.
 #  2. Scheduled workflows are auto-disabled after 60 days with no commits to
 #     the repo. GitHub emails you first. Push anything, or hit "Run workflow",
 #     to wake it back up.
@@ -22,6 +29,16 @@ on:
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
+    inputs:
+      # "digest" is what the setup wizard's input-less dispatch gets, so the
+      # default must stay the normal run. "doctor" runs `mailtriage --doctor`:
+      # config, each account's IMAP login, the provider on a fixed fixture,
+      # and one real test message through delivery -- PASS/FAIL per check.
+      mode:
+        description: "What to run"
+        type: choice
+        options: [digest, weekly, doctor]
+        default: digest
 
 permissions:
   contents: read
@@ -61,8 +78,8 @@ jobs:
       # schedule (no network, no IMAP): exit 0 with the mode printed on
       # stdout when due, exit 3 when not due, exit 1 on a real failure (e.g.
       # a broken config.yaml, which must fail the job loudly rather than
-      # silently look like "not due"). GITHUB_EVENT_NAME lets a manual "Run
-      # workflow" click bypass the gate.
+      # silently look like "not due"). A manual "Run workflow" click bypasses
+      # the gate entirely: its `mode` input (default "digest") is the mode.
       #
       # Deliberately not `mailtriage --due && A || { [ $? -eq 3 ] && B; }`:
       # actionlint/shellcheck flags that shape (SC2015, "A && B || C is not
@@ -73,11 +90,17 @@ jobs:
         id: gate
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          MODE_INPUT: ${{ github.event.inputs.mode }}
         run: |
-          set +e
-          mode=$(mailtriage --due)
-          rc=$?
-          set -e
+          if [ -n "$MODE_INPUT" ]; then
+            mode="$MODE_INPUT"
+            rc=0
+          else
+            set +e
+            mode=$(mailtriage --due)
+            rc=$?
+            set -e
+          fi
           case "$rc" in
             0) echo "due=true" >> "$GITHUB_OUTPUT"; echo "mode=$mode" >> "$GITHUB_OUTPUT" ;;
             3) echo "due=false" >> "$GITHUB_OUTPUT" ;;
@@ -116,16 +139,21 @@ jobs:
       # can't enumerate them -- export the whole secrets bag into the
       # environment instead. This is also how CODEX_AUTH_JSON reaches
       # codex_cli.py -- it reads the env var directly, no separate step needed.
+      #
+      # GITHUB_EVENT_NAME is what tells the engine a scheduled run from a
+      # manual one: only scheduled digests get the slot stamp + double-send
+      # guard described at the top of this file.
       - name: Send digest
         if: steps.gate.outputs.due == 'true'
         env:
           ALL_SECRETS: ${{ toJSON(secrets) }}
           MODE: ${{ steps.gate.outputs.mode }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           # Values stay masked in logs; shlex.quote prevents shell injection.
           eval "$(python -c 'import json,os,shlex; print("\n".join(f"export {k}={shlex.quote(v)}" for k,v in json.loads(os.environ["ALL_SECRETS"]).items() if k!="github_token"))')"
-          if [ "$MODE" = "weekly" ]; then
-            mailtriage --weekly
-          else
-            mailtriage
-          fi
+          case "$MODE" in
+            weekly) mailtriage --weekly ;;
+            doctor) mailtriage --doctor ;;
+            *) mailtriage ;;
+          esac

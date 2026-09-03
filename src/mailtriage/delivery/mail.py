@@ -226,8 +226,15 @@ def send_html(cfg: Config, subject: str, html_body: str) -> None:
         )
 
 
-def send(cfg: Config, triaged: list[Triaged]) -> None:
-    needs_action = [t for t in triaged if t["bucket"] == "needs_action"]
-    worth_reading = [t for t in triaged if t["bucket"] == "worth_reading"]
-    a, r = len(needs_action), len(worth_reading)
-    send_html(cfg, f"{cfg.subject_prefix} · {a} to act · {r} to read", email_html(cfg, triaged))
+def digest_subject(cfg: Config, triaged: list[Triaged], stamp: str = "") -> str:
+    """`stamp` is the slot a scheduled run is for ("Thu 03 Sep 08:00"); it
+    sits right after the prefix so imap_pull.already_delivered can search
+    for exactly "<prefix> · <stamp>" next time. Manual runs pass none."""
+    a = sum(t["bucket"] == "needs_action" for t in triaged)
+    r = sum(t["bucket"] == "worth_reading" for t in triaged)
+    head = f"{cfg.subject_prefix} · {stamp}" if stamp else cfg.subject_prefix
+    return f"{head} · {a} to act · {r} to read"
+
+
+def send(cfg: Config, triaged: list[Triaged], stamp: str = "") -> None:
+    send_html(cfg, digest_subject(cfg, triaged, stamp), email_html(cfg, triaged))

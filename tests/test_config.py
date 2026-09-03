@@ -27,6 +27,7 @@ def test_defaults_match_shipped_config():
     assert cfg.run_at == ["08:00", "18:00"]
     assert cfg.timezone == "UTC"
     assert cfg.weekly_review == ""
+    assert cfg.catch_up_minutes == 120
 
 
 def test_shipped_config_yaml_loads():
@@ -336,3 +337,17 @@ def test_window_hours_smaller_than_gap_warns_but_does_not_raise(capsys):
 def test_window_hours_covering_gap_is_silent(capsys):
     Config.from_mapping({**MINIMAL, "run_at": ["08:00", "18:00"], "window_hours": 15})
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("bad", [59, 361, 0, True, "120", 90.0, None])
+def test_catch_up_minutes_out_of_range_or_wrong_type_raises(bad):
+    if bad is None:
+        assert Config.from_mapping({**MINIMAL, "catch_up_minutes": None}).catch_up_minutes == 120  # null = default
+        return
+    with pytest.raises(MailError, match="catch_up_minutes"):
+        Config.from_mapping({**MINIMAL, "catch_up_minutes": bad})
+
+
+def test_catch_up_minutes_bounds_accepted():
+    assert Config.from_mapping({**MINIMAL, "catch_up_minutes": 60}).catch_up_minutes == 60
+    assert Config.from_mapping({**MINIMAL, "catch_up_minutes": 360}).catch_up_minutes == 360

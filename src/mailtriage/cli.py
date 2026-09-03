@@ -10,9 +10,17 @@ from datetime import datetime, timezone
 from mailtriage import __version__
 from mailtriage.config import Config, load_config
 from mailtriage.errors import MailError
-from mailtriage.imap_pull import label_actions, pull, pull_open_actions, pull_week, push_drafts
+from mailtriage.imap_pull import (
+    already_delivered,
+    check_login,
+    label_actions,
+    pull,
+    pull_open_actions,
+    pull_week,
+    push_drafts,
+)
 from mailtriage.models import Email, Triaged, WeekResult
-from mailtriage.schedule import due, local_zone
+from mailtriage.schedule import current_slot, due, local_zone
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -40,6 +48,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "('digest' or 'weekly') to stdout if a run_at/weekly_review slot is due "
             "this hour, exit 3 if not (never 1, so a real failure is never confused "
             "with 'not due')"
+        ),
+    )
+    ap.add_argument(
+        "--doctor",
+        action="store_true",
+        help=(
+            "diagnose the setup: config, each account's IMAP login, the AI provider on a fixed "
+            "three-email fixture, and delivery (sends one real test message). One PASS/FAIL line per "
+            "check on stderr; exit 1 if any failed"
         ),
     )
     # Not argparse's built-in action="version": that calls sys.exit() from inside
@@ -120,6 +137,28 @@ def _week_counts(week: WeekResult) -> tuple[int, int]:
     return handled, still_open
 
 
+def _slot_stamp(cfg: Config, now: datetime, dry_run: bool) -> str:
+    """The slot this scheduled run is for, e.g. "Thu 03 Sep 08:00" -- it goes
+    in the subject and is what the no-double-send guard searches for. "" for
+    a dry run or a manual run (GITHUB_EVENT_NAME=workflow_dispatch or unset),
+    which are never stamped and never guarded."""
+    if dry_run:
+        return ""
+    slot = current_slot(cfg, now, os.environ.get("GITHUB_EVENT_NAME", "workflow_dispatch"))
+    return f"{slot:%a %d %b %H:%M}" if slot else ""
+
+
+def _slot_already_delivered(cfg: Config, stamp: str, now: datetime) -> bool:
+    """Two hourly cron firings can both land inside one slot's catch_up_minutes
+    window. Gmail is the memory: if any account already holds this slot's
+    stamped subject, this run has nothing to do. Runs before pull/triage so
+    the duplicate costs no API call either."""
+    if stamp and already_delivered(os.environ, cfg.subject_prefix, stamp, now):
+        print("mailtriage: this slot's digest was already delivered — sending nothing.", file=sys.stderr)
+        return True
+    return False
+
+
 def run_weekly(cfg: Config, dry_run: bool = False) -> None:
     # Imported here, not at module scope: mirrors run()'s lazy delivery
     # import (weekly_html lives in delivery.mail, alongside the Resend
@@ -128,6 +167,9 @@ def run_weekly(cfg: Config, dry_run: bool = False) -> None:
     from mailtriage.delivery.mail import weekly_html
 
     now = _now()
+    stamp = _slot_stamp(cfg, now, dry_run)
+    if _slot_already_delivered(cfg, stamp, now):
+        return
     week = pull_week(os.environ, now, cfg.label)
 
     for w in week["warnings"]:
@@ -144,7 +186,8 @@ def run_weekly(cfg: Config, dry_run: bool = False) -> None:
         _print_weekly(week)
         return
 
-    send_html(cfg, f"{cfg.subject_prefix} · weekly review", weekly_html(cfg, week))
+    head = f"{cfg.subject_prefix} · {stamp}" if stamp else cfg.subject_prefix
+    send_html(cfg, f"{head} · weekly review", weekly_html(cfg, week))
     print(
         f"mailtriage: weekly review delivered ({handled} handled, {still_open} open) via {cfg.delivery}.",
         file=sys.stderr,
@@ -178,6 +221,9 @@ def run(cfg: Config, dry_run: bool = False) -> None:
     from mailtriage.triage import select_backend, triage
 
     now = _now()
+    stamp = _slot_stamp(cfg, now, dry_run)
+    if _slot_already_delivered(cfg, stamp, now):
+        return
     result = pull(os.environ, now, cfg.window_hours)
 
     # A dead account must not fail the run: a red X for one broken account
@@ -239,8 +285,102 @@ def run(cfg: Config, dry_run: bool = False) -> None:
         _print_digest(kept)
         return
 
-    send(cfg, kept)
+    send(cfg, kept, stamp)
     print(f"mailtriage: delivered {len(kept)} item(s) via {cfg.delivery}.", file=sys.stderr)
+
+
+# --- --doctor ------------------------------------------------------------
+
+
+def _doctor_fixture() -> list[Email]:
+    """Three synthetic emails with one unmistakable needs_action among them.
+    A provider that can't put the contract request in needs_action is not
+    going to triage a real inbox usefully either."""
+    people = (
+        (
+            "Priya Shah <priya@colleague.example.com>",
+            "Signed contract",
+            "Can you send the signed contract by Friday? Legal needs it before the kickoff.",
+        ),
+        (
+            "The Weekly Byte <news@newsletter.example.com>",
+            "This week in tech: 10 stories you missed",
+            "Welcome to this week's roundup. Unsubscribe at any time.",
+        ),
+        (
+            "Shop <receipts@shop.example.com>",
+            "Your receipt for order #48213",
+            "Thanks for your purchase. Total charged: $24.00. No action needed.",
+        ),
+    )
+    return [
+        {
+            "account": "you@example.com",
+            "from": sender,
+            "subject": subject,
+            "snippet": text,
+            "body": text,
+            "date": "2026-09-01T09:00:00+00:00",
+            "unread": True,
+            "link": "https://mail.google.com/",
+            "message_id": "",
+            "reply_to": "",
+            "uid": "",
+        }
+        for sender, subject, text in people
+    ]
+
+
+def _check(name: str, ok: bool, detail: str) -> bool:
+    print(f"doctor: {'PASS' if ok else 'FAIL'} {name} — {detail}", file=sys.stderr)
+    return ok
+
+
+def run_doctor(config_path: str) -> int:
+    """One PASS/FAIL line per check on stderr, with the fix in the FAIL
+    line. The delivery check sends one real message -- that's the point."""
+    from mailtriage.delivery import send_html
+    from mailtriage.triage import select_backend, triage
+
+    try:
+        cfg = load_config(config_path)
+    except MailError as e:
+        _check("config", False, str(e))
+        return 1
+    ok = _check("config", True, f"{config_path} loads")
+
+    try:
+        for addr, count, err in check_login(os.environ):
+            ok &= _check(
+                f"account {addr}",
+                not err,
+                f"ok: {count} in INBOX" if not err else f"{err} — check the MAIL_PW_* secret for this address",
+            )
+    except MailError as e:
+        ok = _check("accounts", False, str(e))
+
+    try:
+        name, _call = select_backend(cfg, os.environ)
+        kept = triage(cfg, _doctor_fixture(), _now())
+        actioned = any(t["bucket"] == "needs_action" for t in kept)
+        ok &= _check(
+            f"provider {name}",
+            actioned,
+            "the fixture's contract request came back as needs_action"
+            if actioned
+            else f"{len(kept)} item(s) came back, none needs_action — check 'interests'/'avoid' in {config_path} "
+            "don't exclude direct requests from colleagues",
+        )
+    except MailError as e:
+        ok = _check("provider", False, str(e))
+
+    try:
+        send_html(cfg, f"{cfg.subject_prefix} · doctor", "<p>mailtriage doctor: delivery works.</p>")
+        ok &= _check(f"delivery {cfg.delivery}", True, "test message sent — check the inbox it should land in")
+    except MailError as e:
+        ok = _check(f"delivery {cfg.delivery}", False, str(e))
+
+    return 0 if ok else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -259,6 +399,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.due:
             event = os.environ.get("GITHUB_EVENT_NAME", "schedule")
             return _handle_due(load_config(args.config), _now(), event)
+        if args.doctor:
+            return run_doctor(args.config)
         if args.weekly:
             run_weekly(load_config(args.config), dry_run=args.dry_run)
         else:

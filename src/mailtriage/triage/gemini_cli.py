@@ -20,6 +20,7 @@ from typing import Any
 
 from mailtriage.config import Config
 from mailtriage.errors import MailError
+from mailtriage.triage.usage import log_usage
 
 # cfg.model overrides this when non-empty.
 MODEL = "gemini-2.5-flash"
@@ -107,6 +108,13 @@ def call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[st
     err = envelope.get("error")
     if proc.returncode != 0 or err:
         raise MailError(_failure_message(proc.returncode, err))
+
+    # `stats.models.<model>.tokens.{prompt,candidates}` -- summed across
+    # models; absent on older CLIs, in which case nothing is printed.
+    models = ((envelope.get("stats") or {}).get("models") or {}).values()
+    tokens = [m.get("tokens") or {} for m in models if isinstance(m, dict)]
+    if tokens and all(isinstance(t.get("prompt"), int) and isinstance(t.get("candidates"), int) for t in tokens):
+        log_usage(sum(t["prompt"] for t in tokens), sum(t["candidates"] for t in tokens))
 
     text = envelope.get("response")
     if not isinstance(text, str):

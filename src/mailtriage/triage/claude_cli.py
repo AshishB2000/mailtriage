@@ -15,6 +15,7 @@ from typing import Any
 
 from mailtriage.config import Config
 from mailtriage.errors import MailError
+from mailtriage.triage.usage import log_usage
 
 # The CLI's own default model is used unless cfg.model is set -- see call().
 MODEL = ""
@@ -72,6 +73,8 @@ def call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[st
         "result_type": type(parsed.get("result")).__name__,
     }
     print(f"mailtriage: claude CLI envelope {meta}", file=sys.stderr)
+    usage = parsed.get("usage") or {}
+    log_usage(usage.get("input_tokens"), usage.get("output_tokens"), parsed.get("total_cost_usd"))
 
     if parsed.get("is_error") or proc.returncode != 0:
         reason = parsed.get("result") or proc.stderr.strip() or "unknown error"

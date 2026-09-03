@@ -9,6 +9,7 @@ from typing import Any
 from mailtriage.config import Config
 from mailtriage.delivery.http import post_json
 from mailtriage.errors import MailError
+from mailtriage.triage.usage import log_usage
 
 # cfg.model overrides this when non-empty.
 MODEL = "gemini-2.5-flash"
@@ -77,4 +78,6 @@ def call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[st
         result: dict[str, Any] = json.loads(text)
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
         raise MailError(f"Gemini returned a response mailtriage could not parse: {body[:500]}") from e
+    usage = parsed.get("usageMetadata") or {}
+    log_usage(usage.get("promptTokenCount"), usage.get("candidatesTokenCount"))
     return result

@@ -81,6 +81,11 @@ class Config:
     # slot on top of the daily ones. The weekly digest itself ships in a
     # later PR; for now schedule.due() only recognizes the slot.
     weekly_review: str = ""
+    # How long after a run_at/weekly_review slot the hourly gate still fires
+    # it. GitHub's cron skips hours under load; 120 = one skipped hour still
+    # gets its digest. The slot-stamped subject guard (imap_pull.
+    # already_delivered) keeps a wide window from sending a slot twice.
+    catch_up_minutes: int = 120
     subject_prefix: str = "mailtriage"
     email_to: str = ""
     email_from: str = ""
@@ -134,6 +139,10 @@ class Config:
             value = getattr(cfg, name)
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise MailError(f"'{name}' in {origin} must be a positive whole number (got {value!r}).")
+
+        cu = cfg.catch_up_minutes
+        if not isinstance(cu, int) or isinstance(cu, bool) or not 60 <= cu <= 360:
+            raise MailError(f"'catch_up_minutes' in {origin} must be a whole number from 60 to 360 (got {cu!r}).")
 
         if not isinstance(cfg.draft_replies, bool):
             raise MailError(f"'draft_replies' in {origin} must be true or false (got {cfg.draft_replies!r}).")

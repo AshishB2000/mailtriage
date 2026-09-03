@@ -331,6 +331,7 @@ Pick your own digest times instead of a fixed cadence. In `config.yaml`:
 run_at: ["08:00", "18:00"]     # as many as you like, "HH:MM" 24h
 timezone: "America/New_York"   # IANA name — any tz database zone
 weekly_review: ""              # "" = off, or "<mon..sun> HH:MM" for a weekly slot
+catch_up_minutes: 120          # how late the hourly gate still fires a slot (60-360)
 ```
 
 `.github/workflows/digest.yml` itself never changes — it can't, without every
@@ -341,12 +342,22 @@ it), and `mailtriage --due` decides whether *this* hour is one of your
 `run_at` slots before anything else runs. Two things follow from that:
 
 - **Runs fire within about an hour after the time you picked**, not on the
-  minute — GitHub's scheduler can drift 5-30 minutes late under load, and the
-  gate accepts the whole hour after your slot rather than requiring exact
-  equality, so a drifted trigger still catches it.
-- **A skipped or delayed hour doesn't lose mail** — `window_hours` overlaps
-  between runs specifically so a late or dropped trigger's mail shows up at
-  the next slot instead of vanishing.
+  minute — GitHub's scheduler can drift 5-30 minutes late under load, and
+  sometimes skips an hour outright (we've seen one run in five hours). The
+  gate accepts a slot for `catch_up_minutes` after it (default 120, valid
+  60-360), so the hour after a skipped one still sends that slot's digest.
+- **A slot never sends twice.** Two hourly firings can both land inside one
+  slot's catch-up window, so each scheduled digest's subject carries its
+  slot — `mailtriage · Thu 03 Sep 08:00 · 2 to act · 3 to read` — and
+  before sending, the engine looks for that subject in the mailboxes it
+  already reads (All Mail, since yesterday). Found → it sends nothing and
+  says so in the log. Gmail is the memory; there's still no state file.
+  Manual "Run workflow" clicks and `--dry-run` carry no slot and are never
+  suppressed. (With `delivery: email` to an address outside `MAIL_ACCOUNTS`
+  the guard can't see the sent digest and quietly does nothing.)
+- **A slot missed for longer than `catch_up_minutes` doesn't lose mail** —
+  `window_hours` overlaps between runs specifically so a dropped trigger's
+  mail shows up at the next slot instead of vanishing.
 
 The setup wizard's Schedule step picks your timezone (defaulting to the one
 your browser reports), lets you add/remove `run_at` times, and computes
@@ -464,9 +475,29 @@ forks by default; its bumps reach you through the sync PR instead).
 
 ## Troubleshooting
 
-Actions tab → open the failed run → read the log. mailtriage's errors are
-written to say what's wrong and how to fix it, not just that something
-failed.
+**Start with the doctor.** Actions → digest → **Run workflow** → set
+`mode` to `doctor` (or run `mailtriage --doctor` locally). It prints one
+`PASS`/`FAIL` line per check, with the fix in the `FAIL` line, and exits 1
+if anything failed:
+
+```
+doctor: PASS config — config.yaml loads
+doctor: PASS account alice@gmail.com — ok: 1432 in INBOX
+doctor: PASS provider claude-subscription — the fixture's contract request came back as needs_action
+doctor: PASS delivery gmail — test message sent — check the inbox it should land in
+```
+
+The provider check triages a fixed three-email fixture (one obvious
+action item, a newsletter, a receipt), so it costs one small model call;
+the delivery check really sends one line to your digest address — that's
+the point. Every scheduled run also prints
+`mailtriage: usage input=N output=N cost=$X.XXXX` after each model call
+(cost only where the backend reports it — the `claude` CLI does), so you
+can see what a run costs without opening a billing page.
+
+Otherwise: Actions tab → open the failed run → read the log. mailtriage's
+errors are written to say what's wrong and how to fix it, not just that
+something failed.
 
 | Log message | What it means | Fix |
 |---|---|---|
@@ -490,6 +521,8 @@ failed.
 | `mailtriage: account failed, skipping: ...` (per-account warning) | One account's IMAP login failed (bad password, network) | That account is skipped; every other account still triages normally |
 | `mailtriage: draft push failed, skipping: ...` (per-account warning) | Drafting worked but appending to that account's Drafts mailbox failed | Digest still sends with the drafts inline; that account's Gmail Drafts just didn't get them this run |
 | `mailtriage: nothing recent — sending nothing.` | No mail in the window at all | Nothing to fix — normal on a quiet window |
+| `mailtriage: this slot's digest was already delivered — sending nothing.` | An earlier hourly run inside this slot's `catch_up_minutes` window already sent it; the engine found the slot-stamped subject in your mailbox | Nothing to fix — this is the no-double-send guard doing its job. See [Your schedule](#your-schedule) |
+| `doctor: FAIL ...` | `mailtriage --doctor` found a broken piece of the setup | The rest of the line says what to change; the table below covers the same messages |
 | `mailtriage: the model kept none of the candidates — sending nothing.` | The model triaged everything as noise | Working as intended, not a failure |
 
 ---
@@ -528,6 +561,7 @@ export MAIL_ACCOUNTS=alice@gmail.com
 export MAIL_PW_F24FE3C393F64986=...   # pw_env_var("alice@gmail.com") -- see manual setup, step 3
 
 .venv/bin/mailtriage --self-check   # assertions only, no API calls, no network
+.venv/bin/mailtriage --doctor       # config + IMAP login + provider + delivery, PASS/FAIL per check
 .venv/bin/mailtriage --dry-run      # real IMAP pull + real API call, prints instead of sending
 .venv/bin/mailtriage                # real run, actually delivers
 ```

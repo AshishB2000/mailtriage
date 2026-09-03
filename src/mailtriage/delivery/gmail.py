@@ -12,7 +12,7 @@ import smtplib
 from email.message import EmailMessage
 
 from mailtriage.config import Config
-from mailtriage.delivery.mail import email_html
+from mailtriage.delivery.mail import digest_subject, email_html
 from mailtriage.errors import MailError
 from mailtriage.imap_pull import accounts_from_env, app_password, pw_env_var
 from mailtriage.models import Triaged
@@ -64,8 +64,5 @@ def send_html(cfg: Config, subject: str, html_body: str) -> None:
         raise MailError(f"could not send via Gmail SMTP ({type(e).__name__}: {e}). Re-run the workflow.") from e
 
 
-def send(cfg: Config, triaged: list[Triaged]) -> None:
-    needs_action = [t for t in triaged if t["bucket"] == "needs_action"]
-    worth_reading = [t for t in triaged if t["bucket"] == "worth_reading"]
-    a, r = len(needs_action), len(worth_reading)
-    send_html(cfg, f"{cfg.subject_prefix} · {a} to act · {r} to read", email_html(cfg, triaged))
+def send(cfg: Config, triaged: list[Triaged], stamp: str = "") -> None:
+    send_html(cfg, digest_subject(cfg, triaged, stamp), email_html(cfg, triaged))
