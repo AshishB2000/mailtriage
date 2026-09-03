@@ -14,6 +14,7 @@ message between mailboxes.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import imaplib
 import re
 import time
@@ -31,7 +32,29 @@ from mailtriage.models import Email, PullResult, Triaged, WeekItem, WeekResult
 
 
 def pw_env_var(addr: str) -> str:
+    """Repo-secret name holding `addr`'s app password.
+
+    MAIL_PW_ + the first 16 hex chars of BLAKE2b-128 over the trimmed,
+    lower-cased address -- a hash, so the name (which the public Actions log
+    prints) never reveals the address. Mirrored character-for-character by
+    `mailPwSlug` in docs/index.html, where libsodium's crypto_generichash is
+    the same unkeyed BLAKE2b; tests/test_contracts.py pins both sides to one
+    vector.
+    """
+    digest = hashlib.blake2b(addr.strip().lower().encode(), digest_size=16).hexdigest()
+    return "MAIL_PW_" + digest[:16].upper()
+
+
+def legacy_pw_env_var(addr: str) -> str:
+    """The pre-hash name (deprecated): the address itself, upper-cased, with every
+    non-alphanumeric turned into `_`. Still *read* so forks set up before the
+    change keep working; never written by the wizard any more."""
     return "MAIL_PW_" + re.sub(r"[^A-Z0-9]", "_", addr.upper())
+
+
+def app_password(environ: Mapping[str, str], addr: str) -> str | None:
+    """`addr`'s app password from the hashed secret name, else the legacy one."""
+    return environ.get(pw_env_var(addr)) or environ.get(legacy_pw_env_var(addr))
 
 
 def accounts_from_env(environ: Mapping[str, str]) -> list[tuple[str, str]]:
@@ -40,11 +63,11 @@ def accounts_from_env(environ: Mapping[str, str]) -> list[tuple[str, str]]:
         raise MailError("MAIL_ACCOUNTS is empty — set it to a comma-separated list of Gmail addresses.")
     out = []
     for addr in (a.strip() for a in raw.split(",") if a.strip()):
-        var = pw_env_var(addr)
-        pw = environ.get(var)
+        pw = app_password(environ, addr)
         if not pw:
             raise MailError(
-                f"{addr}: no app password found in ${var}. Create one at myaccount.google.com/apppasswords."
+                f"{addr}: no app password found in ${pw_env_var(addr)}. "
+                "Create one at myaccount.google.com/apppasswords."
             )
         out.append((addr, pw))
     return out
@@ -260,7 +283,7 @@ def push_drafts(
 
     warnings: list[dict[str, str]] = []
     for account, items in by_account.items():
-        pw = environ.get(pw_env_var(account))
+        pw = app_password(environ, account)
         if not pw:
             warnings.append(
                 {"account": account, "error": f"no app password found in ${pw_env_var(account)}, skipping draft push"}
@@ -310,7 +333,7 @@ def label_actions(
     warnings: list[dict[str, str]] = []
     quoted_label = _quote_mailbox(label)
     for account, uids in by_account.items():
-        pw = environ.get(pw_env_var(account))
+        pw = app_password(environ, account)
         if not pw:
             warnings.append(
                 {"account": account, "error": f"no app password found in ${pw_env_var(account)}, skipping labels"}

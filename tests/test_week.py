@@ -17,7 +17,7 @@ from mailtriage.imap_pull import pull_week
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
 LABEL = "mailtriage/action"
 SENDER = "alice@gmail.com"
-PW_VAR = "MAIL_PW_ALICE_GMAIL_COM"
+PW_VAR = "MAIL_PW_ALICE_GMAIL_COM"  # deprecated pre-hash name on purpose: exercises the legacy fallback
 ENV = {"MAIL_ACCOUNTS": SENDER, PW_VAR: "pw"}  # pull_week discovers accounts the same way pull() does
 
 

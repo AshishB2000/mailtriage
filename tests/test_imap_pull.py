@@ -7,8 +7,10 @@ import pytest
 from mailtriage.imap_pull import (
     MailError,
     accounts_from_env,
+    app_password,
     fetch_account,
     gmail_link,
+    legacy_pw_env_var,
     msg_datetime,
     parse_message,
     pull,
@@ -29,9 +31,24 @@ RAW = (
 )
 
 
-def test_pw_env_var_slugs_address():
-    assert pw_env_var("alice@gmail.com") == "MAIL_PW_ALICE_GMAIL_COM"
-    assert pw_env_var("a.b+x@work.co") == "MAIL_PW_A_B_X_WORK_CO"
+def test_pw_env_var_hashes_address():
+    # BLAKE2b-128 of the trimmed, lower-cased address -- never the address itself.
+    assert pw_env_var("alice@gmail.com") == "MAIL_PW_F24FE3C393F64986"
+    assert pw_env_var("  Alice@Gmail.com ") == "MAIL_PW_F24FE3C393F64986"
+    assert pw_env_var("a.b+x@work.co") == "MAIL_PW_5335BF4B59240EFC"
+    assert "ALICE" not in pw_env_var("alice@gmail.com")
+
+
+def test_legacy_pw_env_var_is_the_old_slug():
+    assert legacy_pw_env_var("alice@gmail.com") == "MAIL_PW_ALICE_GMAIL_COM"
+    assert legacy_pw_env_var("a.b+x@work.co") == "MAIL_PW_A_B_X_WORK_CO"
+
+
+def test_app_password_prefers_hashed_name_then_falls_back_to_legacy():
+    both = {"MAIL_PW_F24FE3C393F64986": "new", "MAIL_PW_ALICE_GMAIL_COM": "old"}
+    assert app_password(both, "alice@gmail.com") == "new"
+    assert app_password({"MAIL_PW_ALICE_GMAIL_COM": "old"}, "alice@gmail.com") == "old"
+    assert app_password({}, "alice@gmail.com") is None
 
 
 def test_accounts_from_env_pairs_addresses_with_passwords():
@@ -45,7 +62,7 @@ def test_accounts_from_env_pairs_addresses_with_passwords():
 
 def test_accounts_from_env_raises_on_missing_password():
     env = {"MAIL_ACCOUNTS": "alice@gmail.com"}
-    with pytest.raises(MailError, match="MAIL_PW_ALICE_GMAIL_COM"):
+    with pytest.raises(MailError, match="MAIL_PW_F24FE3C393F64986"):
         accounts_from_env(env)
 
 

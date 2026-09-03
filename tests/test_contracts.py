@@ -9,10 +9,11 @@ refactor and that outcome.
 """
 
 import dataclasses
+import re
 from pathlib import Path
 
 from mailtriage.config import Config
-from mailtriage.imap_pull import pw_env_var
+from mailtriage.imap_pull import legacy_pw_env_var, pw_env_var
 from mailtriage.schedule import max_gap_hours
 from mailtriage.triage import PROVIDERS
 
@@ -20,12 +21,20 @@ ROOT = Path(__file__).resolve().parent.parent
 WIZARD = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
 
 
-# --- the MAIL_PW_ slug mirror -------------------------------------------
+# --- the MAIL_PW_ name mirror --------------------------------------------
 
 # The exact JS transform the wizard uses. If this line changes in
 # docs/index.html, it MUST still equal pw_env_var's behavior — update both
-# sides and this pin together.
-JS_TRANSFORM = '"MAIL_PW_" + email.toUpperCase().replace(/[^A-Z0-9]/g, "_")'
+# sides and this pin together. libsodium's crypto_generichash is unkeyed
+# BLAKE2b, so at digest size 16 it equals hashlib.blake2b(digest_size=16).
+JS_TRANSFORM = (
+    '"MAIL_PW_" + sodium.to_hex(sodium.crypto_generichash(16, '
+    "sodium.from_string(email.trim().toLowerCase()))).slice(0, 16).toUpperCase()"
+)
+# One hard-coded vector, checked against BOTH sides: pw_env_var must produce
+# it, and docs/index.html must carry it verbatim as a `// vector:` comment
+# next to mailPwSlug. Drift on either side fails here instead of in a fork.
+VECTOR_ADDR, VECTOR_NAME = "alice@gmail.com", "MAIL_PW_F24FE3C393F64986"
 
 
 def test_wizard_slug_transform_is_the_pinned_mirror():
@@ -36,10 +45,18 @@ def test_wizard_slug_transform_is_the_pinned_mirror():
     )
 
 
+def test_wizard_vector_comment_matches_the_engine():
+    m = re.search(r"^// vector: (\S+) -> (\S+)$", WIZARD, re.MULTILINE)
+    assert m, "docs/index.html is missing the `// vector: <addr> -> <name>` comment next to mailPwSlug"
+    assert (m.group(1), m.group(2)) == (VECTOR_ADDR, VECTOR_NAME)
+    assert pw_env_var(m.group(1)) == m.group(2)
+
+
 def test_python_side_of_the_mirror_is_pinned():
-    # Pin the Python behavior the JS mirrors — including the awkward chars.
-    assert pw_env_var("alice@gmail.com") == "MAIL_PW_ALICE_GMAIL_COM"
-    assert pw_env_var("a.b+x@work.co") == "MAIL_PW_A_B_X_WORK_CO"
+    assert pw_env_var(VECTOR_ADDR) == VECTOR_NAME
+    assert pw_env_var("a.b+x@work.co") == "MAIL_PW_5335BF4B59240EFC"
+    # Deprecated pre-hash name: still read by the engine, never written.
+    assert legacy_pw_env_var("a.b+x@work.co") == "MAIL_PW_A_B_X_WORK_CO"
 
 
 # --- the max_gap_hours (window_hours auto-compute) mirror ---------------

@@ -17,7 +17,7 @@ NOW = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
 WINDOW_HOURS = 13
 LABEL = "mailtriage/action"
 SENDER = "alice@gmail.com"
-PW_VAR = "MAIL_PW_ALICE_GMAIL_COM"
+PW_VAR = "MAIL_PW_ALICE_GMAIL_COM"  # deprecated pre-hash name on purpose: exercises the legacy fallback
 ENV = {"MAIL_ACCOUNTS": SENDER, PW_VAR: "pw"}  # pull_open_actions discovers accounts the same way pull() does
 
 

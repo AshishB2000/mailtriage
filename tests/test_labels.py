@@ -14,7 +14,7 @@ from mailtriage.imap_pull import label_actions
 from mailtriage.models import Email, Triaged
 
 SENDER = "alice@gmail.com"
-PW_VAR = "MAIL_PW_ALICE_GMAIL_COM"
+PW_VAR = "MAIL_PW_F24FE3C393F64986"  # pw_env_var(SENDER): BLAKE2b-128 of the address, never the address
 LABEL = "mailtriage/action"
 
 

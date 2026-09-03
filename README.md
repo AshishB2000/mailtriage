@@ -195,17 +195,26 @@ workflows, go ahead and enable them."**
 | `EMAIL_FROM` *(optional)* | who it's sent from. Same default as above for `delivery: gmail`; required for `delivery: email` (Resend) |
 
 **The `MAIL_PW_*` names are the most error-prone step.** Each is
-`MAIL_PW_` + the address, upper-cased, with every non-alphanumeric character
-turned into `_` — exactly the transform `imap_pull.pw_env_var` runs to look
-it up at run time:
+`MAIL_PW_` + the first 16 hex characters (upper-cased) of a BLAKE2b-128 hash
+of the address, trimmed and lower-cased — a hash rather than the address
+itself, because secret *names* appear in your fork's public Actions log and
+your address shouldn't. It's exactly what `imap_pull.pw_env_var` computes at
+run time; get the name for any address with one line of stdlib Python:
 
-```
-alice@gmail.com       →  MAIL_PW_ALICE_GMAIL_COM
-alice.work@gmail.com  →  MAIL_PW_ALICE_WORK_GMAIL_COM
+```bash
+python3 -c 'import hashlib,sys; print("MAIL_PW_" + hashlib.blake2b(sys.argv[1].strip().lower().encode(), digest_size=16).hexdigest()[:16].upper())' alice@gmail.com
+# MAIL_PW_F24FE3C393F64986
 ```
 
 Get the name wrong and that one account is skipped with a warning in the
 Actions log — the run still completes for every other account.
+
+> **Upgrading an older fork?** The previous names — `MAIL_PW_` + the address
+> upper-cased with every non-alphanumeric turned into `_`, e.g.
+> `MAIL_PW_ALICE_GMAIL_COM` — are deprecated but still read as a fallback, so
+> existing secrets keep working. Re-running the setup wizard writes the hashed
+> name; delete the old secret afterwards if you'd rather it not name your
+> address.
 
 #### 4. Create an app password per account
 
@@ -427,6 +436,32 @@ just push any commit to reset the clock.
 
 ---
 
+## Keeping your fork current
+
+`.github/workflows/upstream-sync.yml` runs on the first of every month — and
+on demand from **Actions → upstream-sync → Run workflow** — in forks only.
+If this project's `main` has moved on since your last sync, it opens a pull
+request against your fork from a `mailtriage/upstream-sync` branch; review
+it, merge it, done. Your `config.yaml` is never clobbered: wherever it
+conflicts with upstream, the merge keeps your fork's version. If anything
+*else* conflicts (you edited the engine or a workflow yourself), the job
+fails with a message pointing you at GitHub's **Sync fork** button on your
+fork's front page, where you can resolve it by hand.
+
+One setting to flip once, or the workflow can't open the PR: **Settings →
+Actions → General → Workflow permissions → tick "Allow GitHub Actions to
+create and approve pull requests"**.
+
+Merging a sync PR is a commit, so it also resets the
+[60-day clock](#the-60-day-caveat) above — a fork that takes the monthly
+sync never goes quiet long enough for GitHub to switch the schedule off.
+
+The actions this repo uses are pinned to full commit SHAs, and
+`.github/dependabot.yml` keeps those pins fresh upstream (Dependabot is off in
+forks by default; its bumps reach you through the sync PR instead).
+
+---
+
 ## Troubleshooting
 
 Actions tab → open the failed run → read the log. mailtriage's errors are
@@ -490,7 +525,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 export ANTHROPIC_API_KEY=sk-ant-...   # or any other secret from the provider matrix above
 export RESEND_API_KEY=re_...
 export MAIL_ACCOUNTS=alice@gmail.com
-export MAIL_PW_ALICE_GMAIL_COM=...
+export MAIL_PW_F24FE3C393F64986=...   # pw_env_var("alice@gmail.com") -- see manual setup, step 3
 
 .venv/bin/mailtriage --self-check   # assertions only, no API calls, no network
 .venv/bin/mailtriage --dry-run      # real IMAP pull + real API call, prints instead of sending
@@ -524,8 +559,11 @@ tests/               pytest suite
 config.yaml          your triage settings (committed, holds no secrets)
 docs/index.html      the zero-backend setup wizard (+ vendored sodium.js)
 docs/SETUP.md        one-time credential setup (2-Step Verification + app passwords)
+CHANGELOG.md          what changed, by release
 .github/workflows/digest.yml   the schedule
 .github/workflows/ci.yml       lint + types + tests on every push
+.github/workflows/upstream-sync.yml   monthly "pull in upstream" PR, forks only
+.github/dependabot.yml         keeps the SHA-pinned actions above current
 ```
 
 No build step, no framework, no `node_modules`, no server.

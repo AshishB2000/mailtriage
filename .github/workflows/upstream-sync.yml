@@ -1,0 +1,72 @@
+name: upstream-sync
+
+# Forks only: once a month (and on "Run workflow"), pull whatever changed in
+# AshishB2000/mailtriage main into this fork as a pull request. The fork's
+# committed config.yaml is the user's settings, so wherever it conflicts the
+# fork's version wins; a conflict in any OTHER file fails the job and points
+# at GitHub's "Sync fork" button instead of guessing.
+#
+# Needs one repo setting, or `gh pr create` is refused: Settings -> Actions ->
+# General -> Workflow permissions -> "Allow GitHub Actions to create and
+# approve pull requests". Merging the PR is a commit, which also resets
+# GitHub's 60-day scheduled-workflow auto-disable. A branch pushed with
+# GITHUB_TOKEN doesn't trigger ci.yml on the PR -- that's GitHub's rule, not
+# a bug here; upstream main already passed the same CI.
+on:
+  schedule:
+    - cron: "23 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    if: github.repository != 'AshishB2000/mailtriage'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Merge upstream main and open a PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: mailtriage/upstream-sync
+          UPSTREAM: https://github.com/AshishB2000/mailtriage
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "$UPSTREAM"
+          git fetch --no-tags upstream main
+
+          behind=$(git rev-list --count HEAD..upstream/main)
+          if [ "$behind" = 0 ]; then
+            echo "Already up to date with upstream."
+            exit 0
+          fi
+          echo "Behind upstream by $behind commit(s)."
+
+          git checkout -B "$BRANCH"
+          if ! git merge --no-edit upstream/main; then
+            conflicts=$(git diff --name-only --diff-filter=U)
+            if [ "$conflicts" != "config.yaml" ]; then
+              echo "::error::Upstream changes conflict with this fork's edits in: $(echo "$conflicts" | tr '\n' ' '). Use the 'Sync fork' button on your fork's GitHub page and resolve them by hand."
+              exit 1
+            fi
+            # config.yaml is this fork's settings -- keep ours, take everything else.
+            git checkout --ours config.yaml
+            git add config.yaml
+            git commit --no-edit
+          fi
+
+          git push --force origin "$BRANCH"
+          if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq length)" = 0 ]; then
+            gh pr create --head "$BRANCH" \
+              --title "Sync with upstream mailtriage" \
+              --body "Pulls in $behind commit(s) from https://github.com/AshishB2000/mailtriage. Your config.yaml is untouched wherever it differed. Opened by .github/workflows/upstream-sync.yml; merging it also resets GitHub's 60-day scheduled-workflow timer."
+          else
+            echo "Open PR from $BRANCH already exists; branch updated."
+          fi

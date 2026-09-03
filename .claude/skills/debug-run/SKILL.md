@@ -27,7 +27,7 @@ least once before the log settled it.
 | Resend 403 "domain is not verified" | `email_from` not on a verified domain (gmail.com never can be). NOT a bad API key | Verify a domain, or switch `delivery: gmail` (sends via user's own Gmail, reuses MAIL_PW_*) |
 | Resend 422 | `to` sent as bare string | Must be a list — engine does this; check any new payload code |
 | Gmail SMTP auth error | App password wrong/revoked for `email_from` | Fresh one at myaccount.google.com/apppasswords; 16 chars, spaces stripped; secret name = `pw_env_var(email_from)` |
-| One account skipped, run green | Per-account warning (by design) — usually a mistyped `MAIL_PW_<SLUG>` name | Recompute slug: upper-case address, non-alphanumerics → `_` |
+| One account skipped, run green | Per-account warning (by design) — usually a mistyped `MAIL_PW_<HASH>` name | Recompute it: `pw_env_var(addr)` (BLAKE2b-128 of the address; README manual step 3 has the one-liner). The deprecated `MAIL_PW_<SLUG>` name (upper-cased address) still works as a fallback |
 | Green run, no email | Empty digest sends nothing (by design) — or first mail from a shared sender in spam | Check log for "delivered N item(s)"; if delivered, check spam |
 | Scheduled runs stopped after weeks | 60-day auto-disable on inactive repos, or the approval gate | Re-enable in Actions tab / push any commit; verify account email |
 | "No Claude auth configured" | Neither token secret set — or an invalid `CLAUDE_CODE_OAUTH_TOKEN` still present shadowing a good API key (token wins) | Set exactly one; delete the stale token secret |
