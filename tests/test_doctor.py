@@ -26,7 +26,11 @@ def _wire(
     import mailtriage.triage as triage_module
 
     sent: list[Any] = []
-    monkeypatch.setattr(cli_module, "check_login", lambda environ: accounts or [("alice@gmail.com", 12, "")])
+    monkeypatch.setattr(
+        cli_module,
+        "check_login",
+        lambda environ: accounts or [("alice@gmail.com", 12, "", "gmail mode · keywords=yes")],
+    )
     monkeypatch.setattr(triage_module, "select_backend", lambda cfg, environ: ("stub", None))
 
     def fake_triage(cfg: Any, emails: list[Email], now: Any) -> list[Any]:
@@ -51,7 +55,7 @@ def test_all_pass_exits_0(monkeypatch: Any, tmp_path: Any, capsys: Any) -> None:
     assert main(["--doctor", "--config", _config(tmp_path)]) == 0
     err = capsys.readouterr().err
     assert "PASS config" in err
-    assert "PASS account alice@gmail.com — ok: 12 in INBOX" in err
+    assert "PASS account alice@gmail.com — ok: 12 in INBOX · gmail mode" in err
     assert "PASS provider stub" in err
     assert "PASS delivery email" in err
     assert "FAIL" not in err
@@ -65,7 +69,7 @@ def test_bad_config_fails_fast(tmp_path: Any, capsys: Any) -> None:
 
 
 def test_account_failure_names_the_secret_and_exits_1(monkeypatch: Any, tmp_path: Any, capsys: Any) -> None:
-    _wire(monkeypatch, accounts=[("alice@gmail.com", 0, "IMAP4.error: AUTHENTICATIONFAILED")])
+    _wire(monkeypatch, accounts=[("alice@gmail.com", 0, "IMAP4.error: AUTHENTICATIONFAILED", "")])
     assert main(["--doctor", "--config", _config(tmp_path)]) == 1
     err = capsys.readouterr().err
     assert "FAIL account alice@gmail.com" in err and "MAIL_PW_" in err

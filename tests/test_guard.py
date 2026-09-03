@@ -142,16 +142,18 @@ def test_dead_account_never_vetoes_the_send(monkeypatch: Any) -> None:
 # --- check_login (doctor) ------------------------------------------------
 
 
-def test_check_login_reports_inbox_count(monkeypatch: Any) -> None:
+def test_check_login_reports_inbox_count_and_capabilities(monkeypatch: Any) -> None:
     factory = _patch_imap(monkeypatch, exists=17)
-    assert check_login(ENV) == [(SENDER, 17, "")]
+    # A fake that answers no CAPABILITY is trusted to be what its host name
+    # says: imap.gmail.com -> gmail mode, exactly as before this layer existed.
+    assert check_login(ENV) == [(SENDER, 17, "", "gmail mode · keywords=yes special-use=yes move=no")]
     assert factory.instances[0].select_calls == [("INBOX", True)]
 
 
 def test_check_login_reports_failure_per_account(monkeypatch: Any) -> None:
     _patch_imap(monkeypatch, login_error=OSError("login refused"))
-    addr, count, err = check_login(ENV)[0]
-    assert (addr, count) == (SENDER, 0)
+    addr, count, err, caps = check_login(ENV)[0]
+    assert (addr, count, caps) == (SENDER, 0, "")
     assert "login refused" in err
 
 

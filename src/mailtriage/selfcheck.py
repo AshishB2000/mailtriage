@@ -16,13 +16,26 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from mailtriage.commands import parse_commands, snooze_days, until_date
+from mailtriage.commands import label_from_keyword, parse_commands, snooze_days, until_date
 from mailtriage.config import Config
 from mailtriage.delivery.mail import digest_groups, section_heading, weekly_html
 from mailtriage.delivery.strings import STRINGS
 from mailtriage.drafts import DRAFT_SCHEMA, draft_schema, generate_drafts
 from mailtriage.errors import MailError
-from mailtriage.imap_pull import _classify_week_item, _older_than_window, _quote_mailbox, parse_message, within_window
+from mailtriage.imap_pull import (
+    Caps,
+    _classify_week_item,
+    _older_than_window,
+    _quote_mailbox,
+    keyword_for,
+    label_criteria,
+    parse_message,
+    pw_env_var,
+    smtp_target,
+    split_account,
+    webmail_link,
+    within_window,
+)
 from mailtriage.models import Email, Triaged, WeekResult
 from mailtriage.rules import enforce, matches
 from mailtriage.schedule import current_slot, due, max_gap_hours
@@ -92,6 +105,52 @@ def self_check() -> None:
     assert _quote_mailbox('a"b\\c') == '"a\\"b\\\\c"', (
         "label quoting must escape both '\"' and '\\\\', or a label containing either breaks IMAP"
     )
+
+    # 2d. The capability layer: a MAIL_ACCOUNTS entry must keep parsing to the
+    # same address whichever host form it uses -- the MAIL_PW_ secret is
+    # hashed from that address, so a regression here locks every non-Gmail
+    # fork out of its own mailbox.
+    assert split_account("alice@gmail.com") == ("alice@gmail.com", "imap.gmail.com", ""), (
+        "a bare MAIL_ACCOUNTS entry must still mean Gmail"
+    )
+    assert split_account("a@fastmail.com|imap.fastmail.com:1993") == ("a@fastmail.com", "imap.fastmail.com:1993", ""), (
+        "an entry's second field is the IMAP host[:port]"
+    )
+    assert split_account("a@x.com|imap.x.com|smtp.x.com:587")[2] == "smtp.x.com:587", (
+        "an entry's third field is the SMTP host[:port] for delivery: mailbox"
+    )
+    assert pw_env_var(split_account("a@x.com|imap.x.com")[0]) == pw_env_var("a@x.com"), (
+        "the MAIL_PW_ secret name must be hashed from the address alone, never the host form"
+    )
+    # Keywords are atoms: no '/', no '-', no spaces, or the STORE is a syntax error.
+    assert keyword_for("mailtriage/action") == "$MailtriageAction"
+    assert keyword_for("mailtriage/until-2026-09-10") == "$MailtriageUntil20260910"
+    assert label_from_keyword(keyword_for("mailtriage/until-2026-09-10")) == "mailtriage/until-2026-09-10", (
+        "the keyword <-> label mapping must round-trip, or a snooze never wakes on a non-Gmail server"
+    )
+    assert label_from_keyword(keyword_for("mailtriage/snooze-2w")) == "mailtriage/snooze-2w"
+    assert label_from_keyword("$SomethingTheReaderInvented") == "", "an unknown keyword is not a command"
+    # Mode selection: Gmail first, then keywords, then the folder fallback.
+    assert Caps(gmail=True).mode == "gmail"
+    assert Caps(gmail=False, keywords=True).mode == "keywords"
+    assert Caps(gmail=False, keywords=False).mode == "folders"
+    assert label_criteria(Caps(gmail=True), "mailtriage/action") == ["X-GM-LABELS", '"mailtriage/action"']
+    assert label_criteria(Caps(gmail=False), "mailtriage/action") == ["KEYWORD", "$MailtriageAction"], (
+        "a non-Gmail server must search by IMAP keyword -- X-GM-LABELS is a syntax error there"
+    )
+    assert webmail_link("imap.gmail.com", "me@gmail.com", "<a@b.com>").startswith("https://mail.google.com/"), (
+        "Gmail's link shape must not change -- commands.item_map parses it back out of a digest reply"
+    )
+    assert webmail_link("imap.fastmail.com", "me@fastmail.com", "<a@b.com>").endswith("msgid%3Aa%40b.com")
+    assert webmail_link("imap.example.org", "me@example.org", "<a@b.com>") == "message:a%40b.com"
+    assert smtp_target({"MAIL_ACCOUNTS": "me@gmail.com"}, "me@gmail.com") == ("smtp.gmail.com", 587, False), (
+        "delivery: gmail must keep sending through smtp.gmail.com:587 STARTTLS"
+    )
+    assert smtp_target({"MAIL_ACCOUNTS": "me@x.com|imap.x.com|smtp.x.com:465"}, "me@x.com") == (
+        "smtp.x.com",
+        465,
+        True,
+    ), "an explicit SMTP field wins, and 465 means implicit TLS"
 
     # 3. pick() is the security layer: every hostile-model case must be handled
     # here, without a network round trip.

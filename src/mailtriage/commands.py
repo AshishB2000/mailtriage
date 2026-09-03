@@ -1,6 +1,7 @@
-"""Gmail as the control plane. The reader applies a label in Gmail (phone or
-web) or replies to the digest in plain words; the next run reads it and acts.
-No state anywhere but the reader's own labels.
+"""The mailbox as the control plane. The reader applies a label in Gmail
+(phone or web) -- or the matching IMAP keyword in any other client -- or
+replies to the digest in plain words; the next run reads it and acts. No
+state anywhere but the reader's own mailbox.
 
 Label names are fixed literals (not derived from cfg.label) so the digest
 footer, the README and this module can't drift apart:
@@ -12,11 +13,19 @@ footer, the README and this module can't drift apart:
   mailtriage/vip             this message's sender is always_surface from now on
   mailtriage/handled         a digest reply that has already been acted on
 
+On a non-Gmail server each name becomes an IMAP keyword
+(`imap_pull.keyword_for`: `mailtriage/done` -> `$MailtriageDone`), which is
+what the reader's client shows as a tag. Every label read and write here goes
+through the capability helpers in imap_pull -- this module never writes
+`X-GM-*` itself -- and on a server with neither labels nor keywords the whole
+control plane is skipped with one warning (see UNSUPPORTED below).
+
 Writes: the read-write INBOX select is the same one label_actions uses; reply
-commands additionally select Gmail's \\All read-write so an item the reader
-already archived can still be labeled never/vip. Nothing here sends mail,
-deletes a message, or marks one read -- the only DELETE is of an emptied
-until-<date> label mailbox, so the label list doesn't grow forever.
+commands additionally select the account's \\All / INBOX+\\Archive mailboxes
+read-write so an item the reader already archived can still be labeled
+never/vip. Nothing here sends mail, deletes a message, or marks one read --
+the only DELETE is of an emptied until-<date> label mailbox, so the label
+list doesn't grow forever.
 """
 
 from __future__ import annotations
@@ -37,11 +46,19 @@ from urllib.parse import unquote
 from mailtriage.config import Config
 from mailtriage.errors import MailError
 from mailtriage.imap_pull import (
-    _find_all_mailbox,
+    Caps,
     _parse_labeled_message,
     _quote_mailbox,
     accounts_from_env,
+    all_mailboxes,
+    connect,
+    create_label,
+    imap_host,
+    label_criteria,
     push_drafts,
+    search_label,
+    select_inbox,
+    store_label,
 )
 from mailtriage.models import Email, Triaged
 from mailtriage.triage import CallFn
@@ -52,6 +69,10 @@ LABEL_VIP = "mailtriage/vip"
 LABEL_HANDLED = "mailtriage/handled"
 SNOOZE_PREFIX = "mailtriage/snooze-"
 UNTIL_PREFIX = "mailtriage/until-"
+# Written next to every dated until-label. On Gmail the dated labels are
+# mailboxes and can simply be listed; IMAP keywords cannot, so this constant
+# marker is what a keyword server searches for to find sleeping mail again.
+SLEEPING = "mailtriage/sleeping"
 MAX_SNOOZE_DAYS = 90
 # Created (idempotently) on every run so they're one tap away in Gmail's label
 # picker; a reader can still type any snooze-<N>d by hand.
@@ -155,20 +176,70 @@ def _mailbox_names(list_lines: list[Any]) -> list[str]:
     return names
 
 
+# A server with neither Gmail labels nor IMAP keywords can't carry a
+# reader's tag at all: the control plane is skipped with this one warning
+# per account, and triage itself still runs.
+UNSUPPORTED = (
+    "this server has neither Gmail labels nor IMAP keywords (PERMANENTFLAGS has no \\*), "
+    "so done/snooze/never/vip labels and digest replies are skipped here"
+)
+
+
 def _search(M: imaplib.IMAP4_SSL, *criteria: str) -> list[bytes]:
     # None = default charset, same imaplib stub quirk as imap_pull._replied_in_sent.
     _, data = M.uid("SEARCH", None, *criteria)  # type: ignore[arg-type]
     return data[0].split() if data and data[0] else []
 
 
-def _store(M: imaplib.IMAP4_SSL, uid: bytes | str, op: str, label: str) -> None:
-    uid_s = uid.decode() if isinstance(uid, bytes) else uid
-    M.uid("STORE", uid_s, f"{op}X-GM-LABELS", f"({_quote_mailbox(label)})")
+def _store(M: imaplib.IMAP4_SSL, caps: Caps, uid: bytes | str, op: str, label: str) -> None:
+    """`op` is "+" or "-" -- imap_pull.store_label decides what a label IS on
+    this server (Gmail label or IMAP keyword; this module never runs in the
+    folders fallback, see UNSUPPORTED)."""
+    store_label(M, caps, uid, label, add=op == "+")
 
 
-def _create(M: imaplib.IMAP4_SSL, label: str) -> None:
-    with contextlib.suppress(Exception):  # NO/ALREADYEXISTS is the common case
-        M.create(_quote_mailbox(label))
+def _create(M: imaplib.IMAP4_SSL, caps: Caps, label: str) -> None:
+    create_label(M, caps, label)
+
+
+def label_from_keyword(keyword: str) -> str:
+    """The inverse of `imap_pull.keyword_for` for the two label shapes that
+    carry data: `$MailtriageSnooze3d` -> `mailtriage/snooze-3d`,
+    `$MailtriageUntil20260910` -> `mailtriage/until-2026-09-10`. "" for
+    anything else -- a keyword the reader invented is not a command."""
+    m = re.fullmatch(r"\$MailtriageSnooze(\d{1,2})([dw])", keyword, re.IGNORECASE)
+    if m:
+        return f"{SNOOZE_PREFIX}{m.group(1)}{m.group(2).lower()}"
+    m = re.fullmatch(r"\$MailtriageUntil(\d{4})(\d{2})(\d{2})", keyword, re.IGNORECASE)
+    if m:
+        return f"{UNTIL_PREFIX}{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    return ""
+
+
+def _present_labels(M: imaplib.IMAP4_SSL, caps: Caps, action_label: str) -> list[str]:
+    """The snooze/until labels actually in use in the selected INBOX.
+
+    Gmail lists them as mailboxes. IMAP keywords can't be listed at all, so
+    they are read off the messages that carry one of ours instead: one search
+    for the action tag plus one for the SLEEPING marker, then a single
+    FLAGS-only FETCH (never a body).
+    """
+    if caps.gmail:
+        return [n for n in _mailbox_names(M.list()[1] or []) if n.startswith("mailtriage/")]
+    uids = search_label(M, caps, action_label) + search_label(M, caps, SLEEPING)
+    if not uids:
+        return []
+    _, fetched = M.uid("FETCH", b",".join(sorted(set(uids))).decode(), "(FLAGS)")
+    found: list[str] = []
+    for part in fetched:
+        line = part[0] if isinstance(part, tuple) else part
+        if not isinstance(line, bytes):
+            continue
+        for kw in re.findall(r"\$\w+", line.decode("ascii", "replace")):
+            label = label_from_keyword(kw)
+            if label and label not in found:
+                found.append(label)
+    return found
 
 
 def _fetch_raw(M: imaplib.IMAP4_SSL, uid: bytes, what: str) -> tuple[str, bytes]:
@@ -194,9 +265,7 @@ def _accounts(environ: Mapping[str, str], warnings: list[dict[str, str]]) -> lis
 # --- 1. label commands ----------------------------------------------------
 
 
-def apply_label_commands(
-    environ: Mapping[str, str], today: date, action_label: str, host: str = "imap.gmail.com"
-) -> dict[str, Any]:
+def apply_label_commands(environ: Mapping[str, str], today: date, action_label: str, host: str = "") -> dict[str, Any]:
     """Act on done/snooze/until labels in each INBOX. Idempotent -- every
     write is "make it so", and a label that doesn't exist is simply nothing
     to do.
@@ -206,40 +275,49 @@ def apply_label_commands(
     that is still snoozed: cli.run drops those from this run's candidates, or
     an in-window item the reader just closed would be re-triaged and
     re-labeled as if nothing happened.
+
+    An account whose server has neither Gmail labels nor IMAP keywords is
+    skipped with one UNSUPPORTED warning -- there is nothing for the reader
+    to have tagged.
     """
     counts = {"done": 0, "snoozed": 0, "woken": 0}
     skip: dict[str, set[str]] = {}
     warnings: list[dict[str, str]] = []
     for addr, pw in _accounts(environ, warnings):
         try:
-            M = imaplib.IMAP4_SSL(host, 993)
+            M, caps = connect(addr, pw, host or imap_host(environ, addr))
             try:
-                M.login(addr, pw)
-                labels = [n for n in _mailbox_names(M.list()[1] or []) if n.startswith("mailtriage/")]
-                M.select("INBOX")  # read-write on purpose: STORE needs it, same as label_actions
+                # read-write on purpose: STORE needs it, same as label_actions.
+                # This is also where PERMANENTFLAGS tells us about keywords.
+                select_inbox(M, caps, readonly=False)
+                if caps.mode == "folders":
+                    warnings.append({"account": addr, "error": UNSUPPORTED})
+                    continue
                 for label in DEFAULT_LABELS:
-                    _create(M, label)
+                    _create(M, caps, label)
+                labels = _present_labels(M, caps, action_label)
                 skipped = skip.setdefault(addr, set())
 
-                done_q, action_q = _quote_mailbox(LABEL_DONE), _quote_mailbox(action_label)
-                for uid in _search(M, "X-GM-LABELS", done_q, "X-GM-LABELS", action_q):
-                    _store(M, uid, "-", action_label)
+                for uid in search_label(M, caps, LABEL_DONE, *label_criteria(caps, action_label)):
+                    _store(M, caps, uid, "-", action_label)
                     counts["done"] += 1
-                skipped.update(u.decode() for u in _search(M, "X-GM-LABELS", done_q))
+                skipped.update(u.decode() for u in search_label(M, caps, LABEL_DONE))
 
                 for label in labels:
                     days = snooze_days(label)
                     if days is None:
                         continue
-                    uids = _search(M, "X-GM-LABELS", _quote_mailbox(label))
+                    uids = search_label(M, caps, label)
                     if not uids:
                         continue
                     target = until_label(today + timedelta(days=days))
-                    _create(M, target)
+                    _create(M, caps, target)
                     for uid in uids:
-                        _store(M, uid, "+", target)
-                        _store(M, uid, "-", label)
-                        _store(M, uid, "-", action_label)
+                        _store(M, caps, uid, "+", target)
+                        if not caps.gmail:
+                            _store(M, caps, uid, "+", SLEEPING)  # the only way to find it again
+                        _store(M, caps, uid, "-", label)
+                        _store(M, caps, uid, "-", action_label)
                         skipped.add(uid.decode())
                         counts["snoozed"] += 1
 
@@ -247,17 +325,20 @@ def apply_label_commands(
                     due = until_date(label)
                     if due is None:
                         continue
-                    uids = _search(M, "X-GM-LABELS", _quote_mailbox(label))
+                    uids = search_label(M, caps, label)
                     if due <= today:
                         for uid in uids:
-                            _store(M, uid, "+", action_label)
-                            _store(M, uid, "-", label)
+                            _store(M, caps, uid, "+", action_label)
+                            _store(M, caps, uid, "-", label)
+                            if not caps.gmail:
+                                _store(M, caps, uid, "-", SLEEPING)
                             counts["woken"] += 1
-                        with contextlib.suppress(Exception):  # now empty -- keep the label list short
-                            M.delete(_quote_mailbox(label))
+                        if caps.gmail:
+                            with contextlib.suppress(Exception):  # now empty -- keep the label list short
+                                M.delete(_quote_mailbox(label))
                     else:
                         for uid in uids:  # still asleep: guarantee carry-over can't see it
-                            _store(M, uid, "-", action_label)
+                            _store(M, caps, uid, "-", action_label)
                             skipped.add(uid.decode())
             finally:
                 with contextlib.suppress(Exception):
@@ -267,28 +348,31 @@ def apply_label_commands(
     return {"counts": counts, "skip": skip, "warnings": warnings}
 
 
-def derive_sender_rules(environ: Mapping[str, str], host: str = "imap.gmail.com") -> dict[str, Any]:
-    """Senders of messages labeled never/vip anywhere in \\All, as lowercased
-    full addresses. Read-only, header-only (FROM), capped at SENDER_CAP newest
-    per label per account. Returns {"never": set, "vip": set, "warnings"}."""
+def derive_sender_rules(environ: Mapping[str, str], host: str = "") -> dict[str, Any]:
+    """Senders of messages labeled never/vip anywhere in `all_mailboxes`
+    (Gmail's \\All, or INBOX + \\Archive), as lowercased full addresses.
+    Read-only, header-only (FROM), capped at SENDER_CAP newest per label per
+    mailbox. Returns {"never": set, "vip": set, "warnings"}."""
     out: dict[str, Any] = {"never": set(), "vip": set(), "warnings": []}
     for addr, pw in _accounts(environ, out["warnings"]):
         try:
-            M = imaplib.IMAP4_SSL(host, 993)
+            M, caps = connect(addr, pw, host or imap_host(environ, addr))
             try:
-                M.login(addr, pw)
-                M.select(_quote_mailbox(_find_all_mailbox(M.list()[1] or [])), readonly=True)
-                for key, label in (("never", LABEL_NEVER), ("vip", LABEL_VIP)):
-                    uids = _search(M, "X-GM-LABELS", _quote_mailbox(label))[-SENDER_CAP:]
-                    if not uids:
+                for box in all_mailboxes(M, caps):
+                    if M.select(_quote_mailbox(box), readonly=True)[0] != "OK":
                         continue
-                    _, fetched = M.uid("FETCH", b",".join(uids).decode(), "(BODY.PEEK[HEADER.FIELDS (FROM)])")
-                    for part in fetched:
-                        if not isinstance(part, tuple):
+                    for key, label in (("never", LABEL_NEVER), ("vip", LABEL_VIP)):
+                        uids = search_label(M, caps, label)[-SENDER_CAP:]
+                        if not uids:
                             continue
-                        _, sender = parseaddr(str(message_from_bytes(part[1], policy=policy.default).get("From", "")))
-                        if sender:
-                            out[key].add(sender.lower())
+                        _, fetched = M.uid("FETCH", b",".join(uids).decode(), "(BODY.PEEK[HEADER.FIELDS (FROM)])")
+                        for part in fetched:
+                            if not isinstance(part, tuple):
+                                continue
+                            msg = message_from_bytes(part[1], policy=policy.default)
+                            _, sender = parseaddr(str(msg.get("From", "")))
+                            if sender:
+                                out[key].add(sender.lower())
             finally:
                 with contextlib.suppress(Exception):
                     M.logout()
@@ -312,21 +396,20 @@ def with_sender_rules(cfg: Config, never: set[str], vip: set[str]) -> Config:
     return replace(cfg, rules=rules)
 
 
-def count_done(
-    environ: Mapping[str, str], now: datetime, days: int = 7, host: str = "imap.gmail.com"
-) -> dict[str, Any]:
+def count_done(environ: Mapping[str, str], now: datetime, days: int = 7, host: str = "") -> dict[str, Any]:
     """How many messages got the done label in the last `days` days, across
-    \\All (a done item has lost cfg.label, so pull_week can't see it). Search
-    only, nothing fetched. Returns {"done": n, "warnings": [...]}."""
+    `all_mailboxes` (a done item has lost cfg.label, so pull_week can't see
+    it). Search only, nothing fetched. Returns {"done": n, "warnings": [...]}."""
     since = (now - timedelta(days=days)).strftime("%d-%b-%Y")
     out: dict[str, Any] = {"done": 0, "warnings": []}
     for addr, pw in _accounts(environ, out["warnings"]):
         try:
-            M = imaplib.IMAP4_SSL(host, 993)
+            M, caps = connect(addr, pw, host or imap_host(environ, addr))
             try:
-                M.login(addr, pw)
-                M.select(_quote_mailbox(_find_all_mailbox(M.list()[1] or [])), readonly=True)
-                out["done"] += len(_search(M, "X-GM-LABELS", _quote_mailbox(LABEL_DONE), "SINCE", since))
+                for box in all_mailboxes(M, caps):
+                    if M.select(_quote_mailbox(box), readonly=True)[0] != "OK":
+                        continue
+                    out["done"] += len(search_label(M, caps, LABEL_DONE, "SINCE", since))
             finally:
                 with contextlib.suppress(Exception):
                     M.logout()
@@ -346,6 +429,12 @@ def count_done(
 _LINK = r"https://mail\.google\.com/mail/u/([^/\s\"'<>]+)/#search/rfc822msgid:([^\s\"'<>)]+)"
 _HTML_ITEM_RE = re.compile(_LINK + r'"[^>]*>\s*#(\d{1,3})\s*</a>')
 _TEXT_ITEM_RE = re.compile(r"#(\d{1,3})\s*<?\s*" + _LINK)
+# Other mailboxes: imap_pull.webmail_link's non-Gmail shapes. They carry the
+# Message-ID but no account -- handle_replies acts in the mailbox the reply
+# arrived at.
+_ALT_LINK = r"(?:https://app\.fastmail\.com/mail/search:msgid%3A|message:)([^\s\"'<>)]+)"
+_HTML_ALT_RE = re.compile(_ALT_LINK + r'"[^>]*>\s*#(\d{1,3})\s*</a>')
+_TEXT_ALT_RE = re.compile(r"#(\d{1,3})\s*<?\s*" + _ALT_LINK)
 _QUOTE_START_RE = re.compile(r"^(>|On\b.*|From:\s|-{3,}\s*(Original|Forwarded))", re.IGNORECASE)
 
 
@@ -361,6 +450,12 @@ def item_map(html_part: str, text_part: str) -> dict[int, tuple[str, str]]:
     for m in _TEXT_ITEM_RE.finditer(text_part):
         n, account, mid = int(m.group(1)), m.group(2), m.group(3)
         out.setdefault(n, (unquote(account), unquote(mid)))
+    if out:
+        return out
+    for m in _HTML_ALT_RE.finditer(html_part):
+        out.setdefault(int(m.group(2)), ("", unquote(html.unescape(m.group(1)))))
+    for m in _TEXT_ALT_RE.finditer(text_part):
+        out.setdefault(int(m.group(1)), ("", unquote(m.group(2))))
     return out
 
 
@@ -502,31 +597,41 @@ def _apply_commands(
             counts["skipped"] += len(todo)  # a digest item from an account this fork can't write to
             continue
         try:
-            M = imaplib.IMAP4_SSL(host, 993)
+            M, caps = connect(account, pw, host or imap_host(environ, account))
             try:
-                M.login(account, pw)
-                M.select(_quote_mailbox(_find_all_mailbox(M.list()[1] or [])))  # read-write: STORE needs it
+                # read-write: STORE needs it. The reader may have archived the
+                # item already, so look through every "everything" mailbox --
+                # UIDs are per-mailbox, so act in whichever one has it.
+                boxes = all_mailboxes(M, caps)
                 for mid, cmd in todo:
-                    uids = _search(M, "HEADER", "Message-ID", _quote_mailbox(mid))
+                    uids: list[bytes] = []
+                    for box in boxes:
+                        if M.select(_quote_mailbox(box))[0] != "OK":
+                            continue
+                        uids = _search(M, "HEADER", "Message-ID", _quote_mailbox(mid))
+                        if uids:
+                            break
                     if not uids:
                         counts["skipped"] += 1
                         continue
                     uid, action = uids[0], cmd["action"]
                     if action == "done":
-                        _create(M, LABEL_DONE)
-                        _store(M, uid, "+", LABEL_DONE)
-                        _store(M, uid, "-", cfg.label)
+                        _create(M, caps, LABEL_DONE)
+                        _store(M, caps, uid, "+", LABEL_DONE)
+                        _store(M, caps, uid, "-", cfg.label)
                     elif action == "snooze":
                         target = until_label(today + timedelta(days=cmd["days"]))
-                        _create(M, target)
-                        _store(M, uid, "+", target)
-                        _store(M, uid, "-", cfg.label)
+                        _create(M, caps, target)
+                        _store(M, caps, uid, "+", target)
+                        if not caps.gmail:
+                            _store(M, caps, uid, "+", SLEEPING)
+                        _store(M, caps, uid, "-", cfg.label)
                     elif action == "never":
-                        _create(M, LABEL_NEVER)
-                        _store(M, uid, "+", LABEL_NEVER)
+                        _create(M, caps, LABEL_NEVER)
+                        _store(M, caps, uid, "+", LABEL_NEVER)
                     elif action == "vip":
-                        _create(M, LABEL_VIP)
-                        _store(M, uid, "+", LABEL_VIP)
+                        _create(M, caps, LABEL_VIP)
+                        _store(M, caps, uid, "+", LABEL_VIP)
                     elif action == "draft":
                         warnings.extend(_redraft(cfg, call, environ, M, uid, account, cmd["instruction"]))
                     counts[action] += 1
@@ -544,7 +649,7 @@ def handle_replies(
     now: datetime,
     today: date,
     backend: Callable[[], CallFn],
-    host: str = "imap.gmail.com",
+    host: str = "",
 ) -> dict[str, Any]:
     """Find un-handled replies to the digest in each INBOX (from one of the
     reader's own addresses, subject "Re: ..." containing cfg.subject_prefix),
@@ -566,17 +671,18 @@ def handle_replies(
 
     for addr, pw in account_list:
         try:
-            M = imaplib.IMAP4_SSL(host, 993)
+            M, caps = connect(addr, pw, host or imap_host(environ, addr))
             try:
-                M.login(addr, pw)
-                M.select("INBOX")  # read-write on purpose: the handled label is STOREd below
+                select_inbox(M, caps, readonly=False)  # read-write: the handled label is STOREd below
+                if caps.mode == "folders":
+                    out["warnings"].append({"account": addr, "error": UNSUPPORTED})
+                    continue
                 uids = _search(
                     M,
                     "SUBJECT",
                     _quote_mailbox(cfg.subject_prefix),
                     "NOT",
-                    "X-GM-LABELS",
-                    _quote_mailbox(LABEL_HANDLED),
+                    *label_criteria(caps, LABEL_HANDLED),
                     "SINCE",
                     since,
                 )
@@ -598,14 +704,18 @@ def handle_replies(
                         reply = call(cfg, COMMAND_SYSTEM, build_command_user(items, text), COMMAND_SCHEMA)
                         for cmd in parse_commands(reply, items):
                             account, mid = items[cmd["item"]]
-                            commands.append((account, mid, cmd))
+                            # A non-Gmail digest link carries no account, so
+                            # the item is acted on in the mailbox the reply
+                            # arrived at -- right for one account, and a
+                            # counted "skipped" when it belongs to another.
+                            commands.append((account or addr, mid, cmd))
                     if commands:
                         assert call is not None
                         out["warnings"].extend(
                             _apply_commands(cfg, call, environ, today, accounts, commands, counts, host)
                         )
-                    _create(M, LABEL_HANDLED)
-                    _store(M, uid, "+", LABEL_HANDLED)
+                    _create(M, caps, LABEL_HANDLED)
+                    _store(M, caps, uid, "+", LABEL_HANDLED)
             finally:
                 with contextlib.suppress(Exception):
                     M.logout()
