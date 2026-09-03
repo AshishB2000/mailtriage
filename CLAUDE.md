@@ -80,7 +80,7 @@ names — the wizard already writes both (forward-compat) even though
 one of: CLAUDE_CODE_OAUTH_TOKEN  ANTHROPIC_API_KEY  CODEX_AUTH_JSON
         OPENAI_API_KEY           GEMINI_API_KEY      GEMINI_OAUTH_JSON
                                                        (exactly one AI secret)
-RESEND_API_KEY      MAIL_ACCOUNTS      MAIL_PW_<SLUG> (one per address)
+RESEND_API_KEY      MAIL_ACCOUNTS      MAIL_PW_<HASH> (one per address)
 ```
 
 The wizard's provider picker writes an explicit `provider:` (never `"auto"`)
@@ -88,9 +88,17 @@ and PUTs exactly the one secret for that provider — the other four are never
 written. `"auto"` (config.yaml default for hand-edited files) walks
 `triage.PROVIDERS` in order and takes the first secret that's set.
 
-`MAIL_PW_<SLUG>` = `"MAIL_PW_" + addr.upper()` with every non-alphanumeric →
-`_`. This transform exists in TWO places that must match character-for-character:
-`imap_pull.pw_env_var` (Python) and `mailPwSlug` (JS, docs/index.html).
+`MAIL_PW_<HASH>` = `"MAIL_PW_" + blake2b(addr.strip().lower(),
+digest_size=16).hexdigest()[:16].upper()` — a hash, never the address, because
+secret *names* print in a public fork's Actions log. This transform exists in
+TWO places that must match character-for-character: `imap_pull.pw_env_var`
+(Python `hashlib`) and `mailPwSlug` (JS, docs/index.html, via the vendored
+libsodium's `crypto_generichash(16, …)` — the same unkeyed BLAKE2b).
+`tests/test_contracts.py` pins both sides to one vector,
+`alice@gmail.com → MAIL_PW_F24FE3C393F64986`, and checks the wizard carries it
+as a `// vector:` comment. The pre-hash `MAIL_PW_<SLUG>` (address upper-cased,
+non-alphanumerics → `_`) is **deprecated**: `imap_pull.app_password` still
+reads it as a fallback so old forks keep working; nothing writes it.
 
 **The workflow must stay at `.github/workflows/digest.yml`** — the wizard
 dispatches it by that literal filename.

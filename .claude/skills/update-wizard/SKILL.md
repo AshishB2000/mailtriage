@@ -15,7 +15,7 @@ Know the invariants before editing; verify all of them after.
 
 | Invariant | Why |
 |---|---|
-| `mailPwSlug` (JS) === `pw_env_var` (Python, imap_pull.py) character-for-character: `"MAIL_PW_" +` upper-cased address, every `[^A-Z0-9]` → `_` | Wizard writes the secret, engine reads it — a divergent name means that account is silently skipped |
+| `mailPwSlug` (JS) === `pw_env_var` (Python, imap_pull.py) character-for-character: `"MAIL_PW_" +` first 16 hex chars, upper-cased, of BLAKE2b-128 over the trimmed lower-cased address (`sodium.crypto_generichash(16, …)` ≡ `hashlib.blake2b(digest_size=16)`); the `// vector:` comment beside it must match `tests/test_contracts.py` | Wizard writes the secret, engine reads it — a divergent name means that account is silently skipped. The name is a hash so it never prints the address in the public Actions log |
 | `buildYaml()` emits EXACTLY the `Config` dataclass field names (config.py) | Unknown keys only warn; a typo'd key is settings the engine ignores, no error |
 | Secrets/token live ONLY in memory (`S.token`, `S.secrets`); the localStorage `KEEP` list never contains token, keys, or passwords | The page's trust story: plaintext never persists, never leaves the tab unencrypted |
 | Every secret is sealed with libsodium `crypto_box_seal` against the repo public key before PUT | GitHub only ever receives ciphertext |

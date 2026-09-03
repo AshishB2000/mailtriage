@@ -14,7 +14,7 @@ from mailtriage.errors import MailError
 from mailtriage.models import Triaged
 
 SENDER = "alice@gmail.com"
-PW_VAR = "MAIL_PW_ALICE_GMAIL_COM"
+PW_VAR = "MAIL_PW_F24FE3C393F64986"  # pw_env_var(SENDER): BLAKE2b-128 of the address, never the address
 
 
 def _item(bucket: str, subject: str = "hi", **overrides: object) -> Triaged:

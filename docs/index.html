@@ -626,7 +626,7 @@ footer a{color:var(--muted)}
 
     <div class="sect">
       <h3>Gmail accounts</h3>
-      <p class="hint" style="margin:-2px 0 4px">Each account needs its own 16-character app password, not your normal Google password. Enable 2-Step Verification at <a href="https://myaccount.google.com/security" target="_blank" rel="noopener">myaccount.google.com/security</a>, then create one per account at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>.</p>
+      <p class="hint" style="margin:-2px 0 4px">Each account needs its own 16-character app password, not your normal Google password. It is stored as a repository secret named <code>MAIL_PW_</code> + a 16-character hash of the address, so the secret's name never reveals the address in your fork's public Actions log. Enable 2-Step Verification at <a href="https://myaccount.google.com/security" target="_blank" rel="noopener">myaccount.google.com/security</a>, then create one per account at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>.</p>
       <div id="accounts"></div>
       <div class="chips">
         <button type="button" class="chip" id="addAcct">+ Add another account</button>
@@ -1499,8 +1499,14 @@ function collectAccounts() {
   });
 }
 
-// Must match pw_env_var in src/mailtriage/imap_pull.py exactly.
-const mailPwSlug = (email) => "MAIL_PW_" + email.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+// Must match pw_env_var in src/mailtriage/imap_pull.py exactly: MAIL_PW_ + the
+// first 16 hex chars of BLAKE2b-128 over the trimmed, lower-cased address, so
+// the secret name (which shows up in the fork's public Actions log) never
+// reveals the address. crypto_generichash is unkeyed BLAKE2b -- identical to
+// Python's hashlib.blake2b at the same digest size. tests/test_contracts.py
+// pins the line below and this vector against the engine:
+// vector: alice@gmail.com -> MAIL_PW_F24FE3C393F64986
+const mailPwSlug = (email) => "MAIL_PW_" + sodium.to_hex(sodium.crypto_generichash(16, sodium.from_string(email.trim().toLowerCase()))).slice(0, 16).toUpperCase();
 
 /* ------------------------------------------------------------ step 2: draft style + rules */
 function applyDraftStyle(style) {
@@ -1581,7 +1587,6 @@ function validate() {
 
   let firstAcctBad = null;
   const seen = new Set();
-  const bySlug = new Map(); // slug -> row, to catch two addresses collapsing to one secret name
   $$(".acct").forEach((row) => {
     const email = $(".acct-email", row).value.trim();
     const pw = $(".acct-pw", row).value.replace(/\s+/g, "");
@@ -1591,11 +1596,6 @@ function validate() {
     else if (seen.has(email.toLowerCase())) msg = "Already listed above.";
     else if (!pw) msg = "Enter the app password Google gave you for this account.";
     else if (!/^[A-Za-z0-9]{16}$/.test(pw)) msg = "App passwords are 16 characters (Google shows them as 4 groups of 4) — check for a missing or extra character.";
-    else {
-      const slug = mailPwSlug(email);
-      if (bySlug.has(slug)) msg = "Two addresses map to the same secret name (" + slug + "). They can't both be used — remove one.";
-      else bySlug.set(slug, row);
-    }
     if (msg) { acctError(row, msg); if (!firstAcctBad) firstAcctBad = row; }
     else seen.add(email.toLowerCase());
   });
@@ -1605,7 +1605,8 @@ function validate() {
   return v;
 }
 
-$("#go3").addEventListener("click", () => {
+$("#go3").addEventListener("click", async () => {
+  await sodium.ready; // mailPwSlug hashes with libsodium; the wasm is loaded by now, but never assume
   const v = validate();
   if (!v) return;
   S.cfg = v;
@@ -1750,7 +1751,7 @@ async function launch() {
       row("watch", "fail",
         "The run finished as <strong>" + esc(run.conclusion || "incomplete") + "</strong>. " +
         'Open <a target="_blank" rel="noopener" href="' + esc(run.html_url) + '">the log on GitHub</a> — the failing step names the cause, ' +
-        "and it is almost always a key pasted with a character missing, an unverified Resend from-domain, or a mistyped MAIL_PW_ name.");
+        "and it is almost always a key pasted with a character missing, an unverified Resend from-domain, or an app password Google has since revoked.");
       btn.disabled = false; btn.textContent = "Try again";
       $("#back2").disabled = false;
     } else {

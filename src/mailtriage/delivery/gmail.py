@@ -14,7 +14,7 @@ from email.message import EmailMessage
 from mailtriage.config import Config
 from mailtriage.delivery.mail import email_html
 from mailtriage.errors import MailError
-from mailtriage.imap_pull import accounts_from_env, pw_env_var
+from mailtriage.imap_pull import accounts_from_env, app_password, pw_env_var
 from mailtriage.models import Triaged
 
 
@@ -36,7 +36,7 @@ def send_html(cfg: Config, subject: str, html_body: str) -> None:
         to = sender
 
     var = pw_env_var(sender)
-    pw = os.environ.get(var)
+    pw = app_password(os.environ, sender)
     if not pw:
         raise MailError(
             f"{sender}: no app password found in ${var}. Create one at myaccount.google.com/apppasswords. "
