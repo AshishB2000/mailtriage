@@ -207,7 +207,9 @@ def _wire(monkeypatch: Any, delivered: bool | None) -> tuple[list[Any], list[Any
 
     monkeypatch.setattr(cli_module, "_now", lambda: NOW)
     monkeypatch.setattr(cli_module, "already_delivered", fake_guard)
-    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours: {"messages": [_email()], "warnings": []})
+    monkeypatch.setattr(
+        cli_module, "pull", lambda environ, now, hours, only=None: {"messages": [_email()], "warnings": []}
+    )
     monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [_triaged()])
     monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="": sends.append(stamp))
     return guard_calls, sends

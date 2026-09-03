@@ -262,3 +262,26 @@ def test_fetch_account_populates_uid(monkeypatch: Any) -> None:
 
     assert len(out) == 1
     assert out[0]["uid"] == "77"
+
+
+# --- `only`: a profile's account subset -----------------------------------
+
+
+def test_accounts_from_env_only_filters_case_insensitively():
+    assert [a for a, _ in accounts_from_env(ENV, only={"GOOD@gmail.com"})] == ["good@gmail.com"]
+
+
+def test_accounts_from_env_only_rejects_an_address_not_in_mail_accounts():
+    with pytest.raises(MailError, match="not in MAIL_ACCOUNTS"):
+        accounts_from_env(ENV, only={"nope@gmail.com"})
+
+
+def test_pull_only_fetches_the_named_accounts():
+    seen = []
+
+    def fake_fetch(addr, pw, now, hours, host="imap.gmail.com"):
+        seen.append(addr)
+        return []
+
+    pull(ENV, NOW, 13, fetch=fake_fetch, only={"bad@gmail.com"})
+    assert seen == ["bad@gmail.com"]
