@@ -221,6 +221,11 @@ def triage(cfg: Config, emails: list[Email], now: datetime) -> list[Triaged]:
     returned = reply.get("items")
     n_returned = len(returned) if isinstance(returned, list) else 0
     print(f"mailtriage: model returned {n_returned} item(s); {len(kept)} passed validation.", file=sys.stderr)
+    if not n_returned:
+        # A dict without "items" (or with a non-list one) also reads as "0
+        # items" -- name the keys so a shape mismatch isn't mistaken for an
+        # empty verdict. Keys only.
+        print(f"mailtriage: reply keys={sorted(reply.keys())}", file=sys.stderr)
     if n_returned and not kept and isinstance(returned, list) and isinstance(returned[0], dict):
         first = returned[0]
         bucket = first.get("bucket")
