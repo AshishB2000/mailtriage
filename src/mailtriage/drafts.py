@@ -56,6 +56,10 @@ def _style_lines(style: dict[str, Any]) -> list[str]:
     if style["language"] != "auto":
         lines.append(f"Write in {style['language']}.")
     lines.append(f"At most {style['max_sentences']} sentences unless the email demands more.")
+    # Set only in memory by commands._redraft (a "draft 1 shorter" digest
+    # reply) -- never a config.yaml key, so the validator never sees it.
+    if style.get("instruction"):
+        lines.append(f"The reader asked for this draft specifically: {style['instruction']}")
     return lines
 
 

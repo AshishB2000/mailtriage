@@ -293,6 +293,10 @@ project.
    (`readonly=True`, `BODY.PEEK[]`) — mailtriage never marks anything read.
 3. **Window** — keep only messages inside `window_hours`; drop anything
    undated.
+3b. **Commands** — act on `mailtriage/done`, `snooze-*`, `never`, `vip`
+   labels and on any reply you sent to the last digest, then drop those
+   messages from this run's candidates. See
+   [Gmail as the control plane](#gmail-as-the-control-plane).
 4. **Rules** — `rules.always_ignore` drops matching senders before the model
    ever sees them. See [Your rules](#your-rules).
 5. **Triage** — one call to whichever AI provider `provider` in `config.yaml`
@@ -434,6 +438,52 @@ project runs: nothing is stored outside your inbox, and there's still no
 `seen.json`, no repo state, and no per-run commit. Turn it off with
 `carry_over: false` if you'd rather each digest be a clean snapshot of the
 current `window_hours` only.
+
+---
+
+## Gmail as the control plane
+
+The label is also the remote control. Apply one of these in Gmail (phone or
+web) and the next run acts on it — no state anywhere but your own labels:
+
+| Label | What the next run does |
+|---|---|
+| `mailtriage/done` | Removes `mailtriage/action`, so the item stops being carried. `done` stays on as the record. |
+| `mailtriage/snooze-3d` (any `1d`…`90d`), `snooze-1w`, `snooze-2w` | Replaces it with a dated `mailtriage/until-YYYY-MM-DD` and drops `action`. When that date arrives the item comes back as "Still waiting on you", and the emptied `until-` label is deleted. |
+| `mailtriage/never` | That message's sender is treated as `rules.always_ignore` from now on. |
+| `mailtriage/vip` | That message's sender is treated as `rules.always_surface` from now on. |
+
+`done`, `never`, `vip` and the four common snooze labels are created for
+you on the first run so they're one tap away in Gmail's label picker.
+
+**Or just reply to the digest.** Every item is numbered `#1 … #n`. Reply
+to the digest email with plain words:
+
+```
+done 3
+snooze 2 for a week
+draft 1 shorter and more formal
+never 5
+vip 4
+```
+
+The next run reads replies from your own address (subject `Re: … mailtriage …`),
+turns the text into commands with one small model call, applies them by
+label exactly as above (`draft` regenerates that item's reply with your
+instruction and pushes a new draft), and labels the reply
+`mailtriage/handled` so it's acted on exactly once. Replies and messages
+you've marked done or snoozed are dropped from that run's triage candidates.
+
+**Deadlines.** The model now returns a `due` date (`YYYY-MM-DD`, or empty —
+it's told never to invent one) for each needs-action item. When any item
+has one, "Needs action" is grouped into **Overdue / Today / This week /
+Later / No date**, and every dated item gets an "Add to Google Calendar"
+link.
+
+**Nag.** Carried items show `waiting N days`; at `nag_after_days` (default
+3) the row goes bold with a **still open** badge. The weekly review counts
+items you closed via the `done` label separately, since those have lost the
+`action` label it otherwise searches for.
 
 ---
 
@@ -583,6 +633,7 @@ src/mailtriage/
   schedule.py        "is it time?" -- max_gap_hours, due() -- pure, no I/O
   rules.py           VIP-sender rules, checked deterministically around the model
   imap_pull.py       account/password lookup, IMAP fetch, time-window filter, push_drafts
+  commands.py        Gmail as the control plane: done/snooze/never/vip labels + replies to the digest
   triage/            the triage prompt (__init__.py)   <- the product
                        + 6 backends: claude_api, claude_cli, codex_cli, openai_api, gemini_api, gemini_cli
   drafts.py          the reply-drafting prompt + hostile-input-safe id mapping

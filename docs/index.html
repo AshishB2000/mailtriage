@@ -700,6 +700,10 @@ footer a{color:var(--muted)}
         <input type="text" id="label" value="mailtriage/action" autocomplete="off" spellcheck="false">
         <div class="msg"></div>
       </div>
+      <div class="f" id="f-nagAfterDays" style="margin-top:14px">
+        <label for="nagAfterDays">Flag as "still open" after (days)</label>
+        <input type="number" id="nagAfterDays" min="1" max="90" step="1" value="3" style="max-width:100px">
+      </div>
     </div>
 
     <div class="sect">
@@ -1036,6 +1040,10 @@ function buildYaml(v) {
     "# digest until you reply, archive, or remove the label. No repo state.",
     "carry_over: " + (v.carry_over ? "true" : "false"),
     "label: " + yamlStr(v.label),
+    "",
+    "# A carried item open for at least this many days is flagged in bold",
+    "# with a \"still open\" badge.",
+    "nag_after_days: " + v.nag_after_days,
     ""
   ].join("\n");
 }
@@ -1268,6 +1276,7 @@ async function prefillFromConfig(fullName) {
     }
     if (typeof cfg.carry_over === "boolean") $("#carryOver").checked = cfg.carry_over;
     if (cfg.label != null && cfg.label !== "") $("#label").value = cfg.label;
+    if (typeof cfg.nag_after_days === "number") $("#nagAfterDays").value = cfg.nag_after_days;
     if (cfg.accounts && typeof cfg.accounts === "object") S.acctOverrides = cfg.accounts;
     updateWindowNote();
   } catch (e) {
@@ -1554,7 +1563,8 @@ function collect() {
       always_action: collectRuleList("rulesAction")
     },
     carry_over: $("#carryOver").checked,
-    label: $("#label").value.trim()
+    label: $("#label").value.trim(),
+    nag_after_days: Math.max(1, +$("#nagAfterDays").value || 3)
   };
 }
 

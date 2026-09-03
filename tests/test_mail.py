@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import cast
 
 import pytest
@@ -213,7 +213,7 @@ def test_email_html_carried_section_renders_with_age_and_footer():
     html = mail.email_html(_cfg(), [_item("carried", subject="Still open", date=old_date)])
     assert "Still waiting on you" in html
     assert "Still open" in html
-    assert "3d" in html
+    assert "waiting 3 days" in html
     assert "Clears when you reply, archive, or remove the mailtriage/action label in Gmail." in html
 
 
@@ -231,3 +231,99 @@ def test_email_html_carried_section_escapes_subject_and_label():
     assert "<script>alert(2)</script>" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert "&lt;script&gt;alert(2)&lt;/script&gt;" in html
+
+
+# --- numbering, deadlines, nag, command hint (sub-project B) ------------
+
+
+def test_email_html_numbers_items_in_section_order_as_links():
+    html = mail.email_html(
+        _cfg(),
+        [
+            _item("worth_reading", subject="zeta"),
+            _item("needs_action", subject="alpha"),
+            _item("carried", subject="omega"),
+        ],
+    )
+    # needs_action, then carried, then worth_reading -- #1 alpha, #2 omega, #3 zeta
+    assert html.index(">#1</a>") < html.index("alpha") < html.index(">#2</a>") < html.index("omega")
+    assert html.index("omega") < html.index(">#3</a>") < html.index("zeta")
+    assert '<a href="https://mail.example.com/msg/1" class="muted"' in html
+
+
+def test_email_html_groups_needs_action_by_due_and_links_calendar():
+    today = date(2026, 9, 3)
+    items = [
+        _item("needs_action", subject="later one", due="2026-09-20"),
+        _item("needs_action", subject="no date one"),
+        _item("needs_action", subject="overdue one", due="2026-09-01"),
+        _item("needs_action", subject="today one", due="2026-09-03"),
+        _item("needs_action", subject="week one", due="2026-09-08"),
+    ]
+    html = mail.email_html(_cfg(), items, today=today)
+    order = [
+        html.index(s)
+        for s in (
+            "Overdue",
+            "overdue one",
+            "Today",
+            "today one",
+            "This week",
+            "week one",
+            "Later",
+            "later one",
+            "No date",
+            "no date one",
+        )
+    ]
+    assert order == sorted(order)
+    assert "Due Tue 1 Sep" in html
+    cal = mail.calendar_link(items[2])
+    assert cal.startswith(
+        "https://calendar.google.com/calendar/render?action=TEMPLATE&text=overdue+one&dates=20260901%2F20260902"
+    )
+    assert "details=https%3A%2F%2Fmail.example.com%2Fmsg%2F1" in cal
+    assert "Add to Google Calendar" in html
+
+
+def test_email_html_without_due_dates_has_no_groups():
+    html = mail.email_html(_cfg(), [_item("needs_action")])
+    assert "Needs action" in html
+    assert "No date" not in html and "Overdue" not in html
+
+
+def test_digest_groups_sorts_dated_items_by_due():
+    items = [_item("needs_action", subject="b", due="2026-09-30"), _item("needs_action", subject="a", due="2026-09-25")]
+    groups = mail.digest_groups(items, date(2026, 9, 3))
+    assert [(k, h) for k, h, _ in groups] == [("action", "Needs action · Later")]
+    assert [t["subject"] for t in groups[0][2]] == ["a", "b"]
+
+
+def test_email_html_carried_nag_badge_after_nag_after_days():
+    old = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    fresh = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    html = mail.email_html(
+        _cfg(nag_after_days=3),
+        [_item("carried", subject="stale", date=old), _item("carried", subject="new", date=fresh)],
+    )
+    assert "waiting 5 days" in html and "waiting 1 day<" in html
+    assert html.count("still open") == 1
+    assert html.index("stale") < html.index("still open") < html.index("new")
+
+
+def test_email_html_footer_explains_label_and_reply_commands():
+    html = mail.email_html(_cfg(), [_item("needs_action")])
+    for needle in (
+        "mailtriage/done",
+        "mailtriage/snooze-3d",
+        "mailtriage/never",
+        "mailtriage/vip",
+        "&quot;done 2&quot;",
+    ):
+        assert needle in html
+
+
+def test_weekly_html_shows_done_count_only_when_nonzero():
+    week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item()]}})
+    assert "marked done" not in mail.weekly_html(_cfg(), week)
+    assert "4 marked done" in mail.weekly_html(_cfg(), week, done_count=4)

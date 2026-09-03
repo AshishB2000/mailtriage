@@ -8,7 +8,7 @@ the triage() -> select_backend -> call -> pick wiring.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from mailtriage import triage
@@ -139,6 +139,7 @@ HOW MANY TO RETURN
 
 WRITING
 - note: one line. For needs_action, name the concrete action the reader must take. For worth_reading, say why it's worth a glance. No hedging, no "this could mean big things".
+- due: the date the action is needed by, as YYYY-MM-DD, if the message states or clearly implies one (today's date is given with the messages); otherwise empty. Never invent a date.
 - Copy each message's bracketed integer id EXACTLY as given. Never invent an id, and never address a message by anything other than its bracketed integer."""
 
 
@@ -186,6 +187,30 @@ def test_build_user_has_bracketed_index():
     user = triage.build_user([make_email(0), make_email(1)], now)
     assert "[0]" in user
     assert "[1]" in user
+    assert user.startswith("Today is Friday 2026-08-28.")  # lets the model resolve "by Friday" into `due`
+
+
+def test_pick_validates_due_like_everything_else():
+    emails = [make_email(i) for i in range(5)]
+    reply = {
+        "items": [
+            {"id": 0, "bucket": "needs_action", "note": "a", "due": "2099-01-05"},
+            {"id": 1, "bucket": "needs_action", "note": "b", "due": "next friday"},
+            {"id": 2, "bucket": "needs_action", "note": "c", "due": "1999-01-01"},  # older than a year: hallucinated
+            {"id": 3, "bucket": "needs_action", "note": "d", "due": 20990105},
+            {"id": 4, "bucket": "needs_action", "note": "e"},
+        ]
+    }
+    picked = triage.pick(CFG, emails, reply)
+    assert [p["due"] for p in picked] == ["2099-01-05", "", "", "", ""]
+    assert triage.clean_due(" 2026-09-04 ", today=date(2026, 9, 3)) == "2026-09-04"
+    assert triage.clean_due("2025-09-02", today=date(2026, 9, 3)) == ""
+    assert triage.clean_due("2025-09-03", today=date(2026, 9, 3)) == "2025-09-03"
+
+
+def test_triage_schema_requires_due():
+    item = triage.TRIAGE_SCHEMA["properties"]["items"]["items"]
+    assert "due" in item["properties"] and "due" in item["required"]
 
 
 def test_triage_end_to_end_uses_selected_backend(monkeypatch):

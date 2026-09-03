@@ -14,17 +14,18 @@ must never drag `anthropic` in.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
+from mailtriage.commands import parse_commands, snooze_days, until_date
 from mailtriage.config import Config
-from mailtriage.delivery.mail import weekly_html
+from mailtriage.delivery.mail import digest_groups, weekly_html
 from mailtriage.drafts import DRAFT_SCHEMA, generate_drafts
 from mailtriage.errors import MailError
 from mailtriage.imap_pull import _classify_week_item, _older_than_window, _quote_mailbox, parse_message, within_window
 from mailtriage.models import Email, Triaged, WeekResult
 from mailtriage.rules import enforce, matches
 from mailtriage.schedule import current_slot, due, max_gap_hours
-from mailtriage.triage import pick, select_backend
+from mailtriage.triage import clean_due, pick, select_backend
 
 
 def _email(i: int) -> Email:
@@ -300,5 +301,37 @@ def self_check() -> None:
     weekly = weekly_html(Config(delivery="email", label="mailtriage/action"), hostile_week)
     assert "<script>alert(1)</script>" not in weekly, "weekly_html must escape a hostile subject, not pass it through"
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in weekly, "weekly_html must HTML-escape hostile subjects"
+
+    # 14. Gmail as the control plane: label names parse the way the README
+    # promises, the model's reply-commands are validated like pick(), and a
+    # bad `due` is blanked rather than rendered as a deadline.
+    assert snooze_days("mailtriage/snooze-3d") == 3 and snooze_days("mailtriage/snooze-2w") == 14, (
+        "snooze label parsing regressed -- a reader's snooze would be silently ignored"
+    )
+    assert snooze_days("mailtriage/snooze-91d") is None, "snooze must cap at 90 days"
+    assert until_date("mailtriage/until-2026-09-03") == date(2026, 9, 3)
+    cmds = parse_commands(
+        {
+            "commands": [
+                {"action": "done", "item": 1, "days": 0, "instruction": ""},
+                {"action": "done", "item": 1, "days": 0, "instruction": ""},
+                {"action": "erase", "item": 1, "days": 0, "instruction": ""},
+                {"action": "snooze", "item": True, "days": 3, "instruction": ""},
+                {"action": "snooze", "item": 9, "days": 3, "instruction": ""},
+            ]
+        },
+        {1: ("me@gmail.com", "mid")},
+    )
+    assert cmds == [{"action": "done", "item": 1, "days": 7, "instruction": ""}], (
+        "parse_commands must drop a duplicate, an unknown action, a bool item and an unknown item"
+    )
+    assert clean_due("not a date") == "" and clean_due("2099-01-05") == "2099-01-05", (
+        "clean_due must blank anything that isn't YYYY-MM-DD"
+    )
+    dated: Triaged = {**_triaged_needs_action(0), "due": "2026-09-01"}
+    groups = digest_groups([dated, _triaged_needs_action(1)], date(2026, 9, 3))
+    assert [h for _k, h, _i in groups] == ["Needs action · Overdue", "Needs action · No date"], (
+        "digest_groups must split needs_action by due date once any item has one"
+    )
 
     print("self-check: ok")

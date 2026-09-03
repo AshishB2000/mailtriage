@@ -28,6 +28,14 @@ def test_defaults_match_shipped_config():
     assert cfg.timezone == "UTC"
     assert cfg.weekly_review == ""
     assert cfg.catch_up_minutes == 120
+    assert cfg.nag_after_days == 3
+
+
+def test_nag_after_days_must_be_a_positive_int():
+    assert Config.from_mapping({**MINIMAL, "nag_after_days": 7}).nag_after_days == 7
+    for bad in (0, -1, "3", True, 2.5):
+        with pytest.raises(MailError, match="nag_after_days"):
+            Config.from_mapping({**MINIMAL, "nag_after_days": bad})
 
 
 def test_shipped_config_yaml_loads():

@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from mailtriage import __version__
+from mailtriage.commands import apply_label_commands, count_done, derive_sender_rules, handle_replies, with_sender_rules
 from mailtriage.config import Config, load_config
 from mailtriage.errors import MailError
 from mailtriage.imap_pull import (
@@ -103,27 +104,34 @@ def _handle_due(cfg: Config, now: datetime, event: str) -> int:
     return 3
 
 
-def _print_digest(kept: list[Triaged]) -> None:
-    headings = (
-        ("Needs action", "needs_action"),
-        ("Still waiting on you", "carried"),
-        ("Worth reading", "worth_reading"),
-    )
-    for heading, bucket in headings:
-        items = [t for t in kept if t["bucket"] == bucket]
-        if not items:
-            continue
+def _print_digest(cfg: Config, kept: list[Triaged], today: date) -> None:
+    # Same section order and #N numbering as the HTML (delivery.mail owns
+    # both), so a --dry-run transcript reads like the email would.
+    from mailtriage.delivery.mail import calendar_link, digest_groups, waiting_days
+
+    n = 1
+    for kind, heading, items in digest_groups(kept, today):
         print(heading)
         for it in items:
-            line = f"  {it['subject']} · {it['sender']}"
+            line = f"  #{n} {it['subject']} · {it['sender']}"
+            if kind == "carried":
+                days = waiting_days(it["date"])
+                line += f" · waiting {days} day{'' if days == 1 else 's'}"
+                if days >= cfg.nag_after_days:
+                    line += " · STILL OPEN"
             if it["note"]:
                 line += f" · {it['note']}"
             print(line)
+            if it.get("due"):
+                print(f"    Due {it['due']} · {calendar_link(it)}")
             if it["draft"]:
                 print(f"    Draft reply: {it['draft']}")
+            n += 1
 
 
-def _print_weekly(week: WeekResult) -> None:
+def _print_weekly(week: WeekResult, done_count: int = 0) -> None:
+    if done_count:
+        print(f"{done_count} marked done via the mailtriage/done label")
     for account, buckets in week["accounts"].items():
         replied, archived, open_items = buckets["replied"], buckets["archived"], buckets["open"]
         print(f"{account} — {len(replied)} replied · {len(archived)} archived · {len(open_items)} open")
@@ -175,21 +183,29 @@ def run_weekly(cfg: Config, dry_run: bool = False) -> None:
     for w in week["warnings"]:
         print(f"mailtriage: account failed, skipping: {w}", file=sys.stderr)
 
+    # Items closed with the done label have lost cfg.label, so pull_week
+    # can't see them -- counted separately, search only.
+    done = count_done(os.environ, now)
+    for w in done["warnings"]:
+        print(f"mailtriage: done-count lookup failed, skipping: {w}", file=sys.stderr)
+    done_count: int = done["done"]
+
     handled, still_open = _week_counts(week)
-    if handled == 0 and still_open == 0:
+    if handled == 0 and still_open == 0 and done_count == 0:
         # Same "send nothing" philosophy as the normal digest: a roll-up with
         # nothing to report trains you to ignore it.
         print("mailtriage: nothing this week — sending nothing.", file=sys.stderr)
         return
 
     if dry_run:
-        _print_weekly(week)
+        _print_weekly(week, done_count)
         return
 
     head = f"{cfg.subject_prefix} · {stamp}" if stamp else cfg.subject_prefix
-    send_html(cfg, f"{head} · weekly review", weekly_html(cfg, week))
+    send_html(cfg, f"{head} · weekly review", weekly_html(cfg, week, done_count))
+    done_part = f", {done_count} done" if done_count else ""
     print(
-        f"mailtriage: weekly review delivered ({handled} handled, {still_open} open) via {cfg.delivery}.",
+        f"mailtriage: weekly review delivered ({handled} handled{done_part}, {still_open} open) via {cfg.delivery}.",
         file=sys.stderr,
     )
 
@@ -240,6 +256,50 @@ def run(cfg: Config, dry_run: bool = False) -> None:
         f"mailtriage: {len(emails)} candidate(s) in the last {cfg.window_hours}h across {n_accounts} account(s).",
         file=sys.stderr,
     )
+
+    # Gmail as the control plane: labels the reader applied and replies they
+    # sent to the last digest, acted on before anything else so this run
+    # already reflects them. Writes, so skipped on a dry run; the never/vip
+    # sender derivation is read-only and runs either way.
+    today = now.astimezone(local_zone(cfg.timezone)).date()
+    if not dry_run:
+        labels = apply_label_commands(os.environ, today, cfg.label)
+        for w in labels["warnings"]:
+            print(f"mailtriage: label commands failed, skipping: {w}", file=sys.stderr)
+        c = labels["counts"]
+        print(f"mailtriage: labels: {c['done']} done, {c['snoozed']} snoozed, {c['woken']} woken.", file=sys.stderr)
+
+        replies = handle_replies(cfg, os.environ, now, today, lambda: select_backend(cfg, os.environ)[1])
+        for w in replies["warnings"]:
+            print(f"mailtriage: digest reply handling failed, skipping: {w}", file=sys.stderr)
+        rc = replies["counts"]
+        applied = ", ".join(f"{rc[a]} {a}" for a in ("done", "snooze", "draft", "never", "vip") if rc[a])
+        skipped = f", {rc['skipped']} skipped" if rc["skipped"] else ""
+        print(
+            f"mailtriage: {replies['replies']} digest repl(ies) handled ({applied or 'no commands'}{skipped}).",
+            file=sys.stderr,
+        )
+
+        before = len(emails)
+        skip_uids, skip_ids = labels["skip"], replies["skip_message_ids"]
+        emails = [
+            e for e in emails if e["uid"] not in skip_uids.get(e["account"], set()) and e["message_id"] not in skip_ids
+        ]
+        if before > len(emails):
+            print(
+                f"mailtriage: done/snoozed labels and digest replies dropped {before - len(emails)}.", file=sys.stderr
+            )
+
+    senders = derive_sender_rules(os.environ)
+    for w in senders["warnings"]:
+        print(f"mailtriage: never/vip lookup failed, skipping: {w}", file=sys.stderr)
+    if senders["never"] or senders["vip"]:
+        print(
+            f"mailtriage: {len(senders['never'])} never-sender(s), {len(senders['vip'])} vip-sender(s).",
+            file=sys.stderr,
+        )
+    cfg = with_sender_rules(cfg, senders["never"], senders["vip"])
+
     before = len(emails)
     emails = apply_ignore(cfg, emails)
     if before > len(emails):
@@ -282,7 +342,7 @@ def run(cfg: Config, dry_run: bool = False) -> None:
                 print(f"mailtriage: draft push failed, skipping: {w}", file=sys.stderr)
 
     if dry_run:
-        _print_digest(kept)
+        _print_digest(cfg, kept, today)
         return
 
     send(cfg, kept, stamp)

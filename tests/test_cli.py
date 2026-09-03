@@ -471,3 +471,151 @@ def test_run_logs_candidate_count_without_subjects(monkeypatch: Any, capsys: Any
     err = capsys.readouterr().err
     assert "2 candidate(s) in the last 15h across 2 account(s)" in err
     assert "subject-0" not in err and "subject-1" not in err
+
+
+# --- Gmail as the control plane (sub-project B) --------------------------
+
+
+def _quiet_control_plane(monkeypatch: Any, cli_module: Any, **overrides: Any) -> None:
+    """Stub every commands.* call cli.run makes to 'nothing happened', with
+    overrides for the one under test."""
+    labels = overrides.get("labels", {"counts": {"done": 0, "snoozed": 0, "woken": 0}, "skip": {}, "warnings": []})
+    replies = overrides.get(
+        "replies",
+        {
+            "replies": 0,
+            "counts": dict.fromkeys(("done", "snooze", "draft", "never", "vip", "skipped"), 0),
+            "skip_message_ids": set(),
+            "warnings": [],
+        },
+    )
+    senders = overrides.get("senders", {"never": set(), "vip": set(), "warnings": []})
+    monkeypatch.setattr(cli_module, "apply_label_commands", lambda environ, today, label: labels)
+    monkeypatch.setattr(cli_module, "handle_replies", lambda cfg, environ, now, today, backend: replies)
+    monkeypatch.setattr(cli_module, "derive_sender_rules", lambda environ: senders)
+
+
+def test_run_drops_done_snoozed_and_reply_messages_from_candidates(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    msgs = [_email(0), _email(1), _email(2)]  # uid "1" is done/snoozed; msg-2 is the reader's own reply
+    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours: {"messages": msgs, "warnings": []})
+    triaged_input: list[Any] = []
+
+    def fake_triage(cfg: Config, emails: list[Email], now: Any) -> list[Triaged]:
+        triaged_input.append(emails)
+        return []
+
+    monkeypatch.setattr(triage_module, "triage", fake_triage)
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: (_ for _ in ()).throw(AssertionError("no send")))
+    _quiet_control_plane(
+        monkeypatch,
+        cli_module,
+        labels={"counts": {"done": 1, "snoozed": 0, "woken": 0}, "skip": {"acct": {"1"}}, "warnings": []},
+        replies={
+            "replies": 1,
+            "counts": {"done": 1, "snooze": 0, "draft": 0, "never": 0, "vip": 0, "skipped": 0},
+            "skip_message_ids": {"<msg-2@example.com>"},
+            "warnings": [],
+        },
+    )
+
+    run(Config(delivery="email", carry_over=False), dry_run=False)
+
+    assert [e["uid"] for e in triaged_input[0]] == ["0"]
+    err = capsys.readouterr().err
+    assert "labels: 1 done, 0 snoozed, 0 woken." in err
+    assert "1 digest repl(ies) handled (1 done)." in err
+    assert "dropped 2." in err
+    assert "subject-" not in err
+
+
+def test_never_and_vip_labels_become_rules_for_this_run(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    msgs = [_email(0), {**_email(1), "from": "Boss <BOSS@corp.com>"}]
+    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours: {"messages": msgs, "warnings": []})
+    monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [])
+    monkeypatch.setattr(
+        triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
+    )
+    sent: list[Any] = []
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: sent.append(kept))
+    _quiet_control_plane(
+        monkeypatch, cli_module, senders={"never": {"sender0@example.com"}, "vip": {"boss@corp.com"}, "warnings": []}
+    )
+
+    run(Config(delivery="email", carry_over=False, draft_replies=False), dry_run=True)
+
+    err = capsys.readouterr().err
+    assert "rules.always_ignore dropped 1 message(s)." in err
+    assert "1 never-sender(s), 1 vip-sender(s)." in err
+
+
+def test_dry_run_skips_label_writes_and_reply_handling_but_still_derives_senders(monkeypatch: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.triage as triage_module
+
+    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [])
+
+    def boom(*a: Any, **k: Any) -> Any:
+        raise AssertionError("no writes on a dry run")
+
+    monkeypatch.setattr(cli_module, "apply_label_commands", boom)
+    monkeypatch.setattr(cli_module, "handle_replies", boom)
+    derived: list[Any] = []
+
+    def fake_derive(environ: Any) -> dict[str, Any]:
+        derived.append(1)
+        return {"never": set(), "vip": set(), "warnings": []}
+
+    monkeypatch.setattr(cli_module, "derive_sender_rules", fake_derive)
+
+    run(Config(delivery="email", carry_over=False), dry_run=True)
+
+    assert derived == [1]
+
+
+def test_dry_run_prints_numbered_items_with_due_and_waiting(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours: {"messages": [_email(0)], "warnings": []})
+    monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [{**_triaged(0), "due": "2099-01-05"}])
+    monkeypatch.setattr(
+        triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
+    )
+    monkeypatch.setattr(
+        cli_module, "pull_open_actions", lambda *a, **k: {"messages": [_open_action_email(0)], "warnings": []}
+    )
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: (_ for _ in ()).throw(AssertionError("no send")))
+    _quiet_control_plane(monkeypatch, cli_module)
+
+    run(Config(delivery="email", carry_over=True, nag_after_days=3), dry_run=True)
+
+    out = capsys.readouterr().out
+    assert "Needs action · Later" in out
+    assert "#1 subject-0" in out and "Due 2099-01-05 · https://calendar.google.com/calendar/render?" in out
+    assert "#2 open action 0" in out and "waiting" in out and "STILL OPEN" in out  # 2026-08-20 is long past
+
+
+def test_weekly_counts_done_labels(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+
+    week = _week_result(acct={"replied": [], "archived": [], "open": []})
+    monkeypatch.setattr(cli_module, "pull_week", lambda environ, now, label: week)
+    monkeypatch.setattr(cli_module, "count_done", lambda environ, now: {"done": 3, "warnings": []})
+    sent: list[Any] = []
+    monkeypatch.setattr(delivery_module, "send_html", lambda cfg, subject, html: sent.append(html))
+
+    run_weekly(Config(delivery="email", email_to="me@example.com", email_from="bot@example.com"), dry_run=False)
+
+    assert len(sent) == 1 and "3 marked done" in sent[0]  # done alone is worth a roll-up
+    assert "(0 handled, 3 done, 0 open)" in capsys.readouterr().err
