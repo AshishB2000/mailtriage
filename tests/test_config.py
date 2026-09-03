@@ -31,11 +31,12 @@ def test_defaults_match_shipped_config():
     assert cfg.nag_after_days == 3
 
 
-def test_calendar_defaults_on_and_must_be_bool():
-    assert Config.from_mapping(MINIMAL).calendar is True
-    assert Config.from_mapping({**MINIMAL, "calendar": False}).calendar is False
-    with pytest.raises(MailError, match="calendar"):
-        Config.from_mapping({**MINIMAL, "calendar": "yes"})
+@pytest.mark.parametrize("name", ["calendar", "weekly_narrative"])
+def test_bool_switches_default_on_and_must_be_bool(name):
+    assert getattr(Config.from_mapping(MINIMAL), name) is True
+    assert getattr(Config.from_mapping({**MINIMAL, name: False}), name) is False
+    with pytest.raises(MailError, match=name):
+        Config.from_mapping({**MINIMAL, name: "yes"})
 
 
 def test_nag_after_days_must_be_a_positive_int():

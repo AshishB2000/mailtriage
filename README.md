@@ -629,6 +629,15 @@ link.
 items you closed via the `done` label separately, since those have lost the
 `action` label it otherwise searches for.
 
+**The weekly review, in words.** With `weekly_narrative: true` (default),
+the review opens with three model-written sentences — what got cleared,
+what is aging, who keeps not getting an answer — and up to three one-line
+patterns ("Priya's requests always wait a week"). The model sees only what
+the review itself shows: per-account counts, the open items' subject,
+sender and age, and the handled ones. One extra call a week; if it fails
+the plain review still goes out, with a warning in the log. Set it to
+`false` to skip the call.
+
 ---
 
 ## Inbox intelligence
@@ -850,6 +859,7 @@ src/mailtriage/
   imap_pull.py       account/password lookup, IMAP fetch, time-window filter, push_drafts
   commands.py        Gmail as the control plane: done/snooze/never/vip labels + replies to the digest
   calendar.py        today's events from a private ICS feed (CALENDAR_ICS_URL), stdlib parser
+  weekly.py          the weekly review's model-written opening (prompt + validated reply)
   triage/            the triage prompt (__init__.py)   <- the product
                        + 6 backends: claude_api, claude_cli, codex_cli, openai_api, gemini_api, gemini_cli
   drafts.py          the reply-drafting prompt + hostile-input-safe id mapping

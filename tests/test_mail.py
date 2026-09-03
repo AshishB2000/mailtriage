@@ -403,6 +403,22 @@ def test_invite_numbers_only_matches_invitation_looking_needs_action():
     assert mail.invite_numbers(events, items, date(2026, 9, 3)) == {0: 2}
 
 
+def test_weekly_html_narrative_opens_the_review_escaped():
+    week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item("open one")]}})
+    narrative = {"summary": "You cleared <b>two</b>.\nOne is aging.", "patterns": ["Alice <always> waits"]}
+    html = mail.weekly_html(_cfg(), week, narrative=narrative)
+    assert "You cleared &lt;b&gt;two&lt;/b&gt;." in html and "<b>two</b>" not in html
+    assert "Alice &lt;always&gt; waits" in html and "Patterns" in html
+    assert html.index("Your week") < html.index("You cleared") < html.index("Patterns") < html.index("open one")
+
+
+def test_weekly_html_narrative_without_patterns_has_no_patterns_heading():
+    week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item()]}})
+    html = mail.weekly_html(_cfg(), week, narrative={"summary": "Quiet week.", "patterns": []})
+    assert "Quiet week." in html and "Patterns" not in html
+    assert "Quiet week." not in mail.weekly_html(_cfg(), week)
+
+
 def test_weekly_html_shows_done_count_only_when_nonzero():
     week = _week({"work@example.com": {"replied": [], "archived": [], "open": [_week_item()]}})
     assert "marked done" not in mail.weekly_html(_cfg(), week)

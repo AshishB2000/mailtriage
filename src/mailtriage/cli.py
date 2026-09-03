@@ -7,6 +7,7 @@ import os
 import sys
 from datetime import date, datetime, timezone
 from email.utils import parseaddr
+from typing import Any
 
 from mailtriage import __version__
 from mailtriage.calendar import today_events
@@ -173,7 +174,12 @@ def _print_digest(cfg: Config, kept: list[Triaged], today: date, events: list[Ev
             print(f"  {it['sender']} · {it['link']}")
 
 
-def _print_weekly(week: WeekResult, done_count: int = 0) -> None:
+def _print_weekly(week: WeekResult, done_count: int = 0, narrative: dict[str, Any] | None = None) -> None:
+    if narrative:
+        print(narrative["summary"])
+        for p in narrative["patterns"]:
+            print(f"  - {p}")
+        print()
     if done_count:
         print(f"{done_count} marked done via the mailtriage/done label")
     for account, buckets in week["accounts"].items():
@@ -211,6 +217,22 @@ def _slot_already_delivered(cfg: Config, stamp: str, now: datetime) -> bool:
     return False
 
 
+def _week_narrative(cfg: Config, week: WeekResult, done_count: int, now: datetime) -> dict[str, Any] | None:
+    """The model-written opening, or None. A provider error here is a
+    warning, never a lost review -- the plain roll-up still goes out."""
+    if not cfg.weekly_narrative:
+        return None
+    from mailtriage.triage import select_backend
+    from mailtriage.weekly import narrate_week
+
+    try:
+        _name, call = select_backend(cfg, os.environ)
+        return narrate_week(cfg, call, week, done_count, now.astimezone(local_zone(cfg.timezone)).date())
+    except MailError as e:
+        print(f"mailtriage: weekly narrative failed, sending the plain review: {e}", file=sys.stderr)
+        return None
+
+
 def run_weekly(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> None:
     # Imported here, not at module scope: mirrors run()'s lazy delivery
     # import (weekly_html lives in delivery.mail, alongside the Resend
@@ -241,12 +263,14 @@ def run_weekly(cfg: Config, dry_run: bool = False, only: set[str] | None = None)
         print("mailtriage: nothing this week — sending nothing.", file=sys.stderr)
         return
 
+    narrative = _week_narrative(cfg, week, done_count, now)
+
     if dry_run:
-        _print_weekly(week, done_count)
+        _print_weekly(week, done_count, narrative)
         return
 
     head = f"{cfg.subject_prefix} · {stamp}" if stamp else cfg.subject_prefix
-    send_html(cfg, f"{head} · weekly review", weekly_html(cfg, week, done_count))
+    send_html(cfg, f"{head} · weekly review", weekly_html(cfg, week, done_count, narrative))
     done_part = f", {done_count} done" if done_count else ""
     print(
         f"mailtriage: weekly review delivered ({handled} handled{done_part}, {still_open} open) via {cfg.delivery}.",

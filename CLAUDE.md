@@ -39,6 +39,8 @@ src/mailtriage/
                 replies to the digest ("done 3"), never/vip sender derivation
   calendar.py   today's events from the CALENDAR_ICS_URL feed -- stdlib ICS
                 parser (DAILY/WEEKLY rules only), warns and never fails a run
+  weekly.py     the weekly review's model-written opening: WEEK_SCHEMA,
+                WEEK_SYSTEM (snapshot-pinned), narrate_week() validates the reply
   delivery/     dispatch, http.py, text.py (the one plain-text renderer),
                 mail.py (Resend), gmail.py (own-Gmail SMTP),
                 telegram.py slack.py discord.py ntfy.py (chat/push channels)
@@ -80,6 +82,8 @@ rules: {always_ignore, always_surface, always_action}   accounts: {addr: {…}}
 carry_over: bool                   label: str
 nag_after_days: int                calendar: bool (only matters with
                                       CALENDAR_ICS_URL set)
+weekly_narrative: bool             (model-written opening of --weekly; a
+                                      failed call degrades to the plain review)
 thread_context: bool               sender_memory: bool
 show_unsubscribe: bool             noise: {label: bool, archive: bool}
                                       (archive requires label; both off)

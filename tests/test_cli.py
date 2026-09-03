@@ -7,11 +7,24 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+import pytest
 import yaml
 
 from mailtriage.cli import main, run, run_weekly
 from mailtriage.config import Config
 from mailtriage.models import Email, Triaged, WeekResult
+
+
+@pytest.fixture(autouse=True)
+def _no_real_provider(monkeypatch: Any) -> None:
+    """Belt and braces: whatever secrets the developer's shell exports, no
+    test in this file may reach a real model. Tests that care stub
+    select_backend themselves, on top of this."""
+    import mailtriage.triage as triage_module
+
+    monkeypatch.setattr(
+        triage_module, "select_backend", lambda cfg, environ: ("stub", lambda cfg, s, u, schema: {"items": []})
+    )
 
 
 def test_self_check_exits_zero(capsys: Any) -> None:
@@ -647,6 +660,75 @@ def test_dry_run_prints_numbered_items_with_due_and_waiting(monkeypatch: Any, ca
     assert "#2 open action 0" in out and "waiting" in out and "STILL OPEN" in out  # 2026-08-20 is long past
 
 
+def _narrative_call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
+    assert "still open" in user  # the open item's subject reaches the model
+    return {"summary": "You cleared two things. One is aging. Boss keeps waiting.", "patterns": ["Boss always waits"]}
+
+
+def test_weekly_narrative_opens_the_review(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    week = _week_result(acct={"replied": [_open_item("r", 1)], "archived": [], "open": [_open_item("still open", 4)]})
+    monkeypatch.setattr(cli_module, "pull_week", lambda environ, now, label, only=None: week)
+    monkeypatch.setattr(cli_module, "count_done", lambda environ, now, only=None: {"done": 0, "warnings": []})
+    monkeypatch.setattr(triage_module, "select_backend", lambda cfg, environ: ("stub", _narrative_call))
+    sent: list[Any] = []
+    monkeypatch.setattr(delivery_module, "send_html", lambda cfg, subject, html: sent.append(html))
+
+    cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com")
+    run_weekly(cfg, dry_run=False)
+    assert "Boss keeps waiting." in sent[0] and "Boss always waits" in sent[0]
+    assert sent[0].index("Boss keeps waiting.") < sent[0].index("1 replied")  # above the account blocks
+
+    run_weekly(cfg, dry_run=True)
+    out = capsys.readouterr().out
+    assert out.index("Boss keeps waiting.") < out.index("  - Boss always waits") < out.index("acct —")
+
+
+def test_weekly_narrative_failure_falls_back_to_the_plain_review(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+    from mailtriage.errors import MailError
+
+    week = _week_result(acct={"replied": [], "archived": [], "open": [_open_item("still open", 4)]})
+    monkeypatch.setattr(cli_module, "pull_week", lambda environ, now, label, only=None: week)
+    monkeypatch.setattr(cli_module, "count_done", lambda environ, now, only=None: {"done": 0, "warnings": []})
+
+    def boom(cfg: Config, s: str, u: str, schema: dict[str, Any]) -> dict[str, Any]:
+        raise MailError("Anthropic rate-limited this run")
+
+    monkeypatch.setattr(triage_module, "select_backend", lambda cfg, environ: ("stub", boom))
+    sent: list[Any] = []
+    monkeypatch.setattr(delivery_module, "send_html", lambda cfg, subject, html: sent.append(html))
+
+    run_weekly(Config(delivery="email", email_to="me@example.com", email_from="bot@example.com"), dry_run=False)
+
+    assert len(sent) == 1 and "still open" in sent[0]
+    assert "weekly narrative failed, sending the plain review: Anthropic rate-limited" in capsys.readouterr().err
+
+
+def test_weekly_narrative_off_makes_no_model_call(monkeypatch: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.delivery as delivery_module
+    import mailtriage.triage as triage_module
+
+    week = _week_result(acct={"replied": [], "archived": [], "open": [_open_item("still open", 4)]})
+    monkeypatch.setattr(cli_module, "pull_week", lambda environ, now, label, only=None: week)
+    monkeypatch.setattr(cli_module, "count_done", lambda environ, now, only=None: {"done": 0, "warnings": []})
+    monkeypatch.setattr(
+        triage_module, "select_backend", lambda cfg, environ: (_ for _ in ()).throw(AssertionError("no provider"))
+    )
+    monkeypatch.setattr(delivery_module, "send_html", lambda cfg, subject, html: None)
+
+    run_weekly(
+        Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", weekly_narrative=False),
+        dry_run=False,
+    )
+
+
 def test_dry_run_prints_today_block_and_passes_events_to_send(monkeypatch: Any, capsys: Any) -> None:
     import mailtriage.cli as cli_module
     import mailtriage.delivery as delivery_module
@@ -688,7 +770,7 @@ def test_weekly_counts_done_labels(monkeypatch: Any, capsys: Any) -> None:
 
     week = _week_result(acct={"replied": [], "archived": [], "open": []})
     monkeypatch.setattr(cli_module, "pull_week", lambda environ, now, label, only=None: week)
-    monkeypatch.setattr(cli_module, "count_done", lambda environ, now: {"done": 3, "warnings": []})
+    monkeypatch.setattr(cli_module, "count_done", lambda environ, now, only=None: {"done": 3, "warnings": []})
     sent: list[Any] = []
     monkeypatch.setattr(delivery_module, "send_html", lambda cfg, subject, html: sent.append(html))
 

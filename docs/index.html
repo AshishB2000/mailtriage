@@ -906,6 +906,10 @@ footer a{color:var(--muted)}
           </select>
           <input type="time" id="weeklyTime" value="09:00">
         </div>
+        <label class="toggle" for="weeklyNarrative" style="margin-top:10px">
+          <input type="checkbox" id="weeklyNarrative" checked>
+          <span>Open the review with a written summary (one extra model call a week)</span>
+        </label>
       </div>
 
       <div class="f">
@@ -1328,6 +1332,10 @@ function buildYaml(v) {
     "# Today's calendar at the top of the digest -- needs the CALENDAR_ICS_URL",
     "# secret (a private ICS feed URL); does nothing without it.",
     "calendar: " + (v.calendar ? "true" : "false"),
+    "",
+    "# Open the weekly review with a model-written paragraph (one extra call a",
+    "# week); a failed call falls back to the plain review.",
+    "weekly_narrative: " + (v.weekly_narrative ? "true" : "false"),
     ""
   ].join("\n");
 }
@@ -1595,6 +1603,7 @@ function applyConfig(cfg) {
   if (cfg.label != null && cfg.label !== "") $("#label").value = cfg.label;
   if (typeof cfg.nag_after_days === "number") $("#nagAfterDays").value = cfg.nag_after_days;
   if (typeof cfg.calendar === "boolean") $("#calendarOn").checked = cfg.calendar;
+  if (typeof cfg.weekly_narrative === "boolean") $("#weeklyNarrative").checked = cfg.weekly_narrative;
   if (typeof cfg.thread_context === "boolean") $("#threadContext").checked = cfg.thread_context;
   if (typeof cfg.sender_memory === "boolean") $("#senderMemory").checked = cfg.sender_memory;
   if (typeof cfg.show_unsubscribe === "boolean") $("#showUnsubscribe").checked = cfg.show_unsubscribe;
@@ -1912,6 +1921,7 @@ function collect() {
     label: $("#label").value.trim(),
     nag_after_days: Math.max(1, +$("#nagAfterDays").value || 3),
     calendar: $("#calendarOn").checked,
+    weekly_narrative: $("#weeklyNarrative").checked,
     thread_context: $("#threadContext").checked,
     sender_memory: $("#senderMemory").checked,
     show_unsubscribe: $("#showUnsubscribe").checked,

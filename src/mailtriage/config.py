@@ -146,6 +146,9 @@ class Config:
     # Put today's calendar at the top of the digest. Only does anything when
     # the CALENDAR_ICS_URL secret (a private ICS feed URL) is set.
     calendar: bool = True
+    # Open the weekly review with a model-written paragraph (one extra call
+    # a week). A failed call falls back to the plain review, never no review.
+    weekly_narrative: bool = True
     # Show the model up to 2 earlier messages of a candidate's Gmail thread
     # (read from All Mail, newest 15 candidates per run) so it can tell a
     # live conversation from a stale one. Read-only, a few extra fetches.
@@ -216,6 +219,7 @@ class Config:
             "sender_memory",
             "show_unsubscribe",
             "calendar",
+            "weekly_narrative",
         ):
             value = getattr(cfg, name)
             if not isinstance(value, bool):

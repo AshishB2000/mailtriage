@@ -10,6 +10,7 @@ import html
 import os
 import re
 from datetime import date, datetime, timedelta, timezone
+from typing import Any
 from urllib.parse import urlencode
 
 from mailtriage.config import Config
@@ -339,10 +340,29 @@ def _week_account_block(account: str, buckets: dict[str, list[WeekItem]]) -> str
     {_week_extra_section("Archived", archived)}"""
 
 
-def weekly_html(cfg: Config, week: WeekResult, done_count: int = 0) -> str:
+def _narrative_block(narrative: dict[str, Any] | None) -> str:
+    """The model-written opening (weekly.narrate_week): one paragraph, then
+    up to three one-line patterns. Model text, so escaped like a subject."""
+    if not narrative:
+        return ""
+    lis = "".join(f'<li style="padding:2px 0;">{html.escape(p)}</li>' for p in narrative.get("patterns", []))
+    patterns = (
+        f"""
+    <tr><td class="muted" style="font:700 12px/1.4 {SANS};color:{DIM};padding-top:12px;">Patterns</td></tr>
+    <tr><td><ul style="margin:6px 0 0 0;padding-left:18px;font:400 14px/1.5 {SANS};color:{INK};">{lis}</ul></td></tr>"""
+        if lis
+        else ""
+    )
+    return f"""
+    <tr><td style="padding-top:22px;"><p style="font:400 16px/1.55 {SERIF};color:{INK};margin:0;white-space:pre-wrap;">{html.escape(narrative["summary"])}</p></td></tr>{patterns}"""
+
+
+def weekly_html(cfg: Config, week: WeekResult, done_count: int = 0, narrative: dict[str, Any] | None = None) -> str:
     handled = sum(len(b["replied"]) + len(b["archived"]) for b in week["accounts"].values())
     still_open = sum(len(b["open"]) for b in week["accounts"].values())
-    blocks = "".join(_week_account_block(account, buckets) for account, buckets in week["accounts"].items())
+    blocks = _narrative_block(narrative) + "".join(
+        _week_account_block(account, buckets) for account, buckets in week["accounts"].items()
+    )
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
