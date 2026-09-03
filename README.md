@@ -436,6 +436,32 @@ just push any commit to reset the clock.
 
 ---
 
+## Keeping your fork current
+
+`.github/workflows/upstream-sync.yml` runs on the first of every month — and
+on demand from **Actions → upstream-sync → Run workflow** — in forks only.
+If this project's `main` has moved on since your last sync, it opens a pull
+request against your fork from a `mailtriage/upstream-sync` branch; review
+it, merge it, done. Your `config.yaml` is never clobbered: wherever it
+conflicts with upstream, the merge keeps your fork's version. If anything
+*else* conflicts (you edited the engine or a workflow yourself), the job
+fails with a message pointing you at GitHub's **Sync fork** button on your
+fork's front page, where you can resolve it by hand.
+
+One setting to flip once, or the workflow can't open the PR: **Settings →
+Actions → General → Workflow permissions → tick "Allow GitHub Actions to
+create and approve pull requests"**.
+
+Merging a sync PR is a commit, so it also resets the
+[60-day clock](#the-60-day-caveat) above — a fork that takes the monthly
+sync never goes quiet long enough for GitHub to switch the schedule off.
+
+The actions this repo uses are pinned to full commit SHAs, and
+`.github/dependabot.yml` keeps those pins fresh upstream (Dependabot is off in
+forks by default; its bumps reach you through the sync PR instead).
+
+---
+
 ## Troubleshooting
 
 Actions tab → open the failed run → read the log. mailtriage's errors are
