@@ -128,18 +128,37 @@ _BUILD_SYSTEM_SNAPSHOT = f"""You are triaging one person's email inbox. Below ar
 {CFG.avoid}
 </avoid>
 
+HOW TO WORK
+Go through the messages in order, [0] first, and decide each one before you move to the next. This is a sweep, not a search. Every message gets a verdict — needs_action, worth_reading, or omitted — and you make that verdict deliberately, one at a time. Skimming the list for a few obvious highlights is how obligations get missed, because the ones that get missed never look urgent at a glance.
+
 BUCKETS
-- needs_action: the reader must DO something about this message — a reply is expected, a bill or payment is due, there's a deadline or RSVP, something is expiring, or someone asked them a direct question. If you cannot name the concrete action, it is NOT needs_action — demote it to worth_reading, or leave it out.
+- needs_action: the reader must DO something about this message — a reply is expected, a bill or payment is due, there's a deadline or RSVP, something is expiring, a document is waiting to be signed, or someone asked them a direct question. Name that action in the note. If you have genuinely tried and cannot name one, it is not needs_action.
 - worth_reading: a real human or real content worth a glance, with nothing the reader needs to do about it.
 - Anything else — newsletters, promotions, receipts, automated notifications — is noise. Do not return noise at all. There is no third bucket for it; simply omit it.
 
+NEVER MISS AN ACTION ITEM
+Missing one is the worst thing this product can do, and it is stated here three times because one polite reminder does not survive a long list of messages that all look like noise.
+- You are permitted to return as many needs_action items as this window contains. There is no cap and there is no such thing as too many. A long needs_action list is not a failure; it is a busy week.
+- The reader uses this so they do not have to open their inbox. Anything they must do that you leave out, they will not find out about at all — not later, not in the next digest, never. It fails silently, which is why it is the failure that matters most.
+- When you are genuinely unsure whether something needs action, include it. A needs_action item the reader did not need costs them one glance. A missed one costs them a deadline, a payment, or an answer someone was waiting for.
+
+OBLIGATIONS THAT DO NOT LOOK LIKE OBLIGATIONS
+These are the ones that get missed. An automated sender is not the same thing as noise — what matters is whether a human still has to do something.
+- A payment or card that is failing or expiring, a subscription or domain about to lapse, a renewal that will not auto-renew.
+- A document sent for signature or review, a form to complete, an application waiting on the reader.
+- An appointment, booking or invitation that must be confirmed, moved or declined.
+- A short question buried in a long thread, especially a follow-up from someone who has written before and is still waiting.
+- A delivery that failed, an account locked, a security prompt about the reader's own account.
+Marketing that fakes urgency is still noise: "act now", "your basket expires", "only 48 hours" and an "action required" subject line on a promotion are sales copy, not obligations. The test is whether a real consequence lands on the reader, not whether the sender says it will.
+
 SIGNALS
 - attachments: invoices, contracts, e-sign requests and forms in attachments usually mean needs_action even when the body is short.
-- "you've replied to this sender N times": senders the reader has replied to before deserve the benefit of the doubt; senders they never reply to need a stronger reason to surface.
+- "you've replied to this sender N times": senders the reader has replied to before deserve the benefit of the doubt; senders they never reply to need a stronger reason to surface as worth_reading. This never applies to needs_action — an obligation from a stranger is still an obligation.
 
 HOW MANY TO RETURN
 - needs_action has no cap. Never drop a message that genuinely needs action just to keep the list short.
 - worth_reading: return at most {CFG.reading_count}, and you are explicitly permitted — and expected — to return fewer. Most windows do not contain {CFG.reading_count} things worth reading; feeds and mailing lists post on their own schedule, not this reader's. An honest short list beats a padded one: if a worth_reading item is only there to reach {CFG.reading_count}, leaving it out makes the digest strictly better. Padding is the failure that kills this product — it trains the reader to stop opening it. Returning an empty worth_reading list is valid and correct.
+- Everything in the paragraph above is about worth_reading and nothing else. It is never a reason to leave out a needs_action item, and an empty needs_action list is only correct when you have swept every message and none of them asks anything of the reader.
 
 WRITING
 - note: one line. For needs_action, name the concrete action the reader must take. For worth_reading, say why it's worth a glance. No hedging, no "this could mean big things".
@@ -295,3 +314,38 @@ def test_triage_logs_counts_and_rejected_shape_but_never_content(monkeypatch: An
     assert "model returned 1 item(s); 0 passed validation" in err
     assert "shape={'id': 'str', 'bucket': 'str', 'note': 'str'} bucket=needs_action" in err
     assert "SECRET NOTE" not in err and "real subject" not in err
+
+
+def test_prompt_states_the_never_miss_rule_three_ways():
+    """The mirror of the padding rule. One polite "don't miss things" gets
+    ignored exactly the way one polite "you may return fewer" did -- a live
+    inbox of 25 messages came back empty three runs running until this
+    section existed. Do not condense it."""
+    p = triage.build_system(CFG)
+    assert "NEVER MISS AN ACTION ITEM" in p
+    # permission, consequence, tie-breaker -- the three statements
+    assert "no cap and there is no such thing as too many" in p
+    assert "they will not find out about at all" in p
+    assert "genuinely unsure" in p and "include it" in p
+
+
+def test_prompt_fences_the_padding_rule_to_worth_reading():
+    """The anti-padding paragraph is the strongest language in the prompt.
+    Unfenced, its gravity reaches needs_action and empties the digest."""
+    p = triage.build_system(CFG)
+    assert "is about worth_reading and nothing else" in p
+    assert "never a reason to leave out a needs_action item" in p
+
+
+def test_prompt_demands_a_sweep_not_a_search():
+    p = triage.build_system(CFG)
+    assert "sweep, not a search" in p
+    assert "decide each one before you move to the next" in p
+
+
+def test_prompt_still_states_the_padding_rule_three_ways():
+    """Unchanged contract: permission, justification, consequence."""
+    p = triage.build_system(CFG)
+    assert "expected — to return fewer" in p
+    assert "An honest short list beats a padded one" in p
+    assert "Padding is the failure that kills this product" in p
