@@ -96,7 +96,7 @@ jobs:
       # runner; installed once below, only when one of those secrets is set.
       - name: Install Node (subscription CLIs)
         if: steps.gate.outputs.due == 'true' && (env.HAS_SUBSCRIPTION == 'true' || env.HAS_CODEX == 'true' || env.HAS_GEMINI_CLI == 'true')
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
       - name: Install claude
