@@ -72,6 +72,8 @@ DRAFT_STYLE_DEFAULTS: dict[str, Any] = {
 
 RULE_KEYS: tuple[str, ...] = ("always_ignore", "always_surface", "always_action")
 
+NOISE_DEFAULTS: dict[str, bool] = {"label": False, "archive": False}
+
 
 @dataclass(slots=True)
 class Config:
@@ -152,6 +154,12 @@ class Config:
     # omitted sender that offered one (https or mailto only). Never clicked
     # for you.
     show_unsubscribe: bool = True
+    # Opt-in, both off. label: apply "mailtriage/noise" to the candidates a
+    # run left out (never a sender your always_surface/always_action rules
+    # name). archive (requires label): also take them out of the inbox by
+    # removing the \Inbox label -- they stay in All Mail, searchable, never
+    # deleted. Skipped on --dry-run.
+    noise: dict[str, bool] = field(default_factory=lambda: dict(NOISE_DEFAULTS))
 
     # Named digests, each over a subset of MAIL_ACCOUNTS with its own
     # overrides for any key above (delivery, run_at, interests, ...). Empty =
@@ -235,6 +243,7 @@ class Config:
 
         cfg.draft_style = _validate_draft_style(cfg.draft_style, DRAFT_STYLE_DEFAULTS, origin, "draft_style")
         cfg.rules = _validate_rules(cfg.rules, origin)
+        cfg.noise = _validate_noise(cfg.noise, origin)
         cfg.accounts = _validate_accounts(cfg.accounts, cfg.draft_style, origin)
         cfg.profiles = _validate_profiles(cfg.profiles, known, origin)
         if not isinstance(cfg.run_at, list) or not cfg.run_at:
@@ -309,6 +318,22 @@ def _validate_draft_style(data: Any, base: dict[str, Any], origin: str, where: s
     if not isinstance(max_sentences, int) or isinstance(max_sentences, bool) or max_sentences < 1:
         raise MailError(f"'{where}.max_sentences' in {origin} must be a positive whole number (got {max_sentences!r}).")
     return style
+
+
+def _validate_noise(data: Any, origin: str) -> dict[str, bool]:
+    if not isinstance(data, dict):
+        raise MailError(f"'noise' in {origin} must be a mapping (got {type(data).__name__}).")
+    for key in sorted(set(data) - set(NOISE_DEFAULTS)):
+        print(f"mailtriage: ignoring unknown key {key!r} in noise in {origin}", file=sys.stderr)
+    out = {**NOISE_DEFAULTS, **{k: v for k, v in data.items() if k in NOISE_DEFAULTS}}
+    for k, v in out.items():
+        if not isinstance(v, bool):
+            raise MailError(f"'noise.{k}' in {origin} must be true or false (got {v!r}).")
+    if out["archive"] and not out["label"]:
+        raise MailError(
+            f"'noise.archive' in {origin} requires 'noise.label: true' -- archived mail must stay findable."
+        )
+    return out
 
 
 def _validate_rules(data: Any, origin: str) -> dict[str, list[str]]:

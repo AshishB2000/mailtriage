@@ -17,6 +17,7 @@ from mailtriage.imap_pull import (
     check_login,
     enrich,
     label_actions,
+    label_noise,
     pull,
     pull_open_actions,
     pull_voice_examples,
@@ -403,13 +404,26 @@ def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> Non
             for w in push_drafts(os.environ, kept, emails):
                 print(f"mailtriage: draft push failed, skipping: {w}", file=sys.stderr)
 
+    # Everything the run left out, minus rule-protected senders -- the only
+    # candidates the two noise stages below may touch.
+    noise_idx = omitted(cfg, emails, kept)
+
+    if cfg.noise["label"] and not dry_run:
+        # Opt-in, and a write: never on a dry run. Archiving only removes the
+        # \Inbox label -- nothing is deleted.
+        touched, noise_warnings = label_noise(os.environ, emails, noise_idx, archive=cfg.noise["archive"])
+        for w in noise_warnings:
+            print(f"mailtriage: noise label failed, skipping: {w}", file=sys.stderr)
+        verb = "labeled and archived" if cfg.noise["archive"] else "labeled"
+        print(f"mailtriage: {touched} noise message(s) {verb}.", file=sys.stderr)
+
     if cfg.show_unsubscribe:
         # One footer row per omitted sender that offered an unsubscribe link,
         # newest first, capped. Appended last: nothing above this line
         # (labels, drafts, the "kept none" check) ever sees these rows.
         seen_senders: set[str] = set()
         noise: list[Triaged] = []
-        for i in omitted(cfg, emails, kept):
+        for i in noise_idx:
             em = emails[i]
             sender = parseaddr(em["from"])[1].lower()
             if not em.get("unsubscribe") or sender in seen_senders:

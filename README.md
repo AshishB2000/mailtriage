@@ -656,6 +656,17 @@ picked; the Actions log only ever shows counts.
   link (https or mailto only, at most 20). Nothing is ever clicked for you;
   senders named in your `always_surface` / `always_action` rules never
   appear there.
+- **Noise handling, opt-in** (`noise: {label: false, archive: false}`) —
+  both off by default. `label: true` applies the Gmail label
+  `mailtriage/noise` to the mail each run leaves out, so you can review what
+  the model is skipping. `archive: true` (requires `label`) also takes that
+  mail out of the inbox the way Gmail's own Archive does — the `\Inbox` label
+  comes off, the message stays in All Mail under `mailtriage/noise`,
+  searchable, and is never deleted or expunged. Senders in your
+  `always_surface` / `always_action` rules are never touched, and neither
+  happens on `--dry-run`. This is the one place mailtriage changes your inbox
+  beyond adding a label; try `label` alone for a week before turning on
+  `archive`.
 
 ---
 
@@ -760,7 +771,9 @@ something failed.
   `readonly=True` and fetches with `BODY.PEEK[]`, so it can never mark a
   message as read or change anything in your inbox. Drafting only ever
   **appends** to the Drafts mailbox — it never sends and never touches an
-  existing message.
+  existing message. The only writes are Gmail labels (`carry_over`, and the
+  opt-in `noise.label` / `noise.archive` — archiving removes the `\Inbox`
+  label, never a message).
 - Secrets (API keys, app passwords, and your `EMAIL_TO`/`EMAIL_FROM`
   addresses) live only in your fork's GitHub Actions secrets — encrypted at
   rest by GitHub, not readable back by anyone including you, once saved.

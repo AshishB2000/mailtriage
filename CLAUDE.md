@@ -78,7 +78,8 @@ rules: {always_ignore, always_surface, always_action}   accounts: {addr: {…}}
 carry_over: bool                   label: str
 nag_after_days: int
 thread_context: bool               sender_memory: bool
-show_unsubscribe: bool
+show_unsubscribe: bool             noise: {label: bool, archive: bool}
+                                      (archive requires label; both off)
 ```
 
 **Label names** are fixed literals in `commands.py`, quoted in the digest
@@ -238,6 +239,16 @@ are flat-rate, the default costs nothing extra.
   `push_drafts` only `APPEND`s to the account's `\Drafts` mailbox; INBOX
   stays `select(..., readonly=True)` for the whole run; there is no SMTP call
   anywhere in `imap_pull.py`. Don't add one.
+- **`noise.archive` is the ONE opt-in exception to "never remove anything"**,
+  and it only removes the `\Inbox` Gmail label (`-X-GM-LABELS (\Inbox)`)
+  from mail `rules.omitted` returned -- never EXPUNGE, never DELETE, never a
+  rule-protected sender, never on `--dry-run`, and it requires `noise.label`
+  so the mail stays findable. Keep it that way.
+- **Inbox intelligence is read-only and count-only.** `enrich` (thread
+  context from `\All`, sender memory from `\Sent`) and `pull_voice_examples`
+  (the reader's own Sent text, drafting prompt only) select `readonly=True`
+  and fetch with `BODY.PEEK`; cli prints how many, never what. Voice
+  examples must never reach stderr or the digest.
 
 ## Landmines (each one cost a real debugging session)
 

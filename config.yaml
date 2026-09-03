@@ -198,3 +198,15 @@ sender_memory: true
 # sender the run left out that offered one (https or mailto only, at most
 # 20). Nothing is ever clicked for you.
 show_unsubscribe: true
+
+# Opt-in noise handling, both off by default. This is the one place the
+# engine changes anything in your inbox beyond adding a label.
+#   label:   apply "mailtriage/noise" to the mail a run left out. Senders in
+#            rules.always_surface / always_action are never touched.
+#   archive: (requires label) also remove those from the inbox -- Gmail's
+#            "archive", i.e. the \Inbox label comes off. They stay in All
+#            Mail under mailtriage/noise, searchable, never deleted.
+# Neither happens on --dry-run. Try label alone for a week first.
+noise:
+  label: false
+  archive: false

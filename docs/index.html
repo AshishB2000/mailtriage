@@ -857,6 +857,16 @@ footer a{color:var(--muted)}
             <span>Unsubscribe links for noise, folded at the bottom of the digest</span>
           </label>
           <p class="hint" style="margin:4px 0 0">One link per left-out sender that offered one. Nothing is ever clicked for you.</p>
+          <label class="toggle" style="margin-top:16px">
+            <input type="checkbox" id="noiseLabel">
+            <span>Label the mail each run leaves out as <code>mailtriage/noise</code></span>
+          </label>
+          <p class="hint" style="margin:4px 0 0">Off by default. Adds a Gmail label to noise so you can review what the model is skipping. Senders in your rules are never touched.</p>
+          <label class="toggle" style="margin-top:12px">
+            <input type="checkbox" id="noiseArchive">
+            <span>…and archive it out of the inbox</span>
+          </label>
+          <p class="hint" style="margin:4px 0 0"><strong>This changes your inbox.</strong> Noise leaves the inbox but stays in All Mail under the label — searchable, never deleted. Needs the label above; try labeling alone for a week first.</p>
         </div>
       </details>
     </div>
@@ -1290,6 +1300,13 @@ function buildYaml(v) {
     "# Folded \"Noise this week\" footer with one Unsubscribe link per left-out",
     "# sender that offered one (https/mailto, at most 20). Never clicked for you.",
     "show_unsubscribe: " + (v.show_unsubscribe ? "true" : "false"),
+    "",
+    "# Opt-in noise handling, both off by default. label: tag what each run",
+    "# leaves out as mailtriage/noise. archive (needs label): also take it out",
+    "# of the inbox -- stays in All Mail, never deleted. Never on --dry-run.",
+    "noise:",
+    "  label: " + (v.noise.label ? "true" : "false"),
+    "  archive: " + (v.noise.archive ? "true" : "false"),
     ""
   ].join("\n");
 }
@@ -1558,6 +1575,10 @@ function applyConfig(cfg) {
   if (typeof cfg.thread_context === "boolean") $("#threadContext").checked = cfg.thread_context;
   if (typeof cfg.sender_memory === "boolean") $("#senderMemory").checked = cfg.sender_memory;
   if (typeof cfg.show_unsubscribe === "boolean") $("#showUnsubscribe").checked = cfg.show_unsubscribe;
+  if (cfg.noise) {
+    if (typeof cfg.noise.label === "boolean") $("#noiseLabel").checked = cfg.noise.label;
+    if (typeof cfg.noise.archive === "boolean") $("#noiseArchive").checked = cfg.noise.archive;
+  }
   if (cfg.accounts && typeof cfg.accounts === "object") S.acctOverrides = cfg.accounts;
   updateWindowNote();
 }
@@ -1870,7 +1891,9 @@ function collect() {
     thread_context: $("#threadContext").checked,
     thread_context: $("#threadContext").checked,
     sender_memory: $("#senderMemory").checked,
-    show_unsubscribe: $("#showUnsubscribe").checked
+    show_unsubscribe: $("#showUnsubscribe").checked,
+    // archive requires label -- mirror config.py's rule instead of writing a file the engine rejects
+    noise: { label: $("#noiseLabel").checked, archive: $("#noiseLabel").checked && $("#noiseArchive").checked }
   };
 }
 

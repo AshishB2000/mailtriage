@@ -1,14 +1,16 @@
-"""Pull recent INBOX mail from several Gmail accounts as JSON. Stdlib only.
+r"""Pull recent INBOX mail from several Gmail accounts as JSON. Stdlib only.
 
 CRITICAL INVARIANT: `fetch_account`/`pull`, `pull_open_actions`, `pull_week`,
 `already_delivered`, and `check_login` are read-only -- `select(..., readonly=True)` and `BODY.PEEK[]`
 (or `BODY.PEEK[HEADER.FIELDS (...)]`, for `pull_week`) only. The engine
-writes exactly two things to Gmail: `label_actions` adds a label to INBOX
-messages (the one read-write INBOX `select` in this codebase, required
-because STORE on an EXAMINEd mailbox returns NO) and `push_drafts` APPENDs a
-new message to the account's Drafts mailbox. Nothing here ever marks a
-message read outside of that, sends mail, deletes anything, or moves a
-message between mailboxes.
+writes exactly three things to Gmail: `label_actions` and `label_noise`
+add a label to INBOX messages (the read-write INBOX `select`s in this
+codebase, required because STORE on an EXAMINEd mailbox returns NO) --
+`label_noise` with `archive=True` is the ONE opt-in exception that removes
+a label (`\Inbox`, so the message leaves the inbox but stays in All Mail)
+-- and `push_drafts` APPENDs a new message to the account's Drafts mailbox.
+Nothing here ever marks a message read outside of that, sends mail, deletes
+or EXPUNGEs anything, or moves a message between mailboxes.
 """
 
 from __future__ import annotations
@@ -556,6 +558,59 @@ def label_actions(
         except Exception as e:  # imaplib raises many unrelated types — one bad account must not abort the rest
             warnings.append({"account": account, "error": f"{type(e).__name__}: {e}"})
     return warnings
+
+
+NOISE_LABEL = "mailtriage/noise"
+
+
+def label_noise(
+    environ: Mapping[str, str],
+    emails: list[Email],
+    idxs: list[int],
+    archive: bool = False,
+    host: str = "imap.gmail.com",
+) -> tuple[int, list[dict[str, str]]]:
+    """Opt-in (config `noise.label`): apply NOISE_LABEL to the candidates at
+    `idxs` -- the caller passes `rules.omitted`, so a rule-protected sender
+    never reaches here. With `archive` (config `noise.archive`), also remove
+    Gmail's `\\Inbox` label so they leave the inbox; they stay in All Mail,
+    searchable, and are never deleted or expunged. Same read-write INBOX
+    select and per-account warn-and-continue as `label_actions`; never
+    fetches a body. Returns (messages touched, warnings)."""
+    by_account: dict[str, list[str]] = {}
+    for i in idxs:
+        em = emails[i]
+        if em["uid"]:
+            by_account.setdefault(em["account"], []).append(em["uid"])
+
+    touched = 0
+    warnings: list[dict[str, str]] = []
+    quoted_label = _quote_mailbox(NOISE_LABEL)
+    for account, uids in by_account.items():
+        pw = environ.get(pw_env_var(account))
+        if not pw:
+            warnings.append(
+                {"account": account, "error": f"no app password found in ${pw_env_var(account)}, skipping noise labels"}
+            )
+            continue
+        try:
+            M = imaplib.IMAP4_SSL(host, 993)
+            try:
+                M.login(account, pw)
+                M.select("INBOX")  # read-write on purpose -- STORE needs it
+                with contextlib.suppress(Exception):
+                    M.create(quoted_label)
+                for uid in uids:
+                    M.uid("STORE", uid, "+X-GM-LABELS", f"({quoted_label})")
+                    if archive:
+                        M.uid("STORE", uid, "-X-GM-LABELS", "(\\Inbox)")
+                    touched += 1
+            finally:
+                with contextlib.suppress(Exception):
+                    M.logout()
+        except Exception as e:  # imaplib raises many unrelated types — one bad account must not abort the rest
+            warnings.append({"account": account, "error": f"{type(e).__name__}: {e}"})
+    return touched, warnings
 
 
 def _extract_uid(flags: str) -> str:
