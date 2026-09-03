@@ -118,7 +118,8 @@ def gmail_link(addr: str, message_id: str) -> str:
     return f"https://mail.google.com/mail/u/{addr}/#search/rfc822msgid:{quote(mid)}"
 
 
-def snippet_of(msg: EmailMessage, limit: int = 200) -> str:
+def plain_text(msg: EmailMessage) -> str:
+    """The first non-attachment text/plain part, decoded, line breaks intact."""
     part: EmailMessage | None = msg
     if msg.is_multipart():
         part = next(
@@ -138,7 +139,27 @@ def snippet_of(msg: EmailMessage, limit: int = 200) -> str:
         if not isinstance(payload, bytes):  # get_payload(decode=True) is typed loosely; guard the real shape
             payload = b""
         text = payload.decode(part.get_content_charset() or "utf-8", "replace")
-    return " ".join(text.split())[:limit]
+    return str(text)
+
+
+def snippet_of(msg: EmailMessage, limit: int = 200) -> str:
+    return " ".join(plain_text(msg).split())[:limit]
+
+
+_QUOTE_START_RE = re.compile(r"^(>|On .{0,200}wrote:\s*$|-{2,}\s*$|_{5,}|From: .*$|-----Original Message-----)")
+
+
+def reply_text(body: str, limit: int = 600) -> str:
+    """The reader's own words from a sent message: everything above the first
+    quoted line, signature separator, or forwarded-header block, trimmed."""
+    # ponytail: a Gmail "On <date>, <name> wrote:" line that wrapped onto two
+    # lines slips through; the 600-char cap keeps the damage to a few words.
+    kept: list[str] = []
+    for line in body.splitlines():
+        if _QUOTE_START_RE.match(line.strip()):
+            break
+        kept.append(line.rstrip())
+    return "\n".join(kept).strip()[:limit]
 
 
 def attachments_of(msg: EmailMessage, limit: int = 10) -> list[str]:
@@ -404,6 +425,71 @@ def push_drafts(
         except Exception as e:  # imaplib raises many unrelated types — one bad account must not abort the rest
             warnings.append({"account": account, "error": f"{type(e).__name__}: {e}"})
     return warnings
+
+
+VOICE_EXAMPLES = 3  # most recent Sent messages per recipient shown to the drafting model
+
+
+def _last_uids(M: imaplib.IMAP4_SSL, *criteria: str) -> list[bytes]:
+    _, data = M.uid("SEARCH", None, *criteria)  # type: ignore[arg-type]
+    uids = data[0].split() if data and data[0] else []
+    return uids[-VOICE_EXAMPLES:]
+
+
+def pull_voice_examples(
+    environ: Mapping[str, str],
+    triaged: list[Triaged],
+    emails: list[Email],
+    host: str = "imap.gmail.com",
+) -> tuple[dict[int, list[str]], list[dict[str, str]]]:
+    """For each needs_action item, up to VOICE_EXAMPLES of the reader's own
+    recent Sent messages to the same recipient (falling back to the same
+    domain), as reply text only -- nothing below a quoted section. Keyed by
+    the item's idx. Read-only: \\Sent is selected readonly and fetched with
+    BODY.PEEK, bounded to one SEARCH (two on domain fallback) plus one FETCH
+    per distinct recipient. Same per-account warn-and-continue as `pull`.
+    """
+    by_account: dict[str, list[Triaged]] = {}
+    for t in triaged:
+        if t["bucket"] == "needs_action":
+            by_account.setdefault(t["account"], []).append(t)
+
+    examples: dict[int, list[str]] = {}
+    warnings: list[dict[str, str]] = []
+    for account, items in by_account.items():
+        pw = environ.get(pw_env_var(account))
+        if not pw:
+            warnings.append(
+                {"account": account, "error": f"no app password found in ${pw_env_var(account)}, skipping voice"}
+            )
+            continue
+        try:
+            M = imaplib.IMAP4_SSL(host, 993)
+            try:
+                M.login(account, pw)
+                M.select(_quote_mailbox(_find_sent_mailbox(M.list()[1] or [])), readonly=True)
+                cache: dict[str, list[str]] = {}
+                for t in items:
+                    addr = parseaddr(emails[t["idx"]]["reply_to"])[1].lower()
+                    if not addr or "@" not in addr:
+                        continue
+                    if addr not in cache:
+                        uids = _last_uids(M, "TO", _quote_mailbox(addr)) or _last_uids(
+                            M, "TO", _quote_mailbox("@" + addr.rsplit("@", 1)[1])
+                        )
+                        texts = [
+                            reply_text(plain_text(message_from_bytes(raw, policy=policy.default)))
+                            for _flags, raw in _fetch_many(M, uids, f"(BODY.PEEK[]{_PARTIAL})")
+                        ]
+                        cache[addr] = [s for s in texts if s]
+                    if cache[addr]:
+                        examples[t["idx"]] = cache[addr]
+            finally:
+                with contextlib.suppress(Exception):
+                    M.logout()
+        except Exception as e:  # imaplib raises many unrelated types — one bad account must not abort the rest
+            warnings.append({"account": account, "error": f"{type(e).__name__}: {e}"})
+    return examples, warnings
 
 
 def label_actions(

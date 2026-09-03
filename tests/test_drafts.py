@@ -156,9 +156,56 @@ RULES
 
 
 def test_build_draft_system_default_config_is_byte_identical_to_pre_style_snapshot():
-    assert CFG.draft_style == {"tone": "friendly", "sign_off": "", "language": "auto", "max_sentences": 5}
+    assert CFG.draft_style == {
+        "tone": "friendly",
+        "sign_off": "",
+        "language": "auto",
+        "max_sentences": 5,
+        "learn_voice": True,
+    }
     assert CFG.accounts == {}
     assert build_draft_system(CFG) == _BUILD_DRAFT_SYSTEM_SNAPSHOT
+
+
+def test_build_draft_system_unchanged_when_no_voice_examples():
+    assert build_draft_system(CFG, {}) == _BUILD_DRAFT_SYSTEM_SNAPSHOT
+    assert build_draft_system(CFG, None) == _BUILD_DRAFT_SYSTEM_SNAPSHOT
+
+
+def test_build_draft_system_learn_voice_off_is_not_a_style_change():
+    cfg = Config(delivery="email", interests="rockets and clocks")
+    cfg.draft_style = {**cfg.draft_style, "learn_voice": False}
+    assert "STYLE" not in build_draft_system(cfg)
+
+
+def test_build_draft_system_appends_voice_examples_per_item():
+    voice = {3: ["Hey Bob,\n\nSure thing, Tuesday works.\n\nCheers,\nA"], 7: ["Dear Ms. Lee,\n\nThank you."]}
+    system = build_draft_system(CFG, voice)
+    assert system.startswith(_BUILD_DRAFT_SYSTEM_SNAPSHOT)
+    tail = system[len(_BUILD_DRAFT_SYSTEM_SNAPSHOT) :]
+    assert (
+        "VOICE\nExamples of how this person writes to this recipient -- match the tone, length, greeting and sign-off."
+        in tail
+    )
+    assert (
+        '<voice for="[3]">\n<example>\nHey Bob,\n\nSure thing, Tuesday works.\n\nCheers,\nA\n</example>\n</voice>'
+        in tail
+    )
+    assert '<voice for="[7]">' in tail and "Dear Ms. Lee" in tail
+
+
+def test_generate_drafts_passes_voice_into_system_prompt():
+    emails = [make_email(0)]
+    triaged = [make_triaged(0)]
+    seen: dict[str, str] = {}
+
+    def fake_call(cfg: Config, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
+        seen["system"], seen["user"] = system, user
+        return {"items": []}
+
+    generate_drafts(CFG, fake_call, emails, triaged, {0: ["Thanks Sam, will do."]})
+    assert "Thanks Sam, will do." in seen["system"]
+    assert "Thanks Sam, will do." not in seen["user"]
 
 
 def test_build_draft_system_omits_style_section_by_default():

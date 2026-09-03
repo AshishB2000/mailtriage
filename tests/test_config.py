@@ -122,12 +122,30 @@ def test_env_overlay_leaves_blank_when_unset(tmp_path):
 
 def test_draft_style_defaults():
     cfg = Config.from_mapping(MINIMAL)
-    assert cfg.draft_style == {"tone": "friendly", "sign_off": "", "language": "auto", "max_sentences": 5}
+    assert cfg.draft_style == {
+        "tone": "friendly",
+        "sign_off": "",
+        "language": "auto",
+        "max_sentences": 5,
+        "learn_voice": True,
+    }
 
 
 def test_draft_style_partial_mapping_merges_over_defaults():
     cfg = Config.from_mapping({**MINIMAL, "draft_style": {"tone": "formal"}})
-    assert cfg.draft_style == {"tone": "formal", "sign_off": "", "language": "auto", "max_sentences": 5}
+    assert cfg.draft_style == {
+        "tone": "formal",
+        "sign_off": "",
+        "language": "auto",
+        "max_sentences": 5,
+        "learn_voice": True,
+    }
+
+
+def test_draft_style_learn_voice_must_be_bool():
+    with pytest.raises(MailError, match="learn_voice"):
+        Config.from_mapping({**MINIMAL, "draft_style": {"learn_voice": "yes"}})
+    assert Config.from_mapping({**MINIMAL, "draft_style": {"learn_voice": False}}).draft_style["learn_voice"] is False
 
 
 def test_draft_style_must_be_a_mapping():
@@ -237,6 +255,7 @@ def test_accounts_draft_style_merges_over_the_global_draft_style_not_defaults():
         "sign_off": "Best, Alex",
         "language": "auto",
         "max_sentences": 3,
+        "learn_voice": True,
     }
 
 

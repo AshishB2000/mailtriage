@@ -478,11 +478,20 @@ draft_style:
   sign_off: ""          # e.g. "Best, Alex" -- overrides the generic "Thanks,"
   language: auto        # or a language name, e.g. "French"
   max_sentences: 5
+  learn_voice: true     # draft in your voice -- see below
 ```
 
 `language: auto` matches the sender's language rather than always replying
 in one. Set `draft_replies: false` to turn drafting off entirely — see
 [Reply drafting](#reply-drafting) above.
+
+**Drafts in your voice.** With `learn_voice: true` (default), before drafting
+a reply the engine reads up to 3 of your own most recent Sent messages to the
+same recipient (falling back to the same domain, then skipping), keeps only
+your words above any quoted section, and shows them to the drafting model as
+examples of how you write to that person — tone, length, greeting, sign-off.
+Read-only, like everything else; the examples go into the prompt only and
+never into the Actions log or the digest.
 
 ---
 

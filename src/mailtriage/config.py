@@ -60,7 +60,15 @@ DRAFT_TONES: tuple[str, ...] = get_args(DraftTone)
 
 # Shared by the global draft_style default and every unset sub-key of a
 # per-account draft_style override.
-DRAFT_STYLE_DEFAULTS: dict[str, Any] = {"tone": "friendly", "sign_off": "", "language": "auto", "max_sentences": 5}
+DRAFT_STYLE_DEFAULTS: dict[str, Any] = {
+    "tone": "friendly",
+    "sign_off": "",
+    "language": "auto",
+    "max_sentences": 5,
+    # Show the drafting model up to 3 of the reader's own recent Sent
+    # messages to the same recipient (or domain) so drafts sound like them.
+    "learn_voice": True,
+}
 
 RULE_KEYS: tuple[str, ...] = ("always_ignore", "always_surface", "always_action")
 
@@ -275,7 +283,7 @@ def _validate_draft_style(data: Any, base: dict[str, Any], origin: str, where: s
     validated global draft_style for a per-account override."""
     if not isinstance(data, dict):
         raise MailError(f"'{where}' in {origin} must be a mapping (got {type(data).__name__}).")
-    known = {"tone", "sign_off", "language", "max_sentences"}
+    known = {"tone", "sign_off", "language", "max_sentences", "learn_voice"}
     for key in sorted(set(data) - known):
         print(f"mailtriage: ignoring unknown key {key!r} in {where} in {origin}", file=sys.stderr)
 
@@ -283,6 +291,8 @@ def _validate_draft_style(data: Any, base: dict[str, Any], origin: str, where: s
 
     if style["tone"] not in DRAFT_TONES:
         raise MailError(f"'{where}.tone' in {origin} must be one of {DRAFT_TONES} (got {style['tone']!r}).")
+    if not isinstance(style["learn_voice"], bool):
+        raise MailError(f"'{where}.learn_voice' in {origin} must be true or false (got {style['learn_voice']!r}).")
     style["sign_off"] = str(style["sign_off"])
     style["language"] = str(style["language"])
     max_sentences = style["max_sentences"]

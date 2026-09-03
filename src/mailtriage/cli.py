@@ -18,6 +18,7 @@ from mailtriage.imap_pull import (
     label_actions,
     pull,
     pull_open_actions,
+    pull_voice_examples,
     pull_week,
     push_drafts,
 )
@@ -359,7 +360,16 @@ def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> Non
         # of threading a pick through triage()) keeps triage()'s signature
         # unchanged and costs nothing extra.
         _name, call = select_backend(cfg, os.environ)
-        generate_drafts(cfg, call, emails, kept)  # MailError here is fatal -- auth is auth.
+        voice: dict[int, list[str]] = {}
+        if cfg.draft_style["learn_voice"]:
+            # Reading is fine on a dry run. The examples go into the prompt
+            # only -- counts here, never the text.
+            voice, voice_warnings = pull_voice_examples(os.environ, kept, emails)
+            for w in voice_warnings:
+                print(f"mailtriage: voice lookup failed, skipping: {w}", file=sys.stderr)
+            n_action = sum(1 for t in kept if t["bucket"] == "needs_action")
+            print(f"mailtriage: voice examples for {len(voice)} of {n_action} item(s).", file=sys.stderr)
+        generate_drafts(cfg, call, emails, kept, voice)  # MailError here is fatal -- auth is auth.
         if not dry_run:
             # No mailbox writes on a dry run: push only when actually delivering.
             for w in push_drafts(os.environ, kept, emails):

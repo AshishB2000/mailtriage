@@ -120,6 +120,10 @@ draft_style:
   sign_off: "" # e.g. "Best, Alex" -- overrides the generic "Thanks,"
   language: auto # or a language name, e.g. "French"
   max_sentences: 5
+  # Show the drafting model up to 3 of your own recent Sent messages to the
+  # same recipient (or domain) so drafts sound like you. Read-only; the
+  # examples go into the prompt only, never into logs or the digest.
+  learn_voice: true
 
 # Hard rules you set by hand -- checked deterministically, no API call.
 # Entries are a full address ("boss@corp.com") or a domain starting with "@"

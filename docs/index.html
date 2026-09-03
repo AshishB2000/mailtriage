@@ -804,6 +804,11 @@ footer a{color:var(--muted)}
           <label for="maxSentences">Max sentences</label>
           <input type="number" id="maxSentences" min="1" max="20" step="1" value="5" style="max-width:100px">
         </div>
+        <label class="toggle" style="margin-top:12px">
+          <input type="checkbox" id="learnVoice" checked>
+          <span>Draft in your voice</span>
+        </label>
+        <p class="hint" style="margin:4px 0 0">Shows the model up to 3 of your own recent Sent messages to the same recipient. Read-only; they go into the prompt only, never into logs or the digest.</p>
       </div>
     </div>
 
@@ -1126,7 +1131,10 @@ function draftStyleLines(style, indent) {
     pad + "tone: " + style.tone,
     pad + "sign_off: " + yamlStr(style.sign_off),
     pad + "language: " + yamlStr(style.language || "auto"),
-    pad + "max_sentences: " + style.max_sentences
+    pad + "max_sentences: " + style.max_sentences,
+    pad + "# Show the drafting model up to 3 of your own recent Sent messages to",
+    pad + "# the same recipient so drafts sound like you. Prompt only, never logged.",
+    pad + "learn_voice: " + (style.learn_voice === false ? "false" : "true")
   ];
 }
 
@@ -1795,13 +1803,15 @@ function applyDraftStyle(style) {
   if (style.sign_off != null) $("#signOff").value = style.sign_off;
   if (style.language) $("#draftLanguage").value = style.language;
   if (style.max_sentences != null) $("#maxSentences").value = style.max_sentences;
+  if (typeof style.learn_voice === "boolean") $("#learnVoice").checked = style.learn_voice;
 }
 function collectDraftStyle() {
   return {
     tone: $('input[name=tone]:checked').value,
     sign_off: $("#signOff").value.trim(),
     language: $("#draftLanguage").value.trim() || "auto",
-    max_sentences: +$("#maxSentences").value
+    max_sentences: +$("#maxSentences").value,
+    learn_voice: $("#learnVoice").checked
   };
 }
 function collectRuleList(id) {
