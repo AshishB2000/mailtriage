@@ -3,14 +3,29 @@
 from __future__ import annotations
 
 from mailtriage.config import Config
-from mailtriage.delivery import gmail, mail
+from mailtriage.delivery import discord, gmail, mail, ntfy, slack, telegram
 from mailtriage.models import Triaged
 
-BACKENDS = {"email": mail.send, "gmail": gmail.send}
-# Same two backends, taking a prebuilt subject+HTML instead of a Triaged list
-# -- the weekly review's own send path. Keeps mail.py/gmail.py as the only
-# place each transport's auth/HTTP-or-SMTP logic lives.
-BACKENDS_HTML = {"email": mail.send_html, "gmail": gmail.send_html}
+BACKENDS = {
+    "email": mail.send,
+    "gmail": gmail.send,
+    "telegram": telegram.send,
+    "slack": slack.send,
+    "discord": discord.send,
+    "ntfy": ntfy.send,
+}
+# Same backends, taking a prebuilt subject+HTML instead of a Triaged list --
+# the weekly review's own send path. Keeps each module as the only place its
+# transport's auth/HTTP-or-SMTP logic lives; the chat channels send the
+# HTML's plain text (delivery.text.html_to_text).
+BACKENDS_HTML = {
+    "email": mail.send_html,
+    "gmail": gmail.send_html,
+    "telegram": telegram.send_html,
+    "slack": slack.send_html,
+    "discord": discord.send_html,
+    "ntfy": ntfy.send_html,
+}
 
 
 def send(cfg: Config, triaged: list[Triaged], stamp: str = "") -> None:
