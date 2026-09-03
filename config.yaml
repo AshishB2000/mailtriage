@@ -46,6 +46,13 @@ timezone: "UTC"
 # is recognized but currently just skips, same as an off-hour.
 weekly_review: ""
 
+# How many minutes after a run_at (or weekly_review) slot the hourly workflow
+# still counts as that slot. GitHub's scheduler skips hours under load; 120
+# means one skipped hour still gets its digest at the next one. 60..360.
+# The digest's subject carries the slot it was for, and the engine checks
+# your own mailbox for it before sending -- so a slot never sends twice.
+catch_up_minutes: 120
+
 # "email" (via Resend) or "gmail" (via your own Gmail's SMTP).
 #
 # email  — requires the RESEND_API_KEY secret. email_from must be on a domain

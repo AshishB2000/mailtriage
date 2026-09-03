@@ -23,7 +23,7 @@ from mailtriage.errors import MailError
 from mailtriage.imap_pull import _classify_week_item, _older_than_window, _quote_mailbox, parse_message, within_window
 from mailtriage.models import Email, Triaged, WeekResult
 from mailtriage.rules import enforce, matches
-from mailtriage.schedule import due, max_gap_hours
+from mailtriage.schedule import current_slot, due, max_gap_hours
 from mailtriage.triage import pick, select_backend
 
 
@@ -242,9 +242,19 @@ def self_check() -> None:
     assert due(sched_cfg, datetime(2026, 8, 28, 8, 30, tzinfo=timezone.utc)) == "digest", (
         "a run_at slot, evaluated 30 minutes late (normal cron drift), must still be due"
     )
-    assert due(sched_cfg, datetime(2026, 8, 28, 9, 30, tzinfo=timezone.utc)) is None, (
-        "90 minutes past a run_at slot must no longer be due, or the digest fires all day"
+    assert due(sched_cfg, datetime(2026, 8, 28, 9, 30, tzinfo=timezone.utc)) == "digest", (
+        "90 minutes past a run_at slot is inside the default 120-minute catch-up window -- a cron hour "
+        "GitHub skipped must still get its digest at the next one"
     )
+    assert due(sched_cfg, datetime(2026, 8, 28, 10, 0, tzinfo=timezone.utc)) is None, (
+        "120 minutes past a run_at slot must no longer be due, or the digest fires all day"
+    )
+    assert current_slot(sched_cfg, datetime(2026, 8, 28, 9, 30, tzinfo=timezone.utc)) == datetime(
+        2026, 8, 28, 8, 0, tzinfo=timezone.utc
+    ), "current_slot must name the slot a late run is catching up on -- it is the no-double-send stamp"
+    assert (
+        current_slot(sched_cfg, datetime(2026, 8, 28, 8, 30, tzinfo=timezone.utc), event="workflow_dispatch") is None
+    ), "a manual run must carry no slot stamp, or a human's click gets suppressed by an earlier scheduled send"
     assert due(sched_cfg, datetime(2026, 8, 28, 3, 0, tzinfo=timezone.utc), event="workflow_dispatch") == "digest", (
         "workflow_dispatch (a human clicking 'Run workflow') must always be due, gate or no gate"
     )

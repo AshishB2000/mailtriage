@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from mailtriage.config import Config
-from mailtriage.schedule import due, max_gap_hours
+from mailtriage.schedule import current_slot, due, max_gap_hours
 
 
 def _cfg(**kw: object) -> Config:
@@ -45,10 +45,26 @@ def test_due_59_minutes_after_slot():
     assert due(cfg, now) == "digest"
 
 
-def test_not_due_60_minutes_after_slot():
+def test_still_due_90_minutes_after_slot_default_catch_up():
+    """GitHub skips cron hours under load (one run in five hours, observed
+    2026-09-03): the hour after a skipped one must still fire that slot."""
     cfg = _cfg(run_at=["08:00"])
-    now = datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 1, 9, 30, tzinfo=timezone.utc)
+    assert due(cfg, now) == "digest"
+
+
+def test_not_due_120_minutes_after_slot():
+    cfg = _cfg(run_at=["08:00"])
+    now = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
     assert due(cfg, now) is None
+
+
+def test_catch_up_minutes_is_honored():
+    cfg = _cfg(run_at=["08:00"], catch_up_minutes=60)
+    assert due(cfg, datetime(2026, 1, 1, 8, 59, tzinfo=timezone.utc)) == "digest"
+    assert due(cfg, datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc)) is None
+    wide = _cfg(run_at=["08:00"], catch_up_minutes=360)
+    assert due(wide, datetime(2026, 1, 1, 13, 59, tzinfo=timezone.utc)) == "digest"
 
 
 def test_not_due_one_minute_before_slot():
@@ -63,6 +79,13 @@ def test_late_night_slot_caught_just_after_local_midnight():
     cfg = _cfg(run_at=["23:30"])
     now = datetime(2026, 1, 2, 0, 10, tzinfo=timezone.utc)
     assert due(cfg, now) == "digest"
+
+
+def test_late_night_slot_caught_up_across_midnight():
+    cfg = _cfg(run_at=["23:30"])
+    now = datetime(2026, 1, 2, 1, 15, tzinfo=timezone.utc)  # 105 min later, past midnight
+    assert due(cfg, now) == "digest"
+    assert current_slot(cfg, now) == datetime(2026, 1, 1, 23, 30, tzinfo=timezone.utc)
 
 
 def test_late_night_slot_not_due_far_into_next_day():
@@ -97,6 +120,19 @@ def test_dst_spring_forward_still_resolves():
     assert due(cfg, now_utc) == "digest"
 
 
+def test_dst_spring_forward_catch_up_across_the_gap():
+    """01:30 slot on the spring-forward night: 02:00-03:00 doesn't exist, so
+    the wall clock jumps and a cron at 03:20 local is 50 real minutes late
+    (due), while 04:20 local is 110 real minutes late -- still inside 120
+    by the wall-clock arithmetic due() uses, and that is what the stamp says."""
+    cfg = _cfg(run_at=["01:30"], timezone="America/New_York")
+    tz = ZoneInfo("America/New_York")
+    now = datetime(2026, 3, 8, 3, 20, tzinfo=tz).astimezone(timezone.utc)
+    assert due(cfg, now) == "digest"
+    assert current_slot(cfg, now) == datetime(2026, 3, 8, 1, 30, tzinfo=tz)
+    assert due(cfg, datetime(2026, 3, 8, 4, 20, tzinfo=tz).astimezone(timezone.utc)) is None
+
+
 def test_dst_fall_back_still_resolves():
     """2026-11-01 is when America/New_York falls back (2am -> 1am)."""
     cfg = _cfg(run_at=["08:00"], timezone="America/New_York")
@@ -121,6 +157,14 @@ def test_weekly_slot_wrong_weekday_not_due():
     assert due(cfg, now) is None
 
 
+def test_weekly_weekday_is_the_slot_day_not_the_catch_up_day():
+    """A "sun 23:30" weekly slot caught at 00:40 Monday is still Sunday's."""
+    cfg = _cfg(run_at=["06:00"], weekly_review="sun 23:30")
+    now = datetime(2026, 1, 5, 0, 40, tzinfo=timezone.utc)  # Monday 00:40
+    assert due(cfg, now) == "weekly"
+    assert current_slot(cfg, now) == datetime(2026, 1, 4, 23, 30, tzinfo=timezone.utc)
+
+
 def test_both_due_same_hour_digest_wins():
     cfg = _cfg(run_at=["09:00"], weekly_review="wed 09:00")
     now = datetime(2026, 1, 7, 9, 0, tzinfo=timezone.utc)  # Wednesday, both slots hit
@@ -134,3 +178,36 @@ def test_workflow_dispatch_always_digest_regardless_of_time():
     cfg = _cfg(run_at=["08:00"])
     now = datetime(2026, 1, 1, 15, 37, tzinfo=timezone.utc)  # nowhere near the slot
     assert due(cfg, now, event="workflow_dispatch") == "digest"
+
+
+# --- current_slot: the no-double-send stamp ------------------------------
+
+
+def test_current_slot_none_when_not_due():
+    cfg = _cfg(run_at=["08:00"])
+    assert current_slot(cfg, datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)) is None
+
+
+def test_current_slot_is_local_time():
+    cfg = _cfg(run_at=["08:00"], timezone="America/New_York")
+    now = datetime(2026, 1, 15, 8, 45, tzinfo=ZoneInfo("America/New_York")).astimezone(timezone.utc)
+    slot = current_slot(cfg, now)
+    assert slot is not None
+    assert (slot.hour, slot.minute) == (8, 0)
+    assert f"{slot:%a %d %b %H:%M}" == "Thu 15 Jan 08:00"
+
+
+def test_current_slot_picks_most_recent_when_two_overlap():
+    """run_at an hour apart with a 120-minute window: at 09:17 both 08:00 and
+    09:00 match, and the stamp must be 09:00 -- else the guard finds 08:00's
+    digest and suppresses this one."""
+    cfg = _cfg(run_at=["08:00", "09:00"])
+    now = datetime(2026, 1, 1, 9, 17, tzinfo=timezone.utc)
+    assert current_slot(cfg, now) == datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc)
+
+
+def test_current_slot_none_for_workflow_dispatch():
+    cfg = _cfg(run_at=["08:00"])
+    now = datetime(2026, 1, 1, 8, 5, tzinfo=timezone.utc)
+    assert due(cfg, now, event="workflow_dispatch") == "digest"
+    assert current_slot(cfg, now, event="workflow_dispatch") is None

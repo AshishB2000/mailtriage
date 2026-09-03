@@ -55,20 +55,40 @@ def max_gap_hours(run_at: list[str]) -> float:
     return max_gap_pair(run_at)[0]
 
 
-def _slot_due(now_local: datetime, slot: str) -> bool:
-    """True when `now_local` is within the 60 minutes after `slot` -- GitHub's
-    hourly cron fires 5-30 min late, so the gate must accept the whole hour,
-    never require exact equality. Checks both today's and yesterday's
-    occurrence of the slot, so a 23:xx slot is still caught just after local
-    midnight."""
+def _slot_start(now_local: datetime, slot: str, catch_up_minutes: int) -> datetime | None:
+    """The slot's local datetime when `now_local` is within `catch_up_minutes`
+    after it, else None. GitHub's hourly cron fires 5-30 min late and under
+    load skips hours outright (one run in five hours, observed 2026-09-03), so
+    the gate accepts a whole catch-up window, never exact equality. Checks
+    both today's and yesterday's occurrence of the slot, so a 23:xx slot is
+    still caught just after local midnight."""
     h, m = (int(p) for p in slot.split(":"))
     for day_offset in (0, -1):
         d = now_local.date() + timedelta(days=day_offset)
         slot_dt = datetime(d.year, d.month, d.day, h, m, tzinfo=now_local.tzinfo)
         delta_minutes = (now_local - slot_dt).total_seconds() / 60
-        if 0 <= delta_minutes < 60:
-            return True
-    return False
+        if 0 <= delta_minutes < catch_up_minutes:
+            return slot_dt
+    return None
+
+
+def _due_slot(cfg: Config, now_local: datetime) -> tuple[Literal["digest", "weekly"], datetime] | None:
+    """(mode, slot) for the slot `now_local` falls in. With a catch-up window
+    wider than the gap between two run_at slots both can match; the most
+    recent one wins, so a late run is stamped with the slot it is really for."""
+    starts = [s for slot in cfg.run_at if (s := _slot_start(now_local, slot, cfg.catch_up_minutes))]
+    if starts:
+        return "digest", max(starts)
+
+    if cfg.weekly_review:
+        day, slot = cfg.weekly_review.split(" ", 1)
+        start = _slot_start(now_local, slot, cfg.catch_up_minutes)
+        # weekday of the slot itself, not of now -- a "sun 23:30" slot caught
+        # just after midnight is Monday by then.
+        if start and day.lower() == _WEEKDAYS[start.weekday()]:
+            return "weekly", start
+
+    return None
 
 
 def due(cfg: Config, now: datetime, event: str = "schedule") -> Literal["digest", "weekly"] | None:
@@ -76,19 +96,18 @@ def due(cfg: Config, now: datetime, event: str = "schedule") -> Literal["digest"
 
     A manual "Run workflow" click (`event == "workflow_dispatch"`) always
     returns "digest" -- a human clicked, don't gate them. If a daily and the
-    weekly slot are both due in the same hour, "digest" wins; the weekly
-    review's own send path is a later PR."""
+    weekly slot are both due in the same window, "digest" wins."""
     if event == "workflow_dispatch":
         return "digest"
+    found = _due_slot(cfg, now.astimezone(local_zone(cfg.timezone)))
+    return found[0] if found else None
 
-    now_local = now.astimezone(local_zone(cfg.timezone))
 
-    if any(_slot_due(now_local, slot) for slot in cfg.run_at):
-        return "digest"
-
-    if cfg.weekly_review:
-        day, slot = cfg.weekly_review.split(" ", 1)
-        if day.lower() == _WEEKDAYS[now_local.weekday()] and _slot_due(now_local, slot):
-            return "weekly"
-
-    return None
+def current_slot(cfg: Config, now: datetime, event: str = "schedule") -> datetime | None:
+    """The local slot datetime this scheduled run is for -- the subject
+    stamp the no-double-send guard searches for. None for a manual run
+    (never stamped, never guarded) or when nothing is due. Pure, like due()."""
+    if event == "workflow_dispatch":
+        return None
+    found = _due_slot(cfg, now.astimezone(local_zone(cfg.timezone)))
+    return found[1] if found else None

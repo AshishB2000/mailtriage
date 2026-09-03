@@ -331,6 +331,7 @@ Pick your own digest times instead of a fixed cadence. In `config.yaml`:
 run_at: ["08:00", "18:00"]     # as many as you like, "HH:MM" 24h
 timezone: "America/New_York"   # IANA name — any tz database zone
 weekly_review: ""              # "" = off, or "<mon..sun> HH:MM" for a weekly slot
+catch_up_minutes: 120          # how late the hourly gate still fires a slot (60-360)
 ```
 
 `.github/workflows/digest.yml` itself never changes — it can't, without every
@@ -341,12 +342,22 @@ it), and `mailtriage --due` decides whether *this* hour is one of your
 `run_at` slots before anything else runs. Two things follow from that:
 
 - **Runs fire within about an hour after the time you picked**, not on the
-  minute — GitHub's scheduler can drift 5-30 minutes late under load, and the
-  gate accepts the whole hour after your slot rather than requiring exact
-  equality, so a drifted trigger still catches it.
-- **A skipped or delayed hour doesn't lose mail** — `window_hours` overlaps
-  between runs specifically so a late or dropped trigger's mail shows up at
-  the next slot instead of vanishing.
+  minute — GitHub's scheduler can drift 5-30 minutes late under load, and
+  sometimes skips an hour outright (we've seen one run in five hours). The
+  gate accepts a slot for `catch_up_minutes` after it (default 120, valid
+  60-360), so the hour after a skipped one still sends that slot's digest.
+- **A slot never sends twice.** Two hourly firings can both land inside one
+  slot's catch-up window, so each scheduled digest's subject carries its
+  slot — `mailtriage · Thu 03 Sep 08:00 · 2 to act · 3 to read` — and
+  before sending, the engine looks for that subject in the mailboxes it
+  already reads (All Mail, since yesterday). Found → it sends nothing and
+  says so in the log. Gmail is the memory; there's still no state file.
+  Manual "Run workflow" clicks and `--dry-run` carry no slot and are never
+  suppressed. (With `delivery: email` to an address outside `MAIL_ACCOUNTS`
+  the guard can't see the sent digest and quietly does nothing.)
+- **A slot missed for longer than `catch_up_minutes` doesn't lose mail** —
+  `window_hours` overlaps between runs specifically so a dropped trigger's
+  mail shows up at the next slot instead of vanishing.
 
 The setup wizard's Schedule step picks your timezone (defaulting to the one
 your browser reports), lets you add/remove `run_at` times, and computes

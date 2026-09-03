@@ -10,9 +10,17 @@ from datetime import datetime, timezone
 from mailtriage import __version__
 from mailtriage.config import Config, load_config
 from mailtriage.errors import MailError
-from mailtriage.imap_pull import label_actions, pull, pull_open_actions, pull_week, push_drafts
+from mailtriage.imap_pull import (
+    already_delivered,
+    check_login,
+    label_actions,
+    pull,
+    pull_open_actions,
+    pull_week,
+    push_drafts,
+)
 from mailtriage.models import Email, Triaged, WeekResult
-from mailtriage.schedule import due, local_zone
+from mailtriage.schedule import current_slot, due, local_zone
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -129,6 +137,28 @@ def run_weekly(cfg: Config, dry_run: bool = False) -> None:
 
     now = _now()
     week = pull_week(os.environ, now, cfg.label)
+def _slot_stamp(cfg: Config, now: datetime, dry_run: bool) -> str:
+    """The slot this scheduled run is for, e.g. "Thu 03 Sep 08:00" -- it goes
+    in the subject and is what the no-double-send guard searches for. "" for
+    a dry run or a manual run (GITHUB_EVENT_NAME=workflow_dispatch or unset),
+    which are never stamped and never guarded."""
+    if dry_run:
+        return ""
+    slot = current_slot(cfg, now, os.environ.get("GITHUB_EVENT_NAME", "workflow_dispatch"))
+    return f"{slot:%a %d %b %H:%M}" if slot else ""
+
+
+def _slot_already_delivered(cfg: Config, stamp: str, now: datetime) -> bool:
+    """Two hourly cron firings can both land inside one slot's catch_up_minutes
+    window. Gmail is the memory: if any account already holds this slot's
+    stamped subject, this run has nothing to do. Runs before pull/triage so
+    the duplicate costs no API call either."""
+    if stamp and already_delivered(os.environ, cfg.subject_prefix, stamp, now):
+        print("mailtriage: this slot's digest was already delivered — sending nothing.", file=sys.stderr)
+        return True
+    return False
+
+
 
     for w in week["warnings"]:
         print(f"mailtriage: account failed, skipping: {w}", file=sys.stderr)
@@ -137,6 +167,9 @@ def run_weekly(cfg: Config, dry_run: bool = False) -> None:
     if handled == 0 and still_open == 0:
         # Same "send nothing" philosophy as the normal digest: a roll-up with
         # nothing to report trains you to ignore it.
+    stamp = _slot_stamp(cfg, now, dry_run)
+    if _slot_already_delivered(cfg, stamp, now):
+        return
         print("mailtriage: nothing this week — sending nothing.", file=sys.stderr)
         return
 
@@ -144,7 +177,8 @@ def run_weekly(cfg: Config, dry_run: bool = False) -> None:
         _print_weekly(week)
         return
 
-    send_html(cfg, f"{cfg.subject_prefix} · weekly review", weekly_html(cfg, week))
+    head = f"{cfg.subject_prefix} · {stamp}" if stamp else cfg.subject_prefix
+    send_html(cfg, f"{head} · weekly review", weekly_html(cfg, week))
     print(
         f"mailtriage: weekly review delivered ({handled} handled, {still_open} open) via {cfg.delivery}.",
         file=sys.stderr,
@@ -187,6 +221,9 @@ def run(cfg: Config, dry_run: bool = False) -> None:
 
     emails = result["messages"]
     # Counts only -- never subjects or senders. Actions logs on a public fork
+    stamp = _slot_stamp(cfg, now, dry_run)
+    if _slot_already_delivered(cfg, stamp, now):
+        return
     # are public; this line is what lets someone debug "kept none" without
     # leaking what was in the inbox.
     n_accounts = len({e["account"] for e in emails})
@@ -239,7 +276,7 @@ def run(cfg: Config, dry_run: bool = False) -> None:
         _print_digest(kept)
         return
 
-    send(cfg, kept)
+    send(cfg, kept, stamp)
     print(f"mailtriage: delivered {len(kept)} item(s) via {cfg.delivery}.", file=sys.stderr)
 
 

@@ -13,8 +13,8 @@ BACKENDS = {"email": mail.send, "gmail": gmail.send}
 BACKENDS_HTML = {"email": mail.send_html, "gmail": gmail.send_html}
 
 
-def send(cfg: Config, triaged: list[Triaged]) -> None:
-    BACKENDS[cfg.delivery](cfg, triaged)
+def send(cfg: Config, triaged: list[Triaged], stamp: str = "") -> None:
+    BACKENDS[cfg.delivery](cfg, triaged, stamp)
 
 
 def send_html(cfg: Config, subject: str, html: str) -> None:

@@ -140,7 +140,7 @@ def test_run_pushes_drafts_and_prints_push_warnings_then_still_delivers(monkeypa
     monkeypatch.setattr(cli_module, "push_drafts", fake_push_drafts)
 
     sent: list[Any] = []
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: sent.append(kept))
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="": sent.append(kept))
 
     cfg = Config(delivery="email", email_to="me@example.com", email_from="bot@example.com", carry_over=False)
     run(cfg, dry_run=False)
@@ -261,7 +261,7 @@ def test_rule_forced_item_produces_a_digest_even_when_model_kept_nothing(monkeyp
     )
 
     sent: list[Any] = []
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: sent.append(kept))
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="": sent.append(kept))
 
     cfg = Config(
         delivery="email",

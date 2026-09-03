@@ -1,7 +1,7 @@
 """Pull recent INBOX mail from several Gmail accounts as JSON. Stdlib only.
 
-CRITICAL INVARIANT: `fetch_account`/`pull`, `pull_open_actions`, and
-`pull_week` are read-only -- `select(..., readonly=True)` and `BODY.PEEK[]`
+CRITICAL INVARIANT: `fetch_account`/`pull`, `pull_open_actions`, `pull_week`,
+`already_delivered`, and `check_login` are read-only -- `select(..., readonly=True)` and `BODY.PEEK[]`
 (or `BODY.PEEK[HEADER.FIELDS (...)]`, for `pull_week`) only. The engine
 writes exactly two things to Gmail: `label_actions` adds a label to INBOX
 messages (the one read-write INBOX `select` in this codebase, required
@@ -202,6 +202,69 @@ def pull(environ: Mapping[str, str], now: datetime, hours: int, fetch: FetchFn =
             warnings.append({"account": addr, "error": f"{type(e).__name__}: {e}"})
     messages.sort(key=lambda m: datetime.fromisoformat(m["date"]), reverse=True)
     return {"messages": messages, "warnings": warnings}
+
+
+def check_login(environ: Mapping[str, str], host: str = "imap.gmail.com") -> list[tuple[str, int, str]]:
+    """`mailtriage --doctor`'s account check: (addr, INBOX message count,
+    error) per MAIL_ACCOUNTS account, error == "" on success. Login + a
+    readonly SELECT only -- nothing is fetched."""
+    out: list[tuple[str, int, str]] = []
+    for addr, pw in accounts_from_env(environ):
+        try:
+            M = imaplib.IMAP4_SSL(host, 993)
+            try:
+                M.login(addr, pw)
+                _, data = M.select("INBOX", readonly=True)
+                out.append((addr, int(data[0] or b"0"), ""))
+            finally:
+                with contextlib.suppress(Exception):
+                    M.logout()
+        except Exception as e:  # imaplib raises many unrelated types — report, don't abort the other accounts
+            out.append((addr, 0, f"{type(e).__name__}: {e}"))
+    return out
+
+
+def already_delivered(
+    environ: Mapping[str, str], subject_prefix: str, stamp: str, now: datetime, host: str = "imap.gmail.com"
+) -> bool:
+    """The no-double-send guard: True when any MAIL_ACCOUNTS mailbox already
+    holds a message since yesterday whose subject contains
+    "<subject_prefix> · <stamp>" (e.g. "mailtriage · Thu 03 Sep 08:00").
+    Gmail is the memory -- there is no state file, by design.
+
+    Searches the \\All mailbox (LIST special-use, like pull_week) so a
+    digest sent to yourself is found whether it sits in INBOX or Sent;
+    falls back to INBOX + \\Sent when \\All can't be selected. The IMAP
+    SEARCH is by the ASCII slot stamp only (imaplib sends commands as
+    ASCII), then each hit's Subject header is checked for the full string in
+    Python, so a calendar invite carrying the same time can't suppress a
+    real digest. Read-only; best-effort: a dead account never vetoes a send.
+    """
+    since = (now - timedelta(days=1)).strftime("%d-%b-%Y")
+    subject = f"{subject_prefix} · {stamp}"
+    for addr, pw in accounts_from_env(environ):
+        # imaplib raises many unrelated types — a dead account can't veto the send
+        with contextlib.suppress(Exception):
+            M = imaplib.IMAP4_SSL(host, 993)
+            try:
+                M.login(addr, pw)
+                list_lines = M.list()[1] or []
+                boxes = [_find_all_mailbox(list_lines), "INBOX", _find_sent_mailbox(list_lines)]
+                for i, box in enumerate(boxes):
+                    if M.select(_quote_mailbox(box), readonly=True)[0] != "OK":
+                        continue
+                    _, data = M.uid("SEARCH", None, "SUBJECT", _quote_mailbox(stamp), "SINCE", since)  # type: ignore[arg-type]
+                    for uid in data[0].split() if data and data[0] else []:
+                        _, fetched = M.uid("FETCH", uid, "(BODY.PEEK[HEADER.FIELDS (SUBJECT)])")
+                        raw = next((part[1] for part in fetched if isinstance(part, tuple)), b"")
+                        if subject in str(message_from_bytes(raw, policy=policy.default).get("Subject", "")):
+                            return True
+                    if i == 0:
+                        break  # \All holds INBOX and Sent too -- no need to search them again
+            finally:
+                with contextlib.suppress(Exception):
+                    M.logout()
+    return False
 
 
 def _find_mailbox_by_attribute(list_lines: list[Any], attribute: str, fallback: str) -> str:
