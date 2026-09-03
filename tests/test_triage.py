@@ -249,9 +249,9 @@ def test_build_user_shows_reply_history_only_when_nonzero():
 def test_build_user_without_context_is_unchanged():
     now = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
     user = triage.build_user([make_email(0)], now)
-    assert (
-        user
-        == "Emails:\n\n[0] real subject 0\n    from: sender0@example.com · acct0 · 2h ago · UNREAD\n    real snippet 0"
+    assert user == (
+        "Today is Friday 2026-08-28.\n\nEmails:\n\n[0] real subject 0\n"
+        "    from: sender0@example.com · acct0 · 2h ago · UNREAD\n    real snippet 0"
     )
 
 

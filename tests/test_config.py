@@ -491,6 +491,7 @@ def test_profile_unknown_key_warns_and_is_dropped(capsys):
     assert "made_up" in err and "profiles.w" in err
     assert "made_up" not in cfg.profiles["w"] and "profiles" not in cfg.profiles["w"]
 
+
 # --- inbox intelligence -------------------------------------------------------
 
 

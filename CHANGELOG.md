@@ -9,6 +9,16 @@ contract is a major bump).
 
 ### Added
 
+- **Inbox intelligence.** The model now sees up to 2 earlier messages of a
+  candidate's thread (`thread_context`), its attachment names and types, and
+  how often you've written to that sender in the last 180 days
+  (`sender_memory`); drafts learn your voice from your own Sent mail to the
+  same recipient (`draft_style.learn_voice`) and can come as a short and a
+  full variant (`draft_variants: 2`); the digest ends with a folded "Noise
+  this week" footer of Unsubscribe links (`show_unsubscribe`); and the
+  opt-in `noise: {label, archive}` tags or archives what a run leaves out
+  -- by label only, never a delete. All read-only apart from that opt-in,
+  and the Actions log only ever shows counts.
 - **Bring the AI you already pay for.** Six triage backends behind one
   `provider` setting in `config.yaml`: Claude subscription
   (`CLAUDE_CODE_OAUTH_TOKEN`), Claude API (`ANTHROPIC_API_KEY`), ChatGPT

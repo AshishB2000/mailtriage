@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from typing import Any, cast
 
-from mailtriage.imap_pull import THREAD_CONTEXT_CAP, enrich
+from mailtriage.imap_pull import THREAD_CONTEXT_CAP, enrich, pw_env_var
 from mailtriage.models import Email
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
@@ -271,4 +271,4 @@ def test_missing_password_is_a_warning(monkeypatch: Any) -> None:
     result = enrich({}, [make_email(0)], NOW)
 
     assert factory.instances == []
-    assert PW_VAR in result["warnings"][0]["error"]
+    assert pw_env_var(ACCOUNT) in result["warnings"][0]["error"]

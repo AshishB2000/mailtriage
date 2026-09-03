@@ -9,7 +9,7 @@ from __future__ import annotations
 import imaplib
 from typing import Any, cast
 
-from mailtriage.imap_pull import pull_voice_examples, reply_text
+from mailtriage.imap_pull import pull_voice_examples, pw_env_var, reply_text
 from mailtriage.models import Email, Triaged
 
 ACCOUNT = "alice@gmail.com"
@@ -171,4 +171,4 @@ def test_missing_password_is_a_warning(monkeypatch: Any) -> None:
 
     examples, warnings = pull_voice_examples({}, [make_triaged(0)], [make_email(0, "b@x.com")])
 
-    assert examples == {} and PW_VAR in warnings[0]["error"]
+    assert examples == {} and pw_env_var(ACCOUNT) in warnings[0]["error"]

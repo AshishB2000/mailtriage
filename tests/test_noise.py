@@ -146,7 +146,7 @@ def _run_with(monkeypatch: Any, noise: dict[str, bool], dry_run: bool) -> list[t
 
     calls: list[tuple[Any, ...]] = []
     monkeypatch.setattr(
-        cli_module, "pull", lambda environ, now, hours: {"messages": [_email(0), _email(1)], "warnings": []}
+        cli_module, "pull", lambda environ, now, hours, **k: {"messages": [_email(0), _email(1)], "warnings": []}
     )
     monkeypatch.setattr(
         cli_module, "enrich", lambda *a, **k: {"threads": 0, "fetches": 0, "senders": 0, "warnings": []}
@@ -158,7 +158,7 @@ def _run_with(monkeypatch: Any, noise: dict[str, bool], dry_run: bool) -> list[t
         return len(idxs), []
 
     monkeypatch.setattr(cli_module, "label_noise", fake_label_noise)
-    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept: None)
+    monkeypatch.setattr(delivery_module, "send", lambda cfg, kept, stamp="": None)
     cfg = Config(
         delivery="email",
         email_to="me@example.com",

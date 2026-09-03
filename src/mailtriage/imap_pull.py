@@ -475,7 +475,7 @@ def pull_voice_examples(
     examples: dict[int, list[str]] = {}
     warnings: list[dict[str, str]] = []
     for account, items in by_account.items():
-        pw = environ.get(pw_env_var(account))
+        pw = app_password(environ, account)
         if not pw:
             warnings.append(
                 {"account": account, "error": f"no app password found in ${pw_env_var(account)}, skipping voice"}
@@ -587,7 +587,7 @@ def label_noise(
     warnings: list[dict[str, str]] = []
     quoted_label = _quote_mailbox(NOISE_LABEL)
     for account, uids in by_account.items():
-        pw = environ.get(pw_env_var(account))
+        pw = app_password(environ, account)
         if not pw:
             warnings.append(
                 {"account": account, "error": f"no app password found in ${pw_env_var(account)}, skipping noise labels"}
@@ -734,7 +734,7 @@ def enrich(
         want_senders = _sender_addresses(items, own, sender_budget)
         if not want_threads and not want_senders:
             continue
-        pw = environ.get(pw_env_var(account))
+        pw = app_password(environ, account)
         if not pw:
             warnings.append(
                 {"account": account, "error": f"no app password found in ${pw_env_var(account)}, skipping context"}

@@ -1259,7 +1259,7 @@ function buildYaml(v) {
     "",
     "# 1 = one draft per needs-action email. 2 = a short and a full variant,",
     "# both pushed to Gmail Drafts; the digest shows the short one.",
-    "draft_variants: " + v.draft_variants,
+    "draft_variants: " + (v.draft_variants === 2 ? 2 : 1),
     "",
     "# Reply tone/sign-off/language/length for AI-drafted replies -- edit by",
     "# hand any time. See README.md for the full syntax.",
@@ -1291,22 +1291,22 @@ function buildYaml(v) {
     "",
     "# Show the model up to 2 earlier messages of a candidate's thread (from",
     "# All Mail, newest 15 candidates per run). Read-only.",
-    "thread_context: " + (v.thread_context ? "true" : "false"),
+    "thread_context: " + (v.thread_context === false ? "false" : "true"),
     "",
     "# Tell the model how often you've written to each sender in the last 180",
     "# days (Sent Mail, newest 40 senders per run). Read-only.",
-    "sender_memory: " + (v.sender_memory ? "true" : "false"),
+    "sender_memory: " + (v.sender_memory === false ? "false" : "true"),
     "",
     "# Folded \"Noise this week\" footer with one Unsubscribe link per left-out",
     "# sender that offered one (https/mailto, at most 20). Never clicked for you.",
-    "show_unsubscribe: " + (v.show_unsubscribe ? "true" : "false"),
+    "show_unsubscribe: " + (v.show_unsubscribe === false ? "false" : "true"),
     "",
     "# Opt-in noise handling, both off by default. label: tag what each run",
     "# leaves out as mailtriage/noise. archive (needs label): also take it out",
     "# of the inbox -- stays in All Mail, never deleted. Never on --dry-run.",
     "noise:",
-    "  label: " + (v.noise.label ? "true" : "false"),
-    "  archive: " + (v.noise.archive ? "true" : "false"),
+    "  label: " + ((v.noise || {}).label ? "true" : "false"),
+    "  archive: " + ((v.noise || {}).archive ? "true" : "false"),
     ""
   ].join("\n");
 }
@@ -1563,6 +1563,7 @@ function applyConfig(cfg) {
     }
   }
   if (typeof cfg.draft_replies === "boolean") $("#draftReplies").checked = cfg.draft_replies;
+  if (cfg.draft_variants === 1 || cfg.draft_variants === 2) $("#draftVariants").checked = cfg.draft_variants === 2;
   if (cfg.draft_style) applyDraftStyle(cfg.draft_style);
   if (cfg.rules) {
     if (Array.isArray(cfg.rules.always_ignore)) $("#rulesIgnore").value = cfg.rules.always_ignore.join("\n");
@@ -1888,7 +1889,6 @@ function collect() {
     carry_over: $("#carryOver").checked,
     label: $("#label").value.trim(),
     nag_after_days: Math.max(1, +$("#nagAfterDays").value || 3),
-    thread_context: $("#threadContext").checked,
     thread_context: $("#threadContext").checked,
     sender_memory: $("#senderMemory").checked,
     show_unsubscribe: $("#showUnsubscribe").checked,
