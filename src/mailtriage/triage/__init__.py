@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Callable, Mapping
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from mailtriage.config import Config
@@ -53,8 +53,12 @@ TRIAGE_SCHEMA: dict[str, Any] = {
                         "type": "string",
                         "description": "One line: for needs_action, the concrete action; for worth_reading, why it's worth a glance.",
                     },
+                    "due": {
+                        "type": "string",
+                        "description": "YYYY-MM-DD when the message states or clearly implies a date the action is needed by; otherwise an empty string.",
+                    },
                 },
-                "required": ["id", "bucket", "note"],
+                "required": ["id", "bucket", "note", "due"],
                 "additionalProperties": False,
             },
         }
@@ -101,6 +105,7 @@ HOW MANY TO RETURN
 
 WRITING
 - note: one line. For needs_action, name the concrete action the reader must take. For worth_reading, say why it's worth a glance. No hedging, no "this could mean big things".
+- due: the date the action is needed by, as YYYY-MM-DD, if the message states or clearly implies one (today's date is given with the messages); otherwise empty. Never invent a date.
 - Copy each message's bracketed integer id EXACTLY as given. Never invent an id, and never address a message by anything other than its bracketed integer."""
 
     blocks = []
@@ -141,7 +146,21 @@ def build_user(emails: list[Email], now: datetime) -> str:
         blocks.append(
             f"[{i}] {em['subject']}\n    from: {em['from']} · {em['account']} · {age} · {status}\n    {em['snippet']}"
         )
-    return "Emails:\n\n" + "\n\n".join(blocks)
+    # Today's date lets the model resolve "by Friday" into a `due` date.
+    return f"Today is {now:%A %Y-%m-%d}.\n\nEmails:\n\n" + "\n\n".join(blocks)
+
+
+def clean_due(value: Any, today: date | None = None) -> str:
+    """The model's `due`, or "" when it isn't a real YYYY-MM-DD or is more
+    than a year in the past (a hallucinated year, typically)."""
+    if not isinstance(value, str):
+        return ""
+    try:
+        d = date.fromisoformat(value.strip())
+    except ValueError:
+        return ""
+    today = today or datetime.now(timezone.utc).date()
+    return d.isoformat() if d >= today - timedelta(days=365) else ""
 
 
 def pick(cfg: Config, emails: list[Email], reply: dict[str, Any]) -> list[Triaged]:
@@ -176,6 +195,7 @@ def pick(cfg: Config, emails: list[Email], reply: dict[str, Any]) -> list[Triage
             unread=src["unread"],
             idx=i,
             draft="",
+            due=clean_due(got.get("due")),
         )
         if bucket == "needs_action":
             needs_action.append(triaged)

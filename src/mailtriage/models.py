@@ -28,9 +28,16 @@ class PullResult(TypedDict):
     warnings: list[dict[str, str]]
 
 
-class Triaged(TypedDict):
-    """One surfaced email. `bucket`/`note`/`draft` come from the model; the
-    rest are copied verbatim from the source Email (never model-authored)."""
+class _TriagedOptional(TypedDict, total=False):
+    # Split out so `due` stays optional on Python 3.10 (no typing.NotRequired):
+    # carried and rule-forced items never have one, and every existing
+    # Triaged literal stays valid. Read it with t.get("due", "").
+    due: str  # "YYYY-MM-DD" or "": model-authored, validated by triage.pick()
+
+
+class Triaged(_TriagedOptional):
+    """One surfaced email. `bucket`/`note`/`draft`/`due` come from the model;
+    the rest are copied verbatim from the source Email (never model-authored)."""
 
     bucket: str  # "needs_action" | "worth_reading" from the model; "carried" is
     # client-authored only, by imap_pull.pull_open_actions re-surfacing a prior
