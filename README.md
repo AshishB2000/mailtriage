@@ -1,34 +1,42 @@
-<h1 align="center">mailtriage</h1>
-
-<p align="center"><b>AI triages every Gmail account you have, on your own schedule, and drafts the replies for you — you open your inbox to find the answers already written.</b></p>
-
-<p align="center">Fork-and-run · your own GitHub Actions · your own AI credentials · no server, no accounts, nothing routes through anyone else.</p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.svg">
+    <img alt="mailtriage — AI triages your Gmail and drafts the replies, before you open it." src="docs/banner-light.svg" width="860">
+  </picture>
+</p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat" /></a>
-  <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat" />
-  <img alt="providers" src="https://img.shields.io/badge/AI%20providers-6-informational?style=flat" />
-  <img alt="cost" src="https://img.shields.io/badge/cost-%240%20possible-success?style=flat" />
+  <a href="https://github.com/AshishB2000/mailtriage/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/AshishB2000/mailtriage/ci.yml?branch=main&label=tests&style=flat-square&color=2f7a3d" /></a>
+  <a href="LICENSE"><img alt="MIT licensed" src="https://img.shields.io/badge/license-MIT-black?style=flat-square" /></a>
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-black?style=flat-square" />
+  <img alt="6 AI providers" src="https://img.shields.io/badge/AI%20providers-6-a93c26?style=flat-square" />
+  <img alt="can run at zero cost" src="https://img.shields.io/badge/can%20run%20at-%240-a93c26?style=flat-square" />
+  <img alt="no server" src="https://img.shields.io/badge/server-none-black?style=flat-square" />
+</p>
+
+<p align="center">
+  <a href="#set-it-up-in-five-minutes"><b>Set it up</b></a> &nbsp;·&nbsp;
+  <a href="#what-you-get">What you get</a> &nbsp;·&nbsp;
+  <a href="#bring-the-ai-you-already-pay-for">Bring your own AI</a> &nbsp;·&nbsp;
+  <a href="#gmail-as-the-control-plane">Run it from Gmail</a> &nbsp;·&nbsp;
+  <a href="#what-youll-need-and-what-it-costs">Cost</a> &nbsp;·&nbsp;
+  <a href="#privacy">Privacy</a>
 </p>
 
 ---
 
-mailtriage reads the INBOX of one or more Gmail accounts, sorts what actually
-arrived into **needs action** / **worth reading** — and drops the rest —
-then sends you a single short HTML email. For everything that needs a reply,
-it also drafts one: into the digest, and appended straight into that
-account's Gmail Drafts folder, threaded to the original message. Everything
-else is noise it never shows you: newsletters, receipts, promotions,
-automated notifications.
+You fork this repo and it becomes yours. It reads the INBOX of one or more
+Gmail accounts, sorts what actually arrived into **needs action** and
+**worth reading**, drops the rest, and sends you one short email. For
+anything expecting a reply it writes the reply too — into the digest, and
+into that account's Gmail Drafts, threaded to the original message.
 
-It runs on **your** GitHub Actions, with **your** AI provider credentials —
-Claude, ChatGPT, OpenAI, or Gemini, whichever you already pay for (or a free
-Google account), reading
-**your** Gmail over read-only IMAP. Your laptop can be off. There's no
-server, no database, no accounts, and nothing routes through anyone else —
-you fork this repo and it becomes entirely yours.
-
----
+It runs on **your** GitHub Actions with **your** AI credentials — Claude,
+ChatGPT, OpenAI or Gemini, whichever you already pay for, or a free Google
+account — reading **your** Gmail over read-only IMAP. Your laptop can be
+off. There is no server, no database, no account, and nothing routes through
+anyone else. The maintainer never sees your mail and never pays for your
+inference.
 
 ## Bring the AI you already pay for
 
@@ -94,6 +102,22 @@ one and notes that a fuller version is waiting in Drafts. Default is `1`.
 
 ## What it looks like
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/digest-dark.png">
+    <img alt="A mailtriage digest: two items needing action with a drafted reply, one carried over from a previous run, two worth reading." src="docs/digest-light.png" width="760">
+  </picture>
+</p>
+
+<p align="center"><sub>An actual render of the digest template — <a href="docs/sample-digest.html">docs/sample-digest.html</a>, regenerated from the live renderer and pinned by a test.</sub></p>
+
+Every item is numbered. You reply to that email with `done 2` or
+`snooze 3 for a week` and the next run acts on it — see
+[Gmail as the control plane](#gmail-as-the-control-plane).
+
+<details>
+<summary>The same digest as plain text (<code>digest_format: text</code>)</summary>
+
 ```
 mailtriage · 2 to act · 3 to read
 
@@ -128,6 +152,8 @@ WORTH READING
 Triaged by mailtriage from your own inboxes.
 ```
 
+</details>
+
 **It returns fewer, never pads.** `reading_count` in `config.yaml` is a
 *maximum*, not a target — the model is explicitly told an honest short list
 beats a padded one, and that leaving out a borderline item makes the digest
@@ -137,11 +163,26 @@ short. If nothing cleared the bar in either bucket, **no email sends at
 all** — a digest that shows up with "nothing today" three times a week is
 how you train yourself to stop opening it.
 
-<!-- screenshot: the HTML email as rendered in Gmail, light and dark -->
+---
+
+## What you get
+
+| | |
+|---|---|
+| **Triage that returns fewer, never pads** | `needs_action` is uncapped; `worth_reading` has a maximum, not a target. Nothing in either bucket means no email at all. |
+| **Replies already written** | Every action item gets a drafted reply in the digest *and* in Gmail Drafts, threaded to the original. It never sends anything. |
+| **It reads your own writing** | Drafts are shaped by your recent replies to that same person, not by a tone dropdown. |
+| **Nothing gets lost** | Action items stay on the list until you reply, archive, or clear the label — with the age shown, in bold once they are overdue. |
+| **You steer it from Gmail** | Reply `done 2`, `snooze 3 for a week`, `never 5`, or apply a label on your phone. The next run obeys. |
+| **Deadlines become dates** | Items group into Overdue / Today / This week, each with an add-to-calendar link. |
+| **Six AI providers** | Claude, ChatGPT, Gemini by subscription, or Anthropic, OpenAI, Gemini by API key. One secret, your bill. |
+| **Any mailbox, any channel** | Gmail, Fastmail, iCloud, a work IMAP server; delivered by email, Telegram, Slack, Discord or ntfy. |
+| **Your morning, not just your mail** | Today's calendar sits above the mail, and a weekly review says what you cleared and who is still waiting. |
+| **It tells you when it is wrong** | `--doctor` checks every part end to end; `--bench` scores the triage prompt against a fixture with a known answer. |
 
 ---
 
-## Setup — about 5 minutes
+## Set it up in five minutes
 
 ### The easy way: the setup wizard
 
@@ -202,7 +243,9 @@ read straight from the GitHub API in your tab:
 If you'd rather do it by hand — or the wizard hits something your setup
 doesn't like — the manual steps below do exactly the same thing.
 
-### The manual way
+<details>
+<summary><b>Set it up by hand instead</b></summary>
+
 
 #### 1. Fork this repo
 
@@ -283,6 +326,8 @@ committed.
 run. Check the log if nothing arrives — see Troubleshooting below.
 
 ---
+
+</details>
 
 ## Delivery options
 
@@ -929,7 +974,9 @@ something failed.
 
 ---
 
-## Running it locally
+<details>
+<summary><b>Running it locally</b></summary>
+
 
 ```bash
 git clone https://github.com/YOUR-USERNAME/mailtriage
@@ -954,7 +1001,11 @@ export MAIL_PW_F24FE3C393F64986=...   # pw_env_var("alice@gmail.com") -- see man
 
 ---
 
-## What's in here
+</details>
+
+<details>
+<summary><b>What's in here (the file tree)</b></summary>
+
 
 ```
 src/mailtriage/
@@ -988,6 +1039,8 @@ CHANGELOG.md          what changed, by release
 No build step, no framework, no `node_modules`, no server.
 
 ---
+
+</details>
 
 ## License
 
