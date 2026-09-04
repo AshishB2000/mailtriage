@@ -33,7 +33,8 @@ from datetime import datetime, timedelta, timezone
 from email import message_from_bytes, policy
 from email.message import EmailMessage
 from email.utils import format_datetime, parseaddr, parsedate_to_datetime
-from typing import Any
+from html.parser import HTMLParser
+from typing import Any, ClassVar
 from urllib.parse import quote
 
 # Re-exported: tests import MailError from this module too.
@@ -434,28 +435,90 @@ def gmail_link(addr: str, message_id: str) -> str:
     return f"https://mail.google.com/mail/u/{addr}/#search/rfc822msgid:{quote(mid)}"
 
 
-def plain_text(msg: EmailMessage) -> str:
-    """The first non-attachment text/plain part, decoded, line breaks intact."""
-    part: EmailMessage | None = msg
-    if msg.is_multipart():
-        part = next(
-            (
-                p
-                for p in msg.walk()
-                if p.get_content_type() == "text/plain" and "attachment" not in str(p.get("Content-Disposition", ""))
-            ),
-            None,
-        )
-    if part is None:
-        return ""
+class _Detagger(HTMLParser):
+    """Visible text out of an HTML body, stdlib only.
+
+    Not a renderer: it drops the parts that are never prose (script, style,
+    head) and puts a space where a tag was, which is enough for a 200-char
+    snippet and for the drafting body. Entities are already decoded by
+    HTMLParser with convert_charrefs on.
+    """
+
+    _SKIP: ClassVar[set[str]] = {"script", "style", "head", "title"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in self._SKIP:
+            self._depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP and self._depth:
+            self._depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._depth:
+            self.parts.append(data)
+
+
+def html_to_text(html: str) -> str:
+    parser = _Detagger()
+    with contextlib.suppress(Exception):
+        # Malformed markup is normal in email; keep whatever was parsed.
+        parser.feed(html)
+        parser.close()
+    return " ".join("".join(parser.parts).split())
+
+
+def _first_part(msg: EmailMessage, content_type: str) -> EmailMessage | None:
+    if not msg.is_multipart():
+        return msg if msg.get_content_type() == content_type else None
+    return next(
+        (
+            p
+            for p in msg.walk()
+            if p.get_content_type() == content_type and "attachment" not in str(p.get("Content-Disposition", ""))
+        ),
+        None,
+    )
+
+
+def _decode(part: EmailMessage) -> str:
     try:
-        text = part.get_content()
+        return str(part.get_content())
     except Exception:
         payload = part.get_payload(decode=True)
         if not isinstance(payload, bytes):  # get_payload(decode=True) is typed loosely; guard the real shape
             payload = b""
-        text = payload.decode(part.get_content_charset() or "utf-8", "replace")
-    return str(text)
+        return payload.decode(part.get_content_charset() or "utf-8", "replace")
+
+
+def plain_text(msg: EmailMessage) -> str:
+    """The message's readable text, line breaks intact.
+
+    text/plain when the sender bothered to send one, the de-tagged text/html
+    when they didn't. That fallback is not a nicety: a huge share of the mail
+    that actually needs action -- bank alerts, invoices, e-sign requests,
+    appointment confirmations, delivery failures -- is sent HTML-only. Without
+    it those arrive at the model as a subject line and an empty body, which
+    reads exactly like a content-free notification, and the model drops them.
+    A real inbox of 41 messages triaged to nothing while the same prompt
+    scored 24/24 on a fixture whose snippets were all populated.
+    """
+    part = _first_part(msg, "text/plain")
+    if part is not None:
+        text = _decode(part)
+        if text.strip():
+            return text
+    html_part = _first_part(msg, "text/html")
+    if html_part is not None:
+        return html_to_text(_decode(html_part))
+    if part is None:
+        return ""
+    return _decode(part)
 
 
 def snippet_of(msg: EmailMessage, limit: int = 200) -> str:

@@ -369,6 +369,18 @@ def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> Non
     # are public; this line is what lets someone debug "kept none" without
     # leaking what was in the inbox.
     n_accounts = len({e["account"] for e in emails})
+    # Snippet health, counts only. An empty digest has two very different
+    # causes -- a quiet window, or mail arriving at the model with no body --
+    # and they are indistinguishable from "kept none" alone. HTML-only senders
+    # used to land here as subject-and-nothing; if that count climbs again,
+    # this line is where it shows.
+    blank = sum(1 for e in emails if len(e["snippet"].strip()) < 20)
+    if emails:
+        avg = sum(len(e["snippet"]) for e in emails) // len(emails)
+        print(
+            f"mailtriage: bodies: {blank} of {len(emails)} near-empty, {avg} chars average.",
+            file=sys.stderr,
+        )
     print(
         f"mailtriage: {len(emails)} candidate(s) in the last {cfg.window_hours}h across {n_accounts} account(s).",
         file=sys.stderr,
