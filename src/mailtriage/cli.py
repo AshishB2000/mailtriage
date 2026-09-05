@@ -26,6 +26,7 @@ from mailtriage.imap_pull import (
     pull_voice_examples,
     pull_week,
     push_drafts,
+    window_shape,
 )
 from mailtriage.models import Email, Event, Triaged, WeekResult
 from mailtriage.schedule import current_slot, due, local_zone
@@ -381,8 +382,10 @@ def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> Non
             f"mailtriage: bodies: {blank} of {len(emails)} near-empty, {avg} chars average.",
             file=sys.stderr,
         )
+    shape = window_shape(emails)
     print(
-        f"mailtriage: {len(emails)} candidate(s) in the last {cfg.window_hours}h across {n_accounts} account(s).",
+        f"mailtriage: {len(emails)} candidate(s) in the last {cfg.window_hours}h across {n_accounts} account(s) — "
+        f"{shape.bulk} bulk, {shape.automated} automated, {shape.people} from people.",
         file=sys.stderr,
     )
 
@@ -455,7 +458,23 @@ def run(cfg: Config, dry_run: bool = False, only: set[str] | None = None) -> Non
         # Carried items alone must never trigger a digest: this check runs
         # before any carry-over items are merged in, so "no new items" stays
         # "no new items" even when yesterday's debts are still open.
+        # "Kept none" is the most alarming line here, and most of the time it
+        # is the product working: a window of newsletters and receipts has
+        # nothing in it to act on. Say which of the two this was, from the
+        # shape counted above, so nobody has to open a log to find out.
         print("mailtriage: the model kept none of the candidates — sending nothing.", file=sys.stderr)
+        if shape.people == 0 and emails:
+            print(
+                f"mailtriage: nothing here was addressed by a person — all {len(emails)} were bulk or automated. "
+                "An empty digest is the right answer to a window like this.",
+                file=sys.stderr,
+            )
+        elif shape.people:
+            print(
+                f"mailtriage: {shape.people} of {len(emails)} came from people and none was kept. If any of those "
+                "needed you, widen 'interests' in config.yaml, or run with mode=bench to score the prompt itself.",
+                file=sys.stderr,
+            )
         return
 
     if cfg.carry_over:

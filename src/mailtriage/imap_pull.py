@@ -34,7 +34,7 @@ from email import message_from_bytes, policy
 from email.message import EmailMessage
 from email.utils import format_datetime, parseaddr, parsedate_to_datetime
 from html.parser import HTMLParser
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 from urllib.parse import quote
 
 # Re-exported: tests import MailError from this module too.
@@ -1096,6 +1096,41 @@ SENDER_MEMORY_CAP = 40  # distinct sender addresses looked up in \Sent per run
 SENDER_MEMORY_DAYS = 180
 # Automated senders nobody replies to -- a Sent search for them is a wasted round trip.
 _NOREPLY_RE = re.compile(r"no-?reply|do-?not-?reply|notifications?@|mailer-daemon|bounce|^postmaster@", re.IGNORECASE)
+
+
+class WindowShape(NamedTuple):
+    """What kind of mail a window held, for the empty-digest question."""
+
+    bulk: int  # carries List-Unsubscribe: a mailing list, newsletter or promotion
+    automated: int  # no unsubscribe, but a noreply-ish sender: receipts, alerts, CI
+    people: int  # neither -- mail a person could plausibly be waiting on a reply to
+
+
+def window_shape(items: list[Email]) -> WindowShape:
+    """Split a pulled window three ways, from headers already fetched.
+
+    "The model kept none of the candidates" is the most alarming line this
+    program prints, and on its own it cannot tell a working run over a
+    promotional window from a broken one over a real inbox. Counts only --
+    the whole point is that this is safe to print in a public log, where the
+    subjects that would answer the question directly never can be.
+
+    Bulk is decided by List-Unsubscribe, which is the sender declaring itself
+    a mailing. It is a lower bound: a header whose only entry is an
+    unsupported scheme does not survive `unsubscribe_of`, so such mail counts
+    as automated or people instead. Erring that way is deliberate -- this
+    number is used to reassure, and a reassuring number should never be
+    inflated.
+    """
+    bulk = automated = people = 0
+    for em in items:
+        if em.get("unsubscribe"):
+            bulk += 1
+        elif _NOREPLY_RE.search(parseaddr(em["from"])[1].lower()):
+            automated += 1
+        else:
+            people += 1
+    return WindowShape(bulk, automated, people)
 
 
 def _sender_addresses(items: list[Email], own: set[str], budget: int) -> list[str]:

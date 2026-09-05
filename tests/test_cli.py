@@ -516,6 +516,44 @@ def test_run_logs_candidate_count_without_subjects(monkeypatch: Any, capsys: Any
     assert "subject-0" not in err and "subject-1" not in err
 
 
+def test_empty_digest_says_the_window_was_all_bulk(monkeypatch: Any, capsys: Any) -> None:
+    """ "Kept none" alone cannot tell a working run over a promotional window
+    from a broken one over a real inbox. When nobody wrote to you, say so."""
+    import mailtriage.cli as cli_module
+    import mailtriage.triage as triage_module
+
+    msgs = [
+        {**_email(0), "unsubscribe": "https://x.example/unsub"},
+        {**_email(1), "from": "no-reply@x.example"},
+    ]
+    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours, only=None: {"messages": msgs, "warnings": []})
+    monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [])
+
+    run(Config(delivery="email", carry_over=False, window_hours=15), dry_run=True)
+
+    err = capsys.readouterr().err
+    assert "1 bulk, 1 automated, 0 from people" in err
+    assert "nothing here was addressed by a person" in err
+    assert "widen 'interests'" not in err
+    assert "subject-0" not in err and "no-reply@x.example" not in err
+
+
+def test_empty_digest_points_at_the_brief_when_people_wrote(monkeypatch: Any, capsys: Any) -> None:
+    import mailtriage.cli as cli_module
+    import mailtriage.triage as triage_module
+
+    msgs = [_email(0), {**_email(1), "unsubscribe": "https://x.example/unsub"}]
+    monkeypatch.setattr(cli_module, "pull", lambda environ, now, hours, only=None: {"messages": msgs, "warnings": []})
+    monkeypatch.setattr(triage_module, "triage", lambda cfg, emails, now: [])
+
+    run(Config(delivery="email", carry_over=False, window_hours=15), dry_run=True)
+
+    err = capsys.readouterr().err
+    assert "1 of 2 came from people and none was kept" in err
+    assert "widen 'interests'" in err
+    assert "nothing here was addressed by a person" not in err
+
+
 # --- Gmail as the control plane (sub-project B) --------------------------
 
 
