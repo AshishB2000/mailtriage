@@ -1,0 +1,2775 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>mailtriage — setup</title>
+<meta name="description" content="Set up mailtriage: private AI triage of your Gmail inboxes.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23191713'/%3E%3Cg fill='%23f7f4ee'%3E%3Crect x='7' y='8' width='18' height='2.4'/%3E%3Crect x='7' y='14' width='11' height='1.6'/%3E%3Crect x='7' y='18' width='14' height='1.6'/%3E%3Crect x='7' y='22' width='9' height='1.6'/%3E%3C/g%3E%3C/svg%3E">
+
+<style>
+/* ============================================================ tokens */
+:root{
+  --paper:#f6f3ed;
+  --surface:#fffdf9;
+  --sunk:#efebe2;
+  --ink:#17150f;
+  --ink-2:#4a453b;
+  --muted:#7b7367;
+  --faint:#a9a294;
+  --rule:rgba(23,21,15,.13);
+  --hair:rgba(23,21,15,.07);
+  --accent:#a93c26;
+  --accent-2:#8b2f1c;
+  --wash:rgba(169,60,38,.08);
+  --ok:#2c7350;
+  --ok-wash:rgba(44,115,80,.10);
+  --warn:#8d6410;
+  --bad:#a92f22;
+  --bad-wash:rgba(169,47,34,.09);
+  --shadow:0 1px 1px rgba(23,21,15,.04), 0 10px 26px -18px rgba(23,21,15,.40);
+  --shadow-lg:0 1px 2px rgba(23,21,15,.05), 0 30px 60px -34px rgba(23,21,15,.45);
+  --grain:.045;
+  --serif:ui-serif,"Iris",Georgia,"Times New Roman",Times,serif;
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --r:12px;
+  --e:cubic-bezier(.22,.68,.28,1);
+}
+
+/* ============================================================ base */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+/* paper grain — inline SVG, no network */
+body::before{
+  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  opacity:var(--grain);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap{position:relative;z-index:1;max-width:720px;margin:0 auto;padding:0 20px 96px}
+@media (max-width:520px){ .wrap{padding:0 15px 72px} }
+
+h1,h2,h3{font-family:var(--serif);font-weight:600;letter-spacing:-.012em;margin:0;line-height:1.2}
+p{margin:0}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--wash);transition:border-color .18s var(--e),color .18s var(--e)}
+a:hover{border-bottom-color:currentColor}
+::selection{background:var(--wash);color:var(--ink)}
+
+/* ============================================================ masthead */
+header.mast{padding:clamp(44px,9vw,84px) 0 0;text-align:center}
+.mast .kicker{
+  font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--muted);
+  display:flex;align-items:center;gap:14px;justify-content:center;margin-bottom:22px;
+}
+.mast .kicker::before,.mast .kicker::after{content:"";height:1px;flex:1;max-width:120px;background:var(--rule)}
+.mast h1{
+  font-size:clamp(44px,11vw,72px);line-height:.98;letter-spacing:-.03em;font-weight:600;
+}
+.mast h1 .dot{color:var(--accent)}
+.mast .rule{margin:26px 0 0;border:0;border-top:1px solid var(--ink);opacity:.85}
+.mast .rule + .rule{margin-top:3px;border-top-width:1px;opacity:.28}
+.mast .tag{
+  font-family:var(--serif);font-size:clamp(16px,3.6vw,19px);font-style:italic;color:var(--ink-2);
+  margin-top:18px;
+}
+.mast .sub{font-size:13.5px;color:var(--muted);margin-top:9px;max-width:46ch;margin-left:auto;margin-right:auto}
+
+/* ============================================================ stepper */
+.stepper{display:flex;align-items:flex-start;margin:44px 0 30px;padding:0;list-style:none;counter-reset:s}
+.stepper li{flex:1;position:relative;text-align:center;min-width:0}
+.stepper li::after{
+  content:"";position:absolute;top:15px;left:calc(50% + 22px);right:calc(-50% + 22px);
+  height:1px;background:var(--rule);
+}
+.stepper li:last-child::after{display:none}
+.stepper .node{
+  width:31px;height:31px;border-radius:50%;margin:0 auto 9px;
+  display:grid;place-items:center;
+  font-size:13px;font-variant-numeric:tabular-nums;font-weight:600;
+  background:var(--surface);color:var(--faint);
+  border:1px solid var(--rule);
+  transition:background .3s var(--e),color .3s var(--e),border-color .3s var(--e),transform .3s var(--e);
+}
+.stepper .lbl{
+  font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  transition:color .3s var(--e);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;
+}
+.stepper li.on .node{background:var(--ink);color:var(--paper);border-color:var(--ink);transform:scale(1.06)}
+.stepper li.on .lbl{color:var(--ink);font-weight:600}
+.stepper li.done .node{background:var(--ok-wash);border-color:transparent;color:var(--ok)}
+.stepper li.done .lbl{color:var(--muted)}
+.stepper li.done .node::after{content:"✓";font-size:14px}
+.stepper li.done .node span{display:none}
+@media (max-width:440px){ .stepper .lbl{font-size:10px;letter-spacing:.04em} }
+
+/* ============================================================ card */
+.card{
+  background:var(--surface);
+  border:1px solid var(--hair);
+  border-radius:var(--r);
+  box-shadow:var(--shadow);
+  padding:clamp(22px,5vw,34px);
+}
+.card + .card{margin-top:18px}
+.card > h2{font-size:clamp(23px,5vw,28px);letter-spacing:-.02em}
+.card > h2 + .lede{color:var(--muted);font-size:14.5px;margin-top:8px;max-width:56ch}
+
+.panel{display:none;animation:rise .42s var(--e) both}
+.panel.on{display:block}
+@keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+
+.sect{margin-top:30px;padding-top:26px;border-top:1px solid var(--hair)}
+.sect:first-of-type{border-top:0;padding-top:0}
+.sect > h3{
+  font-family:var(--sans);font-size:11px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--faint);font-weight:600;margin-bottom:16px;
+}
+
+/* ============================================================ fields */
+.f{margin-top:18px}
+.f:first-child{margin-top:0}
+.f > label,.lgnd{
+  display:block;font-size:13.5px;font-weight:600;color:var(--ink);margin-bottom:6px;letter-spacing:-.005em;
+}
+.f .hint{font-size:12.5px;color:var(--muted);margin:-2px 0 8px;line-height:1.5}
+.f .hint a{font-size:inherit}
+
+input[type=text],input[type=password],input[type=number],input[type=email],textarea,select{
+  width:100%;font:inherit;font-size:15px;color:var(--ink);
+  background:var(--sunk);
+  border:1px solid transparent;
+  border-radius:9px;
+  padding:11px 13px;
+  transition:background .2s var(--e),border-color .2s var(--e),box-shadow .2s var(--e);
+  appearance:none;
+}
+textarea{resize:vertical;min-height:96px;line-height:1.6}
+input::placeholder,textarea::placeholder{color:var(--faint);opacity:1}
+input:focus,textarea:focus,select:focus{
+  outline:0;background:var(--surface);border-color:var(--accent);
+  box-shadow:0 0 0 3.5px var(--wash);
+}
+input.mono,textarea.mono{font-family:var(--mono);font-size:13px}
+.f.bad input,.f.bad textarea{border-color:var(--bad);background:var(--bad-wash)}
+.msg{font-size:12.5px;margin-top:6px;display:none;line-height:1.45}
+.f.bad .msg{display:block;color:var(--bad)}
+
+/* password + toggle */
+.reveal{position:relative}
+.reveal input{padding-right:62px}
+.reveal button{
+  position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  border:0;background:transparent;color:var(--muted);
+  font:inherit;font-size:12px;font-weight:600;letter-spacing:.04em;
+  padding:6px 9px;border-radius:7px;cursor:pointer;
+  transition:color .18s var(--e),background .18s var(--e);
+}
+.reveal button:hover{color:var(--ink);background:var(--hair)}
+
+/* ============================================================ buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:9px;
+  font:inherit;font-size:15px;font-weight:600;letter-spacing:-.005em;
+  padding:12px 20px;border-radius:10px;border:1px solid transparent;
+  cursor:pointer;text-decoration:none;
+  transition:transform .16s var(--e),background .18s var(--e),box-shadow .18s var(--e),opacity .18s var(--e);
+}
+.btn:active{transform:translateY(1px) scale(.995)}
+.btn-primary{background:var(--ink);color:var(--paper);box-shadow:var(--shadow)}
+.btn-primary:hover{box-shadow:var(--shadow-lg)}
+.btn-accent{background:var(--accent);color:#fff;box-shadow:var(--shadow)}
+.btn-accent:hover{background:var(--accent-2);box-shadow:var(--shadow-lg)}
+.btn-ghost{background:transparent;color:var(--ink-2);border-color:var(--rule)}
+.btn-ghost:hover{background:var(--hair);color:var(--ink)}
+.btn[disabled]{opacity:.42;pointer-events:none}
+.btn.wide{width:100%}
+.btn .arr{transition:transform .2s var(--e)}
+.btn:hover .arr{transform:translateX(3px)}
+a.btn{border-bottom:1px solid transparent}
+
+.nav{display:flex;gap:10px;margin-top:28px;padding-top:22px;border-top:1px solid var(--hair)}
+.nav .btn{flex:1}
+.nav .btn.back{flex:0 0 auto}
+
+/* chips */
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.chip{
+  font:inherit;font-size:12.5px;font-weight:500;color:var(--ink-2);
+  background:transparent;border:1px solid var(--rule);border-radius:999px;
+  padding:5px 12px;cursor:pointer;
+  transition:background .18s var(--e),color .18s var(--e),border-color .18s var(--e);
+}
+.chip:hover{background:var(--wash);border-color:transparent;color:var(--accent)}
+
+/* segmented control */
+.seg{display:flex;gap:4px;background:var(--sunk);padding:4px;border-radius:11px}
+.seg label{flex:1;position:relative;cursor:pointer;min-width:0}
+.seg input{position:absolute;opacity:0;width:0;height:0}
+.seg span{
+  display:block;text-align:center;font-size:13.5px;font-weight:600;
+  padding:9px 8px;border-radius:8px;color:var(--muted);
+  transition:background .22s var(--e),color .22s var(--e),box-shadow .22s var(--e);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.seg input:checked + span{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.seg input:focus-visible + span{box-shadow:0 0 0 3px var(--wash)}
+
+/* ============================================================ notes */
+.note{
+  display:flex;gap:11px;align-items:flex-start;
+  font-size:12.8px;line-height:1.55;color:var(--ink-2);
+  background:var(--sunk);border-radius:10px;padding:12px 14px;margin-top:10px;
+}
+.note .ic{flex:0 0 auto;width:15px;height:15px;margin-top:2px;opacity:.6}
+.note.safe{background:var(--ok-wash);color:var(--ink-2)}
+.note.safe strong{color:var(--ok)}
+.note.caution{background:var(--wash)}
+.note code{font-family:var(--mono);font-size:11.5px;background:var(--hair);padding:1px 5px;border-radius:4px;
+  word-break:break-all}
+
+/* ============================================================ identity */
+.ident{
+  display:flex;align-items:center;gap:13px;margin-top:14px;
+  background:var(--ok-wash);border-radius:11px;padding:12px 14px;
+  animation:rise .34s var(--e) both;
+}
+.ident img{width:38px;height:38px;border-radius:50%;flex:0 0 auto;background:var(--sunk)}
+.ident .who{font-size:14.5px;font-weight:600;line-height:1.3}
+.ident .sm{font-size:12.5px;color:var(--muted)}
+
+.repos{display:grid;gap:8px;margin-top:10px}
+.repo{
+  display:flex;align-items:center;gap:11px;width:100%;text-align:left;cursor:pointer;
+  font:inherit;background:transparent;border:1px solid var(--rule);border-radius:10px;padding:12px 14px;
+  transition:border-color .2s var(--e),background .2s var(--e);
+}
+.repo:hover{background:var(--hair)}
+.repo.sel{border-color:var(--accent);background:var(--wash)}
+.repo .nm{font-family:var(--mono);font-size:13px;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.repo .br{font-size:11.5px;color:var(--muted);font-family:var(--mono);flex:0 0 auto}
+
+/* ============================================================ AI provider picker */
+.provs{display:grid;gap:8px;margin-top:9px}
+.prov{
+  display:flex;align-items:center;gap:12px;cursor:pointer;
+  border:1px solid var(--rule);border-radius:10px;padding:12px 14px;
+  transition:border-color .2s var(--e),background .2s var(--e);
+}
+.prov:hover{background:var(--hair)}
+.prov:has(input:checked){border-color:var(--accent);background:var(--wash)}
+.prov input{flex:0 0 auto;width:16px;height:16px;margin:0;accent-color:var(--accent)}
+.prov .pname{display:block;font-size:13.5px;font-weight:600;color:var(--ink)}
+.prov .psec{display:block;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px}
+.prov .pdesc{display:block;font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.45}
+
+/* ============================================================ account rows */
+.acct{margin-top:10px}
+.acct-row{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}
+.acct-row .acct-email{flex:1 1 220px}
+.acct-row .reveal{flex:1 1 220px}
+.acct-row .rm{flex:0 0 auto;padding:11px 13px}
+.acct.bad .acct-email,.acct.bad .acct-pw{border-color:var(--bad);background:var(--bad-wash)}
+.acct-msg{font-size:12.5px;color:var(--bad);margin-top:4px;display:none;line-height:1.45}
+
+/* ============================================================ toggle row */
+.toggle{display:flex;align-items:center;gap:10px;cursor:pointer}
+.toggle input{flex:0 0 auto;width:16px;height:16px;margin:0;accent-color:var(--accent)}
+.toggle span{font-size:13.5px;font-weight:600;color:var(--ink)}
+
+/* ============================================================ time rows */
+.timelist{display:grid;gap:8px;margin-top:9px}
+.timerow{display:flex;gap:8px;align-items:center}
+.timerow input[type=time]{flex:0 0 auto;width:auto;max-width:150px}
+.timerow .rm{flex:0 0 auto;padding:11px 13px}
+.weekly-row{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.weekly-row select{flex:1 1 140px}
+.weekly-row input[type=time]{flex:0 0 auto;width:auto;max-width:150px}
+
+/* ============================================================ collapsible account override */
+details.ovr{margin-top:10px;border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+details.ovr summary{cursor:pointer;list-style:none;padding:10px 13px;font-size:13px;font-weight:600;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+details.ovr summary::-webkit-details-marker{display:none}
+details.ovr summary::before{content:"▸";font-size:11px;color:var(--faint);transition:transform .18s var(--e)}
+details.ovr[open] summary::before{transform:rotate(90deg)}
+details.ovr .ovr-body{padding:2px 13px 14px}
+
+/* ============================================================ launch rows */
+.runs{list-style:none;padding:0;margin:22px 0 0;border-top:1px solid var(--hair)}
+.runs li{
+  display:flex;align-items:flex-start;gap:13px;
+  padding:14px 2px;border-bottom:1px solid var(--hair);
+}
+.runs .dot{
+  flex:0 0 auto;width:19px;height:19px;border-radius:50%;margin-top:1px;
+  border:1.5px solid var(--rule);
+  display:grid;place-items:center;font-size:11px;line-height:1;
+  transition:border-color .3s var(--e),background .3s var(--e),color .3s var(--e);
+}
+.runs li .body{min-width:0;flex:1}
+.runs li .t{display:block;font-size:14px;font-weight:600;color:var(--faint);transition:color .3s var(--e)}
+.runs li .d{display:block;font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5;word-break:break-word}
+.runs li .d:empty{display:none}
+.runs li[data-s=run] .t,.runs li[data-s=done] .t,.runs li[data-s=fail] .t{color:var(--ink)}
+.runs li[data-s=run] .dot{
+  border-color:var(--accent);border-right-color:transparent;border-top-color:transparent;
+  animation:spin .8s linear infinite;
+}
+.runs li[data-s=done] .dot{background:var(--ok-wash);border-color:transparent;color:var(--ok)}
+.runs li[data-s=done] .dot::after{content:"✓"}
+.runs li[data-s=fail] .dot{background:var(--bad-wash);border-color:transparent;color:var(--bad)}
+.runs li[data-s=fail] .dot::after{content:"✕"}
+.runs li[data-s=fail] .d{color:var(--bad)}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ============================================================ done */
+.done-mark{
+  width:54px;height:54px;border-radius:50%;background:var(--ok-wash);color:var(--ok);
+  display:grid;place-items:center;font-size:25px;margin:0 auto 20px;
+  animation:pop .5s var(--e) both;
+}
+@keyframes pop{0%{transform:scale(.5);opacity:0}60%{transform:scale(1.07)}100%{transform:scale(1);opacity:1}}
+.center{text-align:center}
+.links{display:grid;gap:8px;margin-top:24px}
+
+/* ============================================================ preview + dashboard */
+details.preview{margin-top:14px;border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+details.preview summary{cursor:pointer;list-style:none;padding:10px 13px;font-size:13px;font-weight:600;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+details.preview summary::-webkit-details-marker{display:none}
+details.preview summary::before{content:"▸";font-size:11px;color:var(--faint);transition:transform .18s var(--e)}
+details.preview[open] summary::before{transform:rotate(90deg)}
+details.preview iframe{display:block;width:100%;height:560px;border:0;border-top:1px solid var(--hair);background:#faf9f7}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:10px}
+.stat{background:var(--sunk);border-radius:10px;padding:11px 13px;min-width:0}
+.stat .k{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:600}
+.stat .v{font-size:14px;font-weight:600;color:var(--ink);margin-top:3px;line-height:1.35;word-break:break-word}
+.stat .s{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.45}
+.stat.warn .v{color:var(--warn)}
+.stat.bad .v{color:var(--bad)}
+
+.runtbl{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+.runtbl th{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:600;text-align:left;padding:6px 8px 6px 0;border-bottom:1px solid var(--hair)}
+.runtbl td{padding:8px 8px 8px 0;border-bottom:1px solid var(--hair);vertical-align:top;color:var(--ink-2)}
+.runtbl td.n{white-space:nowrap;font-variant-numeric:tabular-nums}
+.runtbl .pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--hair);color:var(--ink-2);white-space:nowrap}
+.runtbl .pill.ok{background:var(--ok-wash);color:var(--ok)}
+.runtbl .pill.bad{background:var(--bad-wash);color:var(--bad)}
+.runtbl .pill.warn{background:var(--wash);color:var(--accent)}
+.runtbl .pill.run::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;border:1.5px solid var(--accent);border-top-color:transparent;animation:spin .8s linear infinite;vertical-align:-1px}
+.tblwrap{overflow-x:auto}
+@media (max-width:520px){ .runtbl .hide-sm{display:none} }
+
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.actions .btn{flex:1 1 160px;font-size:14px;padding:10px 14px}
+.status{font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.5;min-height:1.2em}
+.status.bad{color:var(--bad)}
+
+footer{
+  text-align:center;margin-top:38px;font-size:12px;color:var(--faint);line-height:1.7;
+}
+footer a{color:var(--muted)}
+
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.spin-inline{
+  display:inline-block;width:13px;height:13px;border-radius:50%;
+  border:1.5px solid var(--rule);border-top-color:var(--accent);
+  animation:spin .8s linear infinite;vertical-align:-2px;margin-right:7px;
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  .runs li[data-s=run] .dot{border-color:var(--accent)}
+}
+/* ==========================================================================
+   Design refresh — ported from the Claude Design project (Home, Setup 1-3).
+   The palette is remapped onto the variable names the sheet above already
+   uses, so every component recolours from one place; the rules after it
+   restyle only the shapes the design changes. No markup ids or JS hooks move.
+   ========================================================================== */
+:root{
+  --hue:20;
+  --paper:#fefcfc;
+  --surface:rgba(255,255,255,.72);
+  --sunk:rgba(42,60,75,.05);
+  --ink:#2a3038;
+  --ink-2:#55606c;
+  --muted:#7d8894;
+  --faint:#a8b2bc;
+  --rule:rgba(42,48,56,.12);
+  --hair:rgba(42,48,56,.06);
+  --accent:oklch(0.67 0.08 var(--hue));
+  --accent-2:oklch(0.6 0.08 var(--hue));
+  --deep:oklch(0.42 0.06 var(--hue));
+  --wash:oklch(0.72 0.07 var(--hue) / .12);
+  --ring:oklch(0.72 0.07 var(--hue) / .25);
+  --ok:oklch(0.55 0.12 155);
+  --ok-wash:oklch(0.55 0.12 155 / .1);
+  --warn:#8d6410;
+  --bad:#b3402f;
+  --bad-wash:rgba(179,64,47,.09);
+  --cardline:rgba(255,255,255,.85);
+  --shadow:0 1px 2px rgba(20,18,30,.05),0 24px 60px -28px rgba(60,50,120,.28);
+  --shadow-lg:0 1px 2px rgba(20,18,30,.06),0 34px 76px -30px rgba(60,50,120,.34);
+  --navbg:rgba(254,251,251,.72);
+  --serif:'Bricolage Grotesque',ui-sans-serif,system-ui,'Segoe UI',sans-serif;
+  --sans:'Figtree',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@supports not (color: oklch(0.5 0.1 20)){
+  :root{--accent:#c2705a;--accent-2:#ab5a45;--deep:#6b3a2c;--wash:rgba(194,112,90,.12);
+        --ring:rgba(194,112,90,.25);--ok:#2f7a52;--ok-wash:rgba(47,122,82,.1)}
+}
+@keyframes blob1{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(12vw,14vh) scale(1.18)}66%{transform:translate(-6vw,26vh) scale(.92)}}
+@keyframes blob2{0%,100%{transform:translate(0,0) scale(1)}40%{transform:translate(-14vw,18vh) scale(1.12)}75%{transform:translate(6vw,-8vh) scale(.95)}}
+@keyframes blob3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(10vw,-16vh) scale(1.22)}}
+@keyframes bob{0%,100%{transform:translateY(0) rotate(0)}30%{transform:translateY(-5px) rotate(-6deg)}55%{transform:translateY(0) rotate(0)}70%{transform:translateY(-2px) rotate(4deg)}}
+@keyframes drift{0%,100%{transform:translateY(0) rotate(-10deg)}50%{transform:translateY(-34px) rotate(8deg)}}
+
+html{-webkit-text-size-adjust:100%}
+body{background:linear-gradient(180deg,#fefcfc 0%,#faf5f4 55%,#f6efee 100%) fixed;
+     font-family:var(--sans);font-size:16px;line-height:1.55;color:var(--ink);
+     -webkit-font-smoothing:antialiased}
+body::before{display:none}            /* the paper grain belongs to the old skin */
+h1,h2,h3{font-family:var(--serif);font-weight:700;letter-spacing:-.025em}
+
+/* background wash + drifting envelopes */
+.glow{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.blob{position:absolute;border-radius:50%}
+.blob-1{top:-18vh;left:-12vw;width:58vw;height:58vw;min-width:480px;min-height:480px;background:radial-gradient(circle at 40% 40%,oklch(0.82 0.06 var(--hue) / .5),transparent 65%);filter:blur(70px);animation:blob1 26s ease-in-out infinite}
+.blob-2{top:4vh;right:-16vw;width:52vw;height:52vw;min-width:420px;min-height:420px;background:radial-gradient(circle at 55% 45%,oklch(0.86 0.05 60 / .45),transparent 65%);filter:blur(80px);animation:blob2 32s ease-in-out infinite}
+.blob-3{bottom:-24vh;left:22vw;width:48vw;height:48vw;min-width:380px;min-height:380px;background:radial-gradient(circle at 50% 50%,oklch(0.85 0.04 340 / .38),transparent 65%);filter:blur(90px);animation:blob3 38s ease-in-out infinite}
+.env{position:absolute;color:var(--accent)}
+
+/* sticky top bar (note: .nav is already the step footer, so this is .topbar) */
+.topbar{position:sticky;top:0;z-index:10;backdrop-filter:blur(18px) saturate(1.4);
+        -webkit-backdrop-filter:blur(18px) saturate(1.4);background:var(--navbg);
+        border-bottom:1px solid var(--hair)}
+.topbar .in{max-width:1080px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:20px}
+.topbar .brand{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none}
+.topbar .mark{width:32px;height:32px;display:grid;place-items:center;filter:drop-shadow(0 6px 12px var(--ring));animation:bob 3.6s ease-in-out infinite;transform-origin:50% 100%;transition:transform .2s}
+.topbar .brand:hover .mark{transform:scale(1.12) rotate(-8deg)}
+.topbar .bname{font-family:var(--serif);font-weight:700;font-size:17px}
+.topbar .sp{flex:1}
+.topbar .step-chip{font-size:12.5px;font-weight:600;color:var(--accent);background:var(--wash);border-radius:999px;padding:5px 13px;white-space:nowrap}
+.topbar .gh{font-size:13.5px;font-weight:600;color:var(--ink-2);border:1px solid var(--rule);border-radius:10px;padding:7px 14px;text-decoration:none;transition:all .2s}
+.topbar .gh:hover{background:var(--hair);color:var(--ink)}
+
+/* two-column shell: sticky step rail + the panels */
+.wrap{max-width:1080px;padding:0 24px 64px}
+.shell{display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start;padding-top:44px}
+.rail{flex:1 1 240px;max-width:320px;position:sticky;top:84px;animation:rise .5s var(--e) both}
+.cols{flex:2 1 460px;min-width:0;animation:rise .55s var(--e) .06s both}
+@media (max-width:860px){.rail{position:static;max-width:none;flex-basis:100%}.shell{gap:24px;padding-top:26px}}
+
+header.mast{text-align:left;padding:0;margin:0}
+.mast .kicker{justify-content:flex-start;font-size:11px;letter-spacing:.16em;color:var(--faint);margin:0 0 6px}
+.mast .kicker::before,.mast .kicker::after{display:none}
+.mast h1{font-family:var(--serif);font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1.1;margin:0}
+.mast h1 .dot{color:var(--accent)}
+.mast .rule{display:none}
+.mast .tag{font-style:normal;font-size:14px;color:var(--ink-2);margin:8px 0 0;text-align:left}
+.mast .sub{font-size:12.5px;color:var(--muted);margin:8px 0 0;max-width:none;text-align:left}
+
+/* the stepper becomes the rail */
+.stepper{display:grid;gap:6px;margin:22px 0 0}
+.stepper li{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:12px 14px;border-radius:14px;transition:background .2s}
+.stepper li::after{display:none}
+.stepper li:hover{background:var(--hair)}
+.stepper .node{width:24px;height:24px;flex:0 0 auto;border-radius:50%;border:1px solid var(--rule);color:var(--faint);
+               display:grid;place-items:center;font-size:12px;font-weight:700;margin:0;background:transparent}
+.stepper .lbl{font-size:14px;font-weight:600;color:var(--muted);margin:0;letter-spacing:0;text-transform:none}
+.stepper .desc{display:block;font-size:12.5px;color:var(--faint);margin-top:2px;line-height:1.5}
+.stepper li.on{background:var(--wash)}
+.stepper li.on .node{background:var(--accent);border-color:transparent;color:#fff;transform:none}
+.stepper li.on .lbl{color:var(--ink);font-weight:700}
+.stepper li.on .desc{color:var(--ink-2)}
+.stepper li.done .node{background:var(--ok-wash);border-color:transparent;color:var(--ok)}
+
+.railnote{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;line-height:1.55;color:var(--ink-2);
+          background:var(--ok-wash);border-radius:12px;padding:12px 14px;margin-top:22px}
+.railnote strong{color:var(--ok)}
+
+/* cards become glass */
+.card{background:var(--surface);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
+      border:1px solid var(--cardline);border-radius:22px;box-shadow:var(--shadow);padding:clamp(24px,5vw,36px)}
+.card + .card{margin-top:20px}
+.card > h2{font-family:var(--serif);font-size:27px;font-weight:700;letter-spacing:-.015em}
+.card > h2 + .lede{color:var(--muted);font-size:14.5px;max-width:56ch}
+.sect > h3{font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);font-weight:700}
+
+/* fields */
+input[type=text],input[type=password],input[type=number],input[type=email],textarea,select{
+  font-family:var(--sans);background:var(--sunk);border:1px solid transparent;border-radius:12px;
+  padding:12px 14px;color:var(--ink);transition:all .2s}
+input:focus,textarea:focus,select:focus{background:#fff;border-color:var(--accent);box-shadow:0 0 0 4px var(--ring);outline:none}
+.f > label,.lgnd{font-size:13.5px;font-weight:600;color:var(--ink)}
+.f .hint{font-size:12.5px;color:var(--muted)}
+.reveal button{font-family:var(--sans);font-size:12px;font-weight:600;border-radius:8px;color:var(--muted)}
+.reveal button:hover{color:var(--ink);background:var(--hair)}
+
+/* buttons */
+.btn{font-family:var(--sans);font-size:15px;font-weight:600;border-radius:12px;padding:13px 22px;transition:all .2s}
+.btn-accent{background:var(--accent);color:#fff;box-shadow:0 12px 28px -14px var(--ring)}
+.btn-accent:hover{background:var(--accent-2);transform:translateY(-1px);box-shadow:0 14px 30px -14px var(--ring)}
+/* Setup's primary is the lighter accent; --deep is the home page's CTA tone. */
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 12px 28px -14px var(--ring)}
+.btn-primary:hover{background:var(--accent-2);transform:translateY(-1px)}
+.btn-ghost{background:transparent;color:var(--ink-2);border:1px solid var(--rule)}
+.btn-ghost:hover{background:var(--hair);color:var(--ink)}
+.chip{border-radius:999px;font-family:var(--sans)}
+
+/* notes */
+.note{display:flex;gap:11px;align-items:flex-start;font-size:12.8px;line-height:1.55;color:var(--ink-2);
+      background:var(--sunk);border:0;border-radius:12px;padding:12px 14px}
+.note.safe{background:var(--ok-wash)}
+.note.safe strong{color:var(--ok)}
+.note.caution{background:var(--wash)}
+.note .ic{opacity:.55;margin-top:1px}
+
+/* provider cards */
+.prov{border:1px solid var(--rule);border-radius:14px;background:rgba(255,255,255,.5);transition:all .2s}
+.prov:hover{background:#fff;border-color:var(--accent)}
+.prov .pname{font-family:var(--sans);font-weight:600}
+
+footer{color:var(--faint);font-size:12.5px;line-height:1.7;text-align:center;padding-top:8px}
+footer a{color:var(--muted)}
+
+@media (prefers-reduced-motion:reduce){
+  .blob,.topbar .mark,.env{animation:none!important}
+}
+
+</style>
+</head>
+<body>
+
+<div class="glow" aria-hidden="true">
+  <div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div>
+  <span class="env" style="top:14vh;left:5vw;opacity:.2;animation:drift 9s ease-in-out infinite"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3.5 7.5 12 13l8.5-5.5"></path></svg></span>
+  <span class="env" style="top:70vh;left:88vw;opacity:.15;animation:drift 12s ease-in-out 2s infinite"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3.5 7.5 12 13l8.5-5.5"></path></svg></span>
+</div>
+
+<nav class="topbar">
+  <div class="in">
+    <a class="brand" href="index.html">
+      <span class="mark"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="mlg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent-2)"></stop><stop offset="1" stop-color="var(--accent)"></stop></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#mlg)"></rect><rect x="8" y="9" width="16" height="3.2" rx="1.6" fill="#fff"></rect><rect x="8" y="14.8" width="11" height="2.4" rx="1.2" fill="#fff" opacity=".85"></rect><circle cx="22.8" cy="16" r="1.7" fill="#fff"></circle><rect x="8" y="20" width="13.5" height="2.4" rx="1.2" fill="#fff" opacity=".55"></rect></svg></span>
+      <span class="bname">mailtriage</span>
+    </a>
+    <div class="sp"></div>
+    <span class="step-chip" id="stepChip">Setup · step 1 of 3</span>
+    <a class="gh" href="https://github.com/AshishB2000/mailtriage" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <div class="shell">
+  <aside class="rail">
+  <header class="mast">
+    <div class="kicker">Setup</div>
+    <h1>mailtriage<span class="dot">.</span></h1>
+    <hr class="rule"><hr class="rule">
+    <p class="tag">Private AI triage of your Gmail inboxes.</p>
+    <p class="sub">This page writes the settings into your own fork and starts the first run. It has no server — everything happens in this browser tab.</p>
+  </header>
+
+  <ol class="stepper" id="stepper">
+    <li data-i="1"><div class="node"><span>1</span></div><div><span class="lbl">Connect</span><span class="desc">A token so this page can write to your fork.</span></div></li>
+    <li data-i="2"><div class="node"><span>2</span></div><div><span class="lbl">Configure</span><span class="desc">Your brief, keys, accounts and rhythm.</span></div></li>
+    <li data-i="3"><div class="node"><span>3</span></div><div><span class="lbl">Launch</span><span class="desc">Encrypt, commit, and trigger the first run.</span></div></li>
+  </ol>
+  <div class="railnote"><span aria-hidden="true">◆</span><span><strong>No server.</strong> Everything on this page happens in this browser tab, directly against the GitHub API.</span></div>
+  </aside>
+  <main class="cols">
+
+  <!-- ================================================= STEP 1 -->
+  <section class="card panel" id="p1" aria-labelledby="h1t">
+    <h2 id="h1t">Connect your GitHub</h2>
+    <p class="lede">mailtriage runs inside your own repository. To put your settings there, this page needs a personal access token — a temporary password that only you can create.</p>
+
+    <div class="sect">
+      <a class="btn btn-primary wide" id="mkToken" target="_blank" rel="noopener"
+         href="https://github.com/settings/tokens/new?scopes=repo&amp;description=mailtriage+setup">
+        Create a token on GitHub <span class="arr">→</span>
+      </a>
+      <div class="note">
+        <span class="ic">◆</span>
+        <span>GitHub opens in a new tab with the right permission already ticked (<code>repo</code>). Scroll to the bottom, click <strong>Generate token</strong>, then copy the value it shows once and paste it below.</span>
+      </div>
+
+      <div class="f" id="f-token" style="margin-top:20px">
+        <label for="token">Paste your token</label>
+        <div class="reveal">
+          <input type="password" id="token" class="mono" placeholder="ghp_••••••••••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="token">Show</button>
+        </div>
+        <div class="msg"></div>
+        <div id="tokenBusy" style="display:none;font-size:12.5px;color:var(--muted);margin-top:8px">
+          <span class="spin-inline"></span>Checking with GitHub…
+        </div>
+      </div>
+
+      <div id="identity"></div>
+    </div>
+
+    <div class="sect" id="repoSect" style="display:none">
+      <h3>Your fork</h3>
+      <div id="repoBox"></div>
+      <div class="note" id="dashEntry" style="display:none;margin-top:12px">
+        <span class="ic">◆</span>
+        <span>Already set up? <a href="#" id="openDash1">Open the dashboard</a> — recent runs, secrets, next slot, run-now and upgrade buttons — without changing any settings.</span>
+      </div>
+    </div>
+
+    <div class="nav">
+      <button class="btn btn-accent" id="go2" disabled>Continue <span class="arr">→</span></button>
+    </div>
+  </section>
+
+  <!-- ================================================= STEP 2 -->
+  <section class="card panel" id="p2" aria-labelledby="h2t">
+    <h2 id="h2t">What needs your attention?</h2>
+    <p class="lede">This is the part that decides whether the triage is any good. The text below is handed to the model word for word, so be specific — say what a message has to look like to need a reply from you, and what's safe to drop.</p>
+
+    <details class="preview" data-preview>
+      <summary>What the digest looks like</summary>
+      <iframe title="Sample digest" data-src="sample-digest.html"></iframe>
+    </details>
+
+    <div class="sect">
+      <h3>Your brief</h3>
+
+      <div class="f" id="f-interests">
+        <label for="interests">What counts as needing your action</label>
+        <p class="hint">Direct questions, deadlines, things a human is waiting on you for.</p>
+        <textarea id="interests" rows="6" placeholder="Mail that needs a decision or a reply from me: direct questions from people I work with, meeting requests, anything with a deadline, invoices or bills that need action, and account/security alerts about my own accounts. If a human is waiting on me, it belongs in the digest."></textarea>
+        <div class="msg"></div>
+      </div>
+
+      <div class="f" id="f-avoid">
+        <label for="avoid">What's noise</label>
+        <p class="hint">Read as a hard filter. Naming what you're tired of is the fastest way to improve the triage.</p>
+        <textarea id="avoid" rows="5" placeholder="Purchase receipts and shipping notifications, automated build/monitoring alerts, marketing and promotional email, newsletters and digests you only skim, and social-media notifications."></textarea>
+        <div class="msg"></div>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>AI auth</h3>
+      <p class="hint" style="margin:-2px 0 10px">Bring the AI you already pay for. Pick one — this page writes exactly one credential, as one repository secret.</p>
+      <div class="f">
+        <span class="lgnd" id="authlbl">Choose one</span>
+        <div class="provs" role="radiogroup" aria-labelledby="authlbl">
+          <label class="prov">
+            <input type="radio" name="provider" value="claude-subscription">
+            <span><span class="pname">Claude subscription (Pro/Max)</span><span class="psec">CLAUDE_CODE_OAUTH_TOKEN</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="provider" value="claude-api" checked>
+            <span><span class="pname">Claude API key</span><span class="psec">ANTHROPIC_API_KEY</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="provider" value="chatgpt-subscription">
+            <span><span class="pname">ChatGPT subscription (Plus/Pro)</span><span class="psec">CODEX_AUTH_JSON</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="provider" value="openai-api">
+            <span><span class="pname">OpenAI API key</span><span class="psec">OPENAI_API_KEY</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="provider" value="gemini-api">
+            <span><span class="pname">Gemini API key — free tier</span><span class="psec">GEMINI_API_KEY</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="provider" value="google-subscription">
+            <span><span class="pname">Google subscription (free — Gemini CLI)</span><span class="psec">GEMINI_OAUTH_JSON</span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="f" id="f-oauth" style="display:none">
+        <label for="oauth">Claude Code OAuth token</label>
+        <p class="hint">Run <code>claude setup-token</code> in your terminal, approve in the browser it opens, then paste the token it prints below. Uses your Claude Pro/Max subscription instead of API billing — no per-run cost — and the token lasts about a year. Terminal line-wrap can insert spaces into the paste; this field strips all whitespace automatically before sealing.</p>
+        <div class="reveal">
+          <input type="password" id="oauth" class="mono" placeholder="sk-ant-oat01-••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="oauth">Show</button>
+        </div>
+        <div class="msg"></div>
+      </div>
+
+      <div class="f" id="f-anthropic">
+        <label for="anthropic">Anthropic API key</label>
+        <p class="hint">Create one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com/settings/keys</a>. Pay-per-use — a few cents a month for this workload.</p>
+        <div class="reveal">
+          <input type="password" id="anthropic" class="mono" placeholder="sk-ant-••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="anthropic">Show</button>
+        </div>
+        <div class="msg"></div>
+      </div>
+
+      <div class="f" id="f-codexAuth" style="display:none">
+        <label for="codexAuth">Contents of ~/.codex/auth.json</label>
+        <p class="hint">Run <code>codex login</code> locally, then paste the <strong>full contents</strong> of the <code>auth.json</code> file it writes. Honest caveat: Codex rotates these tokens during use, and a stateless CI runner can't persist that rotation back into the secret — expect to re-run <code>codex login</code> and re-paste it here occasionally when a run starts failing with an auth error.</p>
+        <textarea id="codexAuth" class="mono" rows="4" placeholder='{"tokens": {"access_token": "…", "refresh_token": "…"}, …}' autocomplete="off" spellcheck="false"></textarea>
+        <div class="msg"></div>
+      </div>
+
+      <div class="f" id="f-openai" style="display:none">
+        <label for="openai">OpenAI API key</label>
+        <p class="hint">Create one at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a>. Pay-per-use, billed by OpenAI directly.</p>
+        <div class="reveal">
+          <input type="password" id="openai" class="mono" placeholder="sk-proj-••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="openai">Show</button>
+        </div>
+        <div class="msg"></div>
+      </div>
+
+      <div class="f" id="f-gemini" style="display:none">
+        <label for="gemini">Gemini API key</label>
+        <p class="hint">Create one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> — Gemini's free tier comfortably covers a handful of digests a day, so this option can run mailtriage at <strong>$0</strong>.</p>
+        <div class="reveal">
+          <input type="password" id="gemini" class="mono" placeholder="AIzaSy••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="gemini">Show</button>
+        </div>
+        <div class="msg"></div>
+      </div>
+
+      <div class="f" id="f-geminiOauth" style="display:none">
+        <label for="geminiOauth">Contents of ~/.gemini/oauth_creds.json</label>
+        <p class="hint">Run <code>gemini</code> locally, sign in with your Google account, then paste the <strong>full contents</strong> of the <code>oauth_creds.json</code> file it writes. <strong>Free: 60 requests/min, 1,000/day.</strong> Re-paste only if you revoke access or don't use it for 6 months — Google expires refresh tokens that sit idle that long.</p>
+        <textarea id="geminiOauth" class="mono" rows="4" placeholder='{"access_token": "…", "refresh_token": "…", …}' autocomplete="off" spellcheck="false"></textarea>
+        <div class="msg"></div>
+      </div>
+
+      <div class="note safe">
+        <span class="ic">◆</span>
+        <span><strong>Your credential is encrypted in this browser</strong> — sealed with libsodium against your repository's own public key — and sent straight to GitHub, where it becomes a repository secret only your workflow can read. Nothing is sent anywhere else. This page has no server and no analytics; you can read every line of it with View Source.</span>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Delivery</h3>
+      <div class="f">
+        <span class="lgnd" id="deliverylbl">How you get the digest</span>
+        <div class="provs" role="radiogroup" aria-labelledby="deliverylbl">
+          <label class="prov">
+            <input type="radio" name="delivery" value="gmail" id="delivery-gmail" checked>
+            <span><span class="pname">Gmail (recommended)</span><span class="pdesc">Sends the digest from your own Gmail to itself using the app password you already entered below. Lands in your inbox, never spam, nothing else to set up.</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="delivery" value="mailbox" id="delivery-mailbox">
+            <span><span class="pname">Your own mailbox</span><span class="pdesc">Same idea for a non-Gmail account: sends through that mailbox's own SMTP (Fastmail, iCloud, a work server) with the app password you enter below. Nothing else to set up.</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="delivery" value="email" id="delivery-email">
+            <span><span class="pname">Resend</span><span class="pdesc">Send from a custom domain via resend.com — needs an API key and a verified sending domain.</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="delivery" value="telegram" id="delivery-telegram">
+            <span><span class="pname">Telegram</span><span class="pdesc">A bot you create with @BotFather messages you the digest. Needs the bot token and your chat id.</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="delivery" value="slack" id="delivery-slack">
+            <span><span class="pname">Slack</span><span class="pdesc">Posts to a channel through an incoming webhook you create in your workspace.</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="delivery" value="discord" id="delivery-discord">
+            <span><span class="pname">Discord</span><span class="pdesc">Posts to a channel through a webhook from the channel's Integrations settings.</span></span>
+          </label>
+          <label class="prov">
+            <input type="radio" name="delivery" value="ntfy" id="delivery-ntfy">
+            <span><span class="pname">ntfy</span><span class="pdesc">A push notification to the ntfy app on your phone. Needs only a topic URL.</span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="f" id="f-digestText" style="margin-top:12px">
+        <label class="toggle">
+          <input type="checkbox" id="digestText">
+          <span>Plain-text email instead of HTML</span>
+        </label>
+      </div>
+
+      <details class="ovr" id="gmailAdvanced" style="margin-top:14px">
+        <summary>Send to a different address (optional)</summary>
+        <div class="ovr-body">
+          <div class="f" id="f-emailToGmail" style="margin-top:10px">
+            <label for="emailToGmail">Send to</label>
+            <p class="hint">Leave blank to self-send to your own Gmail inbox — this also won't overwrite an <code>EMAIL_TO</code> secret already set in your repo.</p>
+            <input type="email" id="emailToGmail" placeholder="you@example.com" autocomplete="off" spellcheck="false">
+            <div class="msg"></div>
+          </div>
+        </div>
+      </details>
+
+      <details class="ovr" id="mailboxFields" style="margin-top:14px;display:none">
+        <summary>Send to a different address (optional)</summary>
+        <div class="ovr-body">
+          <div class="f" id="f-emailToMailbox" style="margin-top:10px">
+            <label for="emailToMailbox">Send to</label>
+            <p class="hint">Leave blank to send to the first account below. The digest is sent through that account's own SMTP host — derived from its IMAP host, or set explicitly as a third field in the account row.</p>
+            <input type="email" id="emailToMailbox" placeholder="you@example.com" autocomplete="off" spellcheck="false">
+            <div class="msg"></div>
+          </div>
+        </div>
+      </details>
+
+      <div id="resendFields" style="display:none">
+        <div class="note safe" id="resendPrefillNote" style="display:none;margin-top:0;margin-bottom:10px">
+          <span class="ic">◆</span>
+          <span>This fork already has Resend secrets set. GitHub never returns their value, so re-enter each one below to keep this run working — they'll overwrite what's there.</span>
+        </div>
+        <div class="f" id="f-resend">
+          <label for="resend">Resend API key</label>
+          <p class="hint">From <a href="https://resend.com/api-keys" target="_blank" rel="noopener">resend.com/api-keys</a> (free tier covers personal volume).</p>
+          <div class="reveal">
+            <input type="password" id="resend" class="mono" placeholder="re_••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="resend">Show</button>
+          </div>
+          <div class="msg"></div>
+        </div>
+        <div class="f" id="f-emailTo">
+          <label for="emailTo">Send to</label>
+          <input type="email" id="emailTo" placeholder="you@example.com" autocomplete="off" spellcheck="false">
+          <div class="msg"></div>
+        </div>
+        <div class="f" id="f-emailFrom">
+          <label for="emailFrom">Send from</label>
+          <input type="email" id="emailFrom" placeholder="mailtriage@yourdomain.com" autocomplete="off" spellcheck="false">
+          <div class="msg"></div>
+        </div>
+        <div class="note caution">
+          <span class="ic">◆</span>
+          <span><strong>The from-address must be on a domain you've verified in Resend</strong> at <a href="https://resend.com/domains" target="_blank" rel="noopener">resend.com/domains</a> — an unverified domain is the single most common reason the first digest never arrives, and returns a 403 that looks like a bad API key but isn't. Resend's shared <code>onboarding@resend.dev</code> sender works with no domain setup, but can only deliver to your own Resend-account email.</span>
+        </div>
+      </div>
+
+      <div id="telegramFields" style="display:none">
+        <div class="f" id="f-tgToken">
+          <label for="tgToken">Telegram bot token</label>
+          <p class="hint">Message <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>, send <code>/newbot</code>, and copy the token it gives you. Then open your new bot and press <strong>Start</strong> — a bot can't message you until you do. Stored as the <code>TELEGRAM_BOT_TOKEN</code> secret.</p>
+          <div class="reveal">
+            <input type="password" id="tgToken" class="mono" placeholder="123456789:AA••••••••••••••••••••••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="tgToken">Show</button>
+          </div>
+          <div class="msg"></div>
+        </div>
+        <div class="f" id="f-tgChatId">
+          <label for="tgChatId">Chat id</label>
+          <p class="hint">After pressing Start, open <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser and copy <code>result[0].message.chat.id</code>. Written to <code>config.yaml</code> as <code>telegram_chat_id</code> — it isn't a secret on its own.</p>
+          <input type="text" id="tgChatId" class="mono" placeholder="123456789" autocomplete="off" spellcheck="false">
+          <div class="msg"></div>
+        </div>
+      </div>
+
+      <div id="slackFields" style="display:none">
+        <div class="f" id="f-slackHook">
+          <label for="slackHook">Slack incoming webhook URL</label>
+          <p class="hint">At <a href="https://api.slack.com/apps" target="_blank" rel="noopener">api.slack.com/apps</a> create an app (from scratch), open <strong>Incoming Webhooks</strong>, switch it on, <strong>Add New Webhook to Workspace</strong>, pick the channel, copy the URL. Stored as the <code>SLACK_WEBHOOK_URL</code> secret.</p>
+          <div class="reveal">
+            <input type="password" id="slackHook" class="mono" placeholder="https://hooks.slack.com/services/••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="slackHook">Show</button>
+          </div>
+          <div class="msg"></div>
+        </div>
+      </div>
+
+      <div id="discordFields" style="display:none">
+        <div class="f" id="f-discordHook">
+          <label for="discordHook">Discord webhook URL</label>
+          <p class="hint">In Discord, open the channel's settings → <strong>Integrations</strong> → <strong>Webhooks</strong> → <strong>New Webhook</strong> → <strong>Copy Webhook URL</strong>. Stored as the <code>DISCORD_WEBHOOK_URL</code> secret.</p>
+          <div class="reveal">
+            <input type="password" id="discordHook" class="mono" placeholder="https://discord.com/api/webhooks/••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="discordHook">Show</button>
+          </div>
+          <div class="msg"></div>
+        </div>
+      </div>
+
+      <div id="ntfyFields" style="display:none">
+        <div class="f" id="f-ntfyTopic">
+          <label for="ntfyTopic">ntfy topic URL</label>
+          <p class="hint">Install the <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a> app, subscribe to a topic with a name nobody could guess (e.g. <code>mailtriage-k3j9x2</code>), and paste its full URL. Anyone who knows the topic can read it, so it is stored as the <code>NTFY_TOPIC_URL</code> secret.</p>
+          <div class="reveal">
+            <input type="password" id="ntfyTopic" class="mono" placeholder="https://ntfy.sh/mailtriage-••••••" autocomplete="off" spellcheck="false">
+            <button type="button" data-reveal="ntfyTopic">Show</button>
+          </div>
+          <div class="msg"></div>
+        </div>
+      </div>
+
+      <div class="note safe">
+        <span class="ic">◆</span>
+        <span>Addresses are stored as encrypted <strong>EMAIL_TO</strong> / <strong>EMAIL_FROM</strong> secrets, the same way as your API keys — never written into the committed <code>config.yaml</code>, which stays readable by anyone if your fork is public.</span>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Mail accounts</h3>
+      <p class="hint" style="margin:-2px 0 4px">Gmail addresses go in as they are. For any other IMAP mailbox, add its server after a <code>|</code>: <code>you@fastmail.com|imap.fastmail.com</code>, <code>you@icloud.com|imap.mail.me.com</code>, or <code>you@work.com|mail.work.com:993</code> (always TLS). A third field sets the SMTP host for <em>Your own mailbox</em> delivery: <code>you@work.com|mail.work.com|smtp.work.com:465</code>.</p>
+      <p class="hint" style="margin:-2px 0 4px">Each account needs its own app password, not your normal password. It is stored as a repository secret named <code>MAIL_PW_</code> + a 16-character hash of the address, so the secret's name never reveals the address in your fork's public Actions log. Enable 2-Step Verification at <a href="https://myaccount.google.com/security" target="_blank" rel="noopener">myaccount.google.com/security</a>, then create one per account at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>.</p>
+      <div id="accounts"></div>
+      <div class="chips">
+        <button type="button" class="chip" id="addAcct">+ Add another account</button>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Hard rules</h3>
+      <p class="hint" style="margin:-2px 0 4px">Checked deterministically, no API call — one entry per line, a full address (<code>boss@corp.com</code>) or a domain like <code>@corp.com</code>.</p>
+
+      <div class="f" id="f-rulesIgnore">
+        <label for="rulesIgnore">Always ignore</label>
+        <p class="hint">Dropped before the model ever sees them.</p>
+        <textarea id="rulesIgnore" class="mono" rows="2" placeholder="newsletter@example.com"></textarea>
+      </div>
+      <div class="f" id="f-rulesSurface">
+        <label for="rulesSurface">Always surface</label>
+        <p class="hint">Always worth reading, bypasses the max-items ceiling.</p>
+        <textarea id="rulesSurface" class="mono" rows="2" placeholder="@vip-client.com"></textarea>
+      </div>
+      <div class="f" id="f-rulesAction">
+        <label for="rulesAction">Always needs action</label>
+        <p class="hint">Always needs action, wins over always-ignore.</p>
+        <textarea id="rulesAction" class="mono" rows="2" placeholder="boss@corp.com"></textarea>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Draft replies</h3>
+      <label class="toggle">
+        <input type="checkbox" id="draftReplies" checked>
+        <span>AI drafts a reply for every needs-action email</span>
+      </label>
+      <p class="hint" style="margin:6px 0 0">Into the digest and your Gmail Drafts folder — never sent.</p>
+
+      <label class="toggle" style="margin-top:12px">
+        <input type="checkbox" id="draftVariants">
+        <span>Two drafts per reply: a short one and a full one</span>
+      </label>
+      <p class="hint" style="margin:4px 0 0">Both land in Gmail Drafts (subjects end in [A short] / [B full]); the digest shows the short one.</p>
+
+      <div id="draftStyleBox" style="margin-top:16px">
+        <div class="f">
+          <span class="lgnd">Tone</span>
+          <div class="seg">
+            <label><input type="radio" name="tone" value="friendly" checked><span>Friendly</span></label>
+            <label><input type="radio" name="tone" value="formal"><span>Formal</span></label>
+            <label><input type="radio" name="tone" value="casual"><span>Casual</span></label>
+          </div>
+        </div>
+        <div class="f" id="f-signOff">
+          <label for="signOff">Sign-off</label>
+          <p class="hint">e.g. "Best, Alex" — leave blank for a generic "Thanks,".</p>
+          <input type="text" id="signOff" placeholder="Best, Alex" autocomplete="off">
+        </div>
+        <div class="f" id="f-draftLanguage">
+          <label for="draftLanguage">Language</label>
+          <p class="hint">Leave as "auto" to match the sender's language. This is what the AI <em>writes</em> in — the digest's own headings are set below.</p>
+          <input type="text" id="draftLanguage" placeholder="auto" autocomplete="off">
+        </div>
+        <div class="f" id="f-language">
+          <label for="language">Digest language</label>
+          <p class="hint">The words mailtriage puts around your mail — section headings, badges, footers. Your mail itself is never translated.</p>
+          <select id="language">
+            <option value="en">English</option>
+            <option value="es">Español</option>
+            <option value="fr">Français</option>
+            <option value="de">Deutsch</option>
+            <option value="pt">Português</option>
+            <option value="it">Italiano</option>
+            <option value="nl">Nederlands</option>
+            <option value="hi">हिन्दी</option>
+            <option value="ja">日本語</option>
+          </select>
+        </div>
+        <div class="f" id="f-maxSentences">
+          <label for="maxSentences">Max sentences</label>
+          <input type="number" id="maxSentences" min="1" max="20" step="1" value="5" style="max-width:100px">
+        </div>
+        <label class="toggle" style="margin-top:12px">
+          <input type="checkbox" id="learnVoice" checked>
+          <span>Draft in your voice</span>
+        </label>
+        <p class="hint" style="margin:4px 0 0">Shows the model up to 3 of your own recent Sent messages to the same recipient. Read-only; they go into the prompt only, never into logs or the digest.</p>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Never lose an action item</h3>
+      <label class="toggle">
+        <input type="checkbox" id="carryOver" checked>
+        <span>Keep needs-action mail in every digest until handled</span>
+      </label>
+      <p class="hint" style="margin:6px 0 0">Applies the Gmail label below to needs-action mail and re-lists it in every digest until you reply, archive, or remove the label — no repo state.</p>
+      <div class="f" id="f-label" style="margin-top:14px">
+        <label for="label">Gmail label</label>
+        <input type="text" id="label" value="mailtriage/action" autocomplete="off" spellcheck="false">
+        <div class="msg"></div>
+      </div>
+      <div class="f" id="f-nagAfterDays" style="margin-top:14px">
+        <label for="nagAfterDays">Flag as "still open" after (days)</label>
+        <input type="number" id="nagAfterDays" min="1" max="90" step="1" value="3" style="max-width:100px">
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Inbox intelligence</h3>
+      <p class="hint" style="margin:0">Read-only lookups that give the model more to go on. All of it stays between your Gmail and your AI provider.</p>
+      <details class="ovr" id="intelAdvanced" style="margin-top:14px">
+        <summary>Advanced</summary>
+        <div class="ovr-body">
+          <label class="toggle" style="margin-top:10px">
+            <input type="checkbox" id="threadContext" checked>
+            <span>Show the model earlier messages of each thread</span>
+          </label>
+          <p class="hint" style="margin:4px 0 0">Up to 2 earlier messages, from All Mail, for the newest 15 candidates per run.</p>
+          <label class="toggle" style="margin-top:12px">
+            <input type="checkbox" id="senderMemory" checked>
+            <span>Tell the model how often you've written to each sender</span>
+          </label>
+          <p class="hint" style="margin:4px 0 0">Counted in Sent Mail over the last 180 days. Senders you reply to get the benefit of the doubt.</p>
+          <label class="toggle" style="margin-top:12px">
+            <input type="checkbox" id="showUnsubscribe" checked>
+            <span>Unsubscribe links for noise, folded at the bottom of the digest</span>
+          </label>
+          <p class="hint" style="margin:4px 0 0">One link per left-out sender that offered one. Nothing is ever clicked for you.</p>
+          <label class="toggle" style="margin-top:16px">
+            <input type="checkbox" id="noiseLabel">
+            <span>Label the mail each run leaves out as <code>mailtriage/noise</code></span>
+          </label>
+          <p class="hint" style="margin:4px 0 0">Off by default. Adds a Gmail label to noise so you can review what the model is skipping. Senders in your rules are never touched.</p>
+          <label class="toggle" style="margin-top:12px">
+            <input type="checkbox" id="noiseArchive">
+            <span>…and archive it out of the inbox</span>
+          </label>
+          <p class="hint" style="margin:4px 0 0"><strong>This changes your inbox.</strong> Noise leaves the inbox but stays in All Mail under the label — searchable, never deleted. Needs the label above; try labeling alone for a week first.</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="sect">
+      <h3>Schedule</h3>
+
+      <div class="f" id="f-timezone">
+        <label for="timezone">Time zone</label>
+        <select id="timezone"></select>
+      </div>
+
+      <div class="f" id="f-runAt">
+        <label>Digest times</label>
+        <p class="hint">Local to the time zone above. GitHub's scheduler polls hourly and fires within ~an hour after each time — it can drift late.</p>
+        <div class="timelist" id="runAt"></div>
+        <div class="chips">
+          <button type="button" class="chip" id="addTime">+ Add a time</button>
+        </div>
+        <div class="msg" id="runAtMsg"></div>
+      </div>
+
+      <div class="f">
+        <label class="toggle" for="weeklyOn">
+          <input type="checkbox" id="weeklyOn">
+          <span>Add a weekly review</span>
+        </label>
+        <div class="weekly-row" id="weeklyRow" style="display:none">
+          <select id="weeklyDay">
+            <option value="mon">Monday</option>
+            <option value="tue">Tuesday</option>
+            <option value="wed">Wednesday</option>
+            <option value="thu">Thursday</option>
+            <option value="fri">Friday</option>
+            <option value="sat">Saturday</option>
+            <option value="sun">Sunday</option>
+          </select>
+          <input type="time" id="weeklyTime" value="09:00">
+        </div>
+        <label class="toggle" for="weeklyNarrative" style="margin-top:10px">
+          <input type="checkbox" id="weeklyNarrative" checked>
+          <span>Open the review with a written summary (one extra model call a week)</span>
+        </label>
+      </div>
+
+      <div class="f">
+        <label>Look-back window</label>
+        <input type="text" id="win" readonly style="max-width:130px;color:var(--muted)">
+        <p class="hint" id="winNote" style="margin-top:8px"></p>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Your day</h3>
+      <label class="toggle">
+        <input type="checkbox" id="calendarOn" checked>
+        <span>Put today's calendar at the top of the digest</span>
+      </label>
+      <div class="f" id="f-calendarIcs" style="margin-top:14px">
+        <label for="calendarIcs">Calendar (optional)</label>
+        <p class="hint">Google Calendar → Settings → your calendar → <strong>Secret address in iCal format</strong>. The URL is the credential, so it's stored as the encrypted <code>CALENDAR_ICS_URL</code> secret. Leave blank to keep whatever's already set, or to skip the calendar.</p>
+        <div class="reveal">
+          <input type="password" id="calendarIcs" class="mono" placeholder="https://calendar.google.com/calendar/ical/…/private-…/basic.ics" autocomplete="off" spellcheck="false">
+          <button type="button" data-reveal="calendarIcs">Show</button>
+        </div>
+        <div class="msg"></div>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Digest size</h3>
+      <div class="f">
+        <label for="count">Max items per digest <span id="countOut" style="color:var(--accent);font-variant-numeric:tabular-nums">8</span></label>
+        <p class="hint">A ceiling, not a quota. If the window was quiet, a two-item digest is the correct answer.</p>
+        <input type="range" id="count" min="3" max="20" step="1" value="8" style="padding:0;background:transparent;accent-color:var(--accent)">
+      </div>
+    </div>
+
+    <div class="nav">
+      <button class="btn btn-ghost back" id="back1">← Back</button>
+      <button class="btn btn-accent" id="go3">Review and launch <span class="arr">→</span></button>
+    </div>
+  </section>
+
+  <!-- ================================================= STEP 3 -->
+  <section class="card panel" id="p3" aria-labelledby="h3t">
+    <div id="launchView">
+      <h2 id="h3t">Launch</h2>
+      <p class="lede" id="launchLede"></p>
+      <ul class="runs" id="runs" aria-live="polite"></ul>
+      <div class="nav">
+        <button class="btn btn-ghost back" id="back2">← Back</button>
+        <button class="btn btn-accent" id="fire">Write it all and run <span class="arr">→</span></button>
+      </div>
+    </div>
+
+    <div id="doneView" style="display:none" class="center">
+      <div class="done-mark">✓</div>
+      <h2>It's running.</h2>
+      <p class="lede" id="doneMsg" style="margin-left:auto;margin-right:auto"></p>
+      <div class="links" id="doneLinks"></div>
+    </div>
+  </section>
+
+  <!-- ================================================= DASHBOARD -->
+  <section class="card panel" id="p4" aria-labelledby="h4t">
+    <h2 id="h4t">Dashboard</h2>
+    <p class="lede" id="dashLede"></p>
+
+    <div class="sect">
+      <h3>Health</h3>
+      <div id="dashState"></div>
+      <div class="stats" id="dashStats"></div>
+      <div class="tblwrap"><table class="runtbl" id="dashRuns" aria-live="polite"></table></div>
+    </div>
+
+    <div class="sect">
+      <h3>Run</h3>
+      <div class="actions">
+        <button class="btn btn-accent" data-mode="digest">Run now</button>
+        <button class="btn btn-ghost" data-mode="doctor">Run doctor</button>
+        <button class="btn btn-ghost" data-mode="weekly">Send weekly review</button>
+        <button class="btn btn-ghost" data-mode="bench">Score the triage</button>
+      </div>
+      <p class="status" id="dashRunStatus"></p>
+    </div>
+
+    <div class="sect">
+      <h3>Upgrade</h3>
+      <div class="stats" id="dashUpgrade"></div>
+      <div class="actions">
+        <button class="btn btn-ghost" id="dashSync">Sync with upstream</button>
+        <a class="btn btn-ghost" target="_blank" rel="noopener" href="https://github.com/AshishB2000/mailtriage/blob/main/CHANGELOG.md">What changed</a>
+      </div>
+      <p class="status" id="dashSyncStatus"></p>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn btn-ghost" id="dashExport">Download config.yaml</button>
+        <button class="btn btn-ghost" id="dashImport">Import config.yaml…</button>
+        <input type="file" id="dashImportFile" accept=".yaml,.yml,text/yaml" class="sr" tabindex="-1">
+      </div>
+      <p class="status" id="dashImportStatus"></p>
+    </div>
+
+    <div class="sect">
+      <details class="preview" data-preview>
+        <summary>What the digest looks like</summary>
+        <iframe title="Sample digest" data-src="sample-digest.html"></iframe>
+      </details>
+    </div>
+
+    <div class="nav">
+      <button class="btn btn-ghost back" id="dashBack">← Settings</button>
+      <button class="btn btn-ghost" id="dashRefresh">Refresh</button>
+    </div>
+  </section>
+
+  </main>
+  </div>
+
+  <footer>
+    mailtriage · MIT licensed · <a href="https://github.com/AshishB2000/mailtriage" target="_blank" rel="noopener">source</a><br>
+    No server, no analytics, no account. Everything above happened in this tab.
+  </footer>
+</div>
+
+<script src="sodium.js"></script>
+<script>
+"use strict";
+
+/* ------------------------------------------------------------ constants */
+const API = "https://api.github.com";
+const UPSTREAM = "AshishB2000/mailtriage";
+const WORKFLOW = "digest.yml";
+// The dashboard's other dispatch target -- forks only; see README "Keeping
+// your fork current". Pinned by tests/test_contracts.py.
+const SYNC_WORKFLOW = "upstream-sync.yml";
+// digest.yml's workflow_dispatch `mode` input, in its declared order. Pinned
+// against the workflow file by tests/test_contracts.py.
+const MODES = ["digest", "weekly", "doctor", "bench"];
+
+// carry_over/label aren't exposed in the wizard UI yet -- written as fixed
+// defaults, same precedent as draft_replies below. Change by hand later.
+
+const S = { token: "", user: null, repos: [], repo: null, step: 1 };
+
+/* ------------------------------------------------------------ schedule: window_hours = f(run_at) */
+// Mirrors mailtriage.schedule.max_gap_hours exactly: largest gap between
+// consecutive daily slots, wrapping past midnight; a single slot's own gap
+// is the full day. Pinned character-for-character by tests/test_contracts.py
+// against the Python implementation -- change both together.
+function slotMinutes(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+function maxGapHours(runAt) {
+  const slots = Array.from(new Set(runAt)).sort((a, b) => slotMinutes(a) - slotMinutes(b));
+  if (slots.length === 1) return 24;
+  return Math.max.apply(null, slots.map((s, i) => (((slotMinutes(slots[(i + 1) % slots.length]) - slotMinutes(s)) % 1440 + 1440) % 1440) / 60));
+}
+
+/* ------------------------------------------------------------ tiny dom */
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function show(n) {
+  S.step = n;
+  $$(".panel").forEach((p, i) => p.classList.toggle("on", i === n - 1));
+  $$("#stepper li").forEach((li) => {
+    const i = +li.dataset.i;
+    li.classList.toggle("on", i === n);
+    li.classList.toggle("done", i < n);
+  });
+  // The top bar echoes the rail, so the step stays legible without scrolling up.
+  const chip = $("#stepChip");
+  if (chip) chip.textContent = n <= 3 ? "Setup \u00b7 step " + n + " of 3" : "Dashboard";
+  window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" });
+}
+
+function fieldErr(id, msg) {
+  const f = $("#f-" + id);
+  if (!f) return;
+  f.classList.toggle("bad", !!msg);
+  $(".msg", f).textContent = msg || "";
+}
+const clearErrs = (root) => $$(".f.bad", root).forEach((f) => {
+  f.classList.remove("bad");
+  $(".msg", f).textContent = "";
+});
+
+/* ------------------------------------------------------------ github */
+async function gh(method, path, body) {
+  let r;
+  try {
+    r = await fetch(API + path, {
+      method,
+      headers: Object.assign(
+        {
+          Authorization: "Bearer " + S.token,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        body ? { "Content-Type": "application/json" } : {}
+      ),
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch (e) {
+    throw new Error("Couldn't reach api.github.com. Check your connection, and any VPN or content blocker that might be filtering the request.");
+  }
+  if (r.status === 204) return null;
+  const text = await r.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) { /* non-JSON body */ }
+  if (r.ok) return data;
+
+  const m = (data && data.message) || r.statusText || ("HTTP " + r.status);
+  let msg = "GitHub returned " + r.status + ": " + m;
+  if (r.status === 401) msg = "GitHub rejected the token. It may be mistyped, expired, or already revoked — generate a fresh one and paste it again.";
+  else if (r.status === 403 && /rate limit/i.test(m)) msg = "GitHub rate limit reached. Wait a minute and try again.";
+  else if (r.status === 403) msg = "GitHub refused: " + m + " — the token is probably missing the 'repo' scope. Generate a new one using the button on step 1, which ticks it.";
+  else if (r.status === 404) msg = "Not found (404): " + m + " — usually a token without the 'repo' scope, since GitHub hides what it won't let you touch.";
+  else if (r.status === 422) msg = "GitHub rejected the contents of the request: " + m;
+  const err = new Error(msg);
+  err.status = r.status; // callers that branch on the code (dispatch fallback) read this
+  throw err;
+}
+
+/* ------------------------------------------------------------ base64 (utf-8 safe) */
+function b64encode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function b64decode(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+/* ------------------------------------------------------------ yaml */
+// Block scalar body: dedent to the shallowest line, then indent by two.
+// The first line is left-trimmed so a plain "|" is always unambiguous.
+function blockScalar(text) {
+  let lines = String(text).replace(/\r\n?/g, "\n").replace(/[ \t]+$/gm, "").split("\n");
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  const indents = lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length);
+  const cut = indents.length ? Math.min.apply(null, indents) : 0;
+  return lines
+    .map((l, i) => {
+      if (!l.trim()) return "";
+      let body = l.slice(cut);
+      if (i === 0) body = body.replace(/^\s+/, "");
+      return "  " + body;
+    })
+    .join("\n");
+}
+// Double-quoted scalar, backslash/quote-escaped -- safe for any string a
+// user types (sign-offs, rule addresses, free-text interests/avoid lines
+// used outside a block scalar).
+const yamlStr = (s) => '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+const yq = yamlStr; // short alias, used throughout below
+const yamlList = (arr) => "[" + arr.map(yamlStr).join(", ") + "]";
+
+function draftStyleLines(style, indent) {
+  const pad = " ".repeat(indent);
+  return [
+    pad + "tone: " + style.tone,
+    pad + "sign_off: " + yamlStr(style.sign_off),
+    pad + "language: " + yamlStr(style.language || "auto"),
+    pad + "max_sentences: " + style.max_sentences,
+    pad + "# Show the drafting model up to 3 of your own recent Sent messages to",
+    pad + "# the same recipient so drafts sound like you. Prompt only, never logged.",
+    pad + "learn_voice: " + (style.learn_voice === false ? "false" : "true")
+  ];
+}
+
+function accountsBlock(accounts) {
+  const addrs = Object.keys(accounts);
+  if (!addrs.length) return ["accounts: {}"];
+  const lines = ["accounts:"];
+  addrs.forEach((addr) => {
+    lines.push("  " + yamlStr(addr) + ":");
+    const a = accounts[addr];
+    if (a.interests) {
+      lines.push("    interests: |");
+      lines.push(blockScalar(a.interests).replace(/^/gm, "    "));
+    }
+    if (a.avoid) {
+      lines.push("    avoid: |");
+      lines.push(blockScalar(a.avoid).replace(/^/gm, "    "));
+    }
+    if (a.draft_style && Object.keys(a.draft_style).length) {
+      // Partial mapping -- an unset key inherits the global draft_style
+      // (see config.py's per-account merge), so only emit what's overridden.
+      lines.push("    draft_style:");
+      const ds = a.draft_style;
+      if (ds.tone) lines.push("      tone: " + ds.tone);
+      if (ds.sign_off != null) lines.push("      sign_off: " + yamlStr(ds.sign_off));
+      if (ds.language) lines.push("      language: " + yamlStr(ds.language));
+      if (ds.max_sentences != null) lines.push("      max_sentences: " + ds.max_sentences);
+    }
+  });
+  return lines;
+}
+
+function buildYaml(v) {
+  return [
+    "# mailtriage config. Written by the setup wizard, committed on purpose --",
+    "# GitHub Actions checks it out and reads it. It holds no secrets.",
+    "# Edit it by hand any time, or re-run the wizard to overwrite it.",
+    "",
+    "# What actually matters -- what counts as needing your action. Handed to",
+    "# the model verbatim.",
+    "interests: |",
+    blockScalar(v.interests),
+    "",
+    "# What's noise -- what to drop on the floor. Read as a hard filter.",
+    "avoid: |",
+    blockScalar(v.avoid),
+    "",
+    "# MAX number of items in a digest. Fewer is fine -- a quiet window",
+    "# should be short, not padded.",
+    "reading_count: " + v.reading_count,
+    "",
+    "# How far back to look, in hours. Must be >= the largest gap between two",
+    "# consecutive run_at slots below (+1h slack), or mail published inside",
+    "# the gap is skipped forever. Overlap is harmless; a gap is not.",
+    "# Auto-computed by the wizard from run_at below -- edit run_at to change it.",
+    "window_hours: " + v.window_hours,
+    "",
+    "# Daily digest times, local to timezone below. The workflow runs hourly",
+    "# and only triages during the hour after one of these.",
+    "run_at: " + yamlList(v.run_at),
+    "",
+    "# IANA time zone name that run_at and weekly_review are interpreted in.",
+    "timezone: " + yamlStr(v.timezone),
+    "",
+    "# Blank = off. Otherwise \"<mon|tue|wed|thu|fri|sat|sun> HH:MM\" for a",
+    "# weekly roundup on top of the daily run_at slots.",
+    "weekly_review: " + yamlStr(v.weekly_review),
+    "",
+    "# Minutes after a slot the hourly workflow still fires it (60..360) --",
+    "# covers hours GitHub's scheduler skips. A slot never sends twice.",
+    "catch_up_minutes: 120",
+    "",
+    "# Valid values: delivery: gmail (recommended, via your own Gmail SMTP),",
+    "# mailbox (any other IMAP account, via its own SMTP), email (via Resend),",
+    "# telegram, slack, discord or ntfy. Picked in the wizard's delivery step;",
+    "# see README.md \"Delivery options\".",
+    "delivery: " + v.delivery,
+    "",
+    "# Addresses go in the EMAIL_TO / EMAIL_FROM repo secrets, not here --",
+    "# this file is committed and this repo may be public. For delivery:",
+    "# gmail both default to your first MAIL_ACCOUNTS address if unset; for",
+    "# delivery: email (Resend) both are required and RESEND_API_KEY must be set.",
+    "email_to: " + yamlStr(""),
+    "email_from: " + yamlStr(""),
+    "",
+    "# delivery: telegram only -- the chat the bot posts to.",
+    "telegram_chat_id: " + yamlStr(v.telegram_chat_id || ""),
+    "",
+    "# delivery: email / gmail only. \"html\" or \"text\" (plain-text email).",
+    "digest_format: " + yamlStr(v.digest_format || "html"),
+    "",
+    "subject_prefix: " + yamlStr("mailtriage"),
+    "",
+    "# Which AI backend triages your mail -- set explicitly to the provider",
+    "# chosen in the wizard. Change it by hand later, or re-run the wizard.",
+    "provider: " + yamlStr(v.provider),
+    "model: " + yamlStr(""),
+    "",
+    "# AI drafts a reply for every needs-action email -- into the digest and",
+    "# your Gmail drafts folder; never sends.",
+    "draft_replies: " + (v.draft_replies ? "true" : "false"),
+    "",
+    "# 1 = one draft per needs-action email. 2 = a short and a full variant,",
+    "# both pushed to Gmail Drafts; the digest shows the short one.",
+    "draft_variants: " + (v.draft_variants === 2 ? 2 : 1),
+    "",
+    "# Reply tone/sign-off/language/length for AI-drafted replies -- edit by",
+    "# hand any time. See README.md for the full syntax.",
+    "draft_style:",
+    ...draftStyleLines(v.draft_style, 2),
+    "",
+    "# Hard VIP-sender rules, checked deterministically -- see README.md.",
+    "rules:",
+    "  always_ignore: " + yamlList(v.rules.always_ignore),
+    "  always_surface: " + yamlList(v.rules.always_surface),
+    "  always_action: " + yamlList(v.rules.always_action),
+    "",
+    "# Per-account overrides, keyed by account address -- see README.md.",
+    ...accountsBlock(v.accounts),
+    "",
+    "# Needs-action mail gets the Gmail label below and is re-listed in every",
+    "# digest until you reply, archive, or remove the label. No repo state.",
+    "carry_over: " + (v.carry_over ? "true" : "false"),
+    "label: " + yamlStr(v.label),
+    "",
+    "# A carried item open for at least this many days is flagged in bold",
+    "# with a \"still open\" badge.",
+    "nag_after_days: " + v.nag_after_days,
+    "",
+    "# Optional named digests over subsets of MAIL_ACCOUNTS, each with its",
+    "# own overrides -- hand-edited; the wizard carries this block through",
+    "# untouched. See README.md \"Two digests: work and personal\".",
+    ...(v.profiles_raw ? String(v.profiles_raw).split("\n") : ["profiles: {}"]),
+    "",
+    "# Show the model up to 2 earlier messages of a candidate's thread (from",
+    "# All Mail, newest 15 candidates per run). Read-only.",
+    "thread_context: " + (v.thread_context === false ? "false" : "true"),
+    "",
+    "# Tell the model how often you've written to each sender in the last 180",
+    "# days (Sent Mail, newest 40 senders per run). Read-only.",
+    "sender_memory: " + (v.sender_memory === false ? "false" : "true"),
+    "",
+    "# Folded \"Noise this week\" footer with one Unsubscribe link per left-out",
+    "# sender that offered one (https/mailto, at most 20). Never clicked for you.",
+    "show_unsubscribe: " + (v.show_unsubscribe === false ? "false" : "true"),
+    "",
+    "# Opt-in noise handling, both off by default. label: tag what each run",
+    "# leaves out as mailtriage/noise. archive (needs label): also take it out",
+    "# of the inbox -- stays in All Mail, never deleted. Never on --dry-run.",
+    "noise:",
+    "  label: " + ((v.noise || {}).label ? "true" : "false"),
+    "  archive: " + ((v.noise || {}).archive ? "true" : "false"),
+    "",
+    "# Today's calendar at the top of the digest -- needs the CALENDAR_ICS_URL",
+    "# secret (a private ICS feed URL); does nothing without it.",
+    "calendar: " + (v.calendar ? "true" : "false"),
+    "",
+    "# Open the weekly review with a model-written paragraph (one extra call a",
+    "# week); a failed call falls back to the plain review.",
+    "weekly_narrative: " + (v.weekly_narrative ? "true" : "false"),
+    "",
+    "# Language of the digest's OWN words (headings, badges, footers) -- your",
+    "# mail is never translated, and what the AI writes is draft_style.language.",
+    "# en es fr de pt it nl hi ja; anything else warns and uses English.",
+    "language: " + yamlStr(v.language),
+    ""
+  ].join("\n");
+}
+
+// The wizard has no UI for `profiles:` (hand-edited, advanced), so a save
+// carries the block through VERBATIM -- comments and all -- rather than
+// re-serializing a parse of it: the subset parser below would drop any
+// shape it doesn't know, and a dropped profile is a digest that silently
+// stops arriving. The block is `profiles:` plus every following line that
+// is blank, indented, or a comment, minus trailing blanks/comments (those
+// belong to whatever key comes next). "" when the file has no profiles key.
+function profilesBlock(text) {
+  const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+  const start = lines.findIndex((l) => /^profiles:/.test(l));
+  if (start < 0) return "";
+  let end = start + 1;
+  while (end < lines.length && (lines[end].trim() === "" || /^[ \t#]/.test(lines[end]))) end++;
+  const block = lines.slice(start, end);
+  while (block.length > 1 && (block[block.length - 1].trim() === "" || /^#/.test(block[block.length - 1]))) block.pop();
+  return block.join("\n");
+}
+
+// Tailored reader for exactly what buildYaml above writes -- not a general
+// YAML parser, just enough to round-trip our own output (and hand edits that
+// keep the same 2-space-indent shape) when the wizard is reopened as a
+// settings editor against an existing config.yaml. Handles: top-level
+// scalars (quoted/bare/number/bool), block scalars ("key: |"), flow lists
+// ("key: [a, b]"), and mappings nested to any depth (rules:, draft_style:,
+// accounts.<addr>.<key>) by recursing on indentation. A key this can't
+// place is simply absent from the result -- callers must leave the matching
+// field untouched rather than overwrite it with a default, so a value this
+// parser doesn't understand is never silently lost, just left as still
+// only-in-the-file until the user touches that field in the UI.
+function stripYamlComment(s) {
+  let inQ = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"' && s[i - 1] !== "\\") inQ = !inQ;
+    else if (c === "#" && !inQ && (i === 0 || /\s/.test(s[i - 1]))) return s.slice(0, i);
+  }
+  return s;
+}
+function splitFlowList(inner) {
+  const parts = [];
+  let cur = "", inQ = false;
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i];
+    if (c === '"' && inner[i - 1] !== "\\") inQ = !inQ;
+    if (c === "," && !inQ) { parts.push(cur); cur = ""; } else cur += c;
+  }
+  if (cur.trim() !== "") parts.push(cur);
+  return parts;
+}
+function parseYamlScalar(raw) {
+  const s = stripYamlComment(raw).trim();
+  if (s === "true") return true;
+  if (s === "false") return false;
+  if (/^-?\d+$/.test(s)) return parseInt(s, 10);
+  if (s === "[]") return [];
+  if (/^\[.*\]$/.test(s)) {
+    const inner = s.slice(1, -1);
+    return inner.trim() === "" ? [] : splitFlowList(inner).map((p) => parseYamlScalar(p));
+  }
+  if (/^"(?:[^"\\]|\\.)*"$/.test(s)) {
+    try { return JSON.parse(s); } catch (e) { return s; }
+  }
+  return s; // bare scalar
+}
+function parseYamlSubset(text) {
+  const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+  const indentOf = (l) => l.match(/^ */)[0].length;
+  const isBlank = (l) => l.trim() === "" || /^\s*#/.test(l);
+  const KEY_RE = /^(\s*)(?:"((?:[^"\\]|\\.)*)"|([A-Za-z_][A-Za-z0-9_.@+-]*)):\s*(.*)$/;
+  let i = 0;
+  function parseBlock(indent) {
+    const out = {};
+    while (i < lines.length) {
+      const line = lines[i];
+      if (isBlank(line)) { i++; continue; }
+      const ind = indentOf(line);
+      if (ind !== indent) break; // shallower ends this block; deeper is unreachable here
+      const m = line.match(KEY_RE);
+      if (!m) { i++; continue; }
+      const key = m[2] != null ? (() => { try { return JSON.parse('"' + m[2] + '"'); } catch (e) { return m[2]; } })() : m[3];
+      const rawRest = stripYamlComment(m[4]).trim();
+      i++;
+      if (rawRest === "|") {
+        const body = [];
+        while (i < lines.length && (lines[i].trim() === "" || indentOf(lines[i]) > ind)) {
+          body.push(lines[i].trim() === "" ? "" : lines[i].slice(ind + 2));
+          i++;
+        }
+        while (body.length && body[body.length - 1] === "") body.pop();
+        out[key] = body.join("\n");
+      } else if (rawRest === "") {
+        out[key] = i < lines.length && !isBlank(lines[i]) && indentOf(lines[i]) > ind ? parseBlock(indentOf(lines[i])) : {};
+      } else {
+        out[key] = parseYamlScalar(rawRest);
+      }
+    }
+    return out;
+  }
+  return parseBlock(0);
+}
+function parseConfig(text) {
+  return parseYamlSubset(text);
+}
+
+/* ------------------------------------------------------------ step 1 */
+const tokenEl = $("#token");
+
+$$("[data-reveal]").forEach((b) => {
+  b.addEventListener("click", () => {
+    const i = document.getElementById(b.dataset.reveal);
+    const hidden = i.type === "password";
+    i.type = hidden ? "text" : "password";
+    b.textContent = hidden ? "Hide" : "Show";
+  });
+});
+
+let checkSeq = 0;
+async function checkToken() {
+  const t = tokenEl.value.trim();
+  $("#identity").innerHTML = "";
+  $("#repoSect").style.display = "none";
+  $("#go2").disabled = true;
+  S.user = null; S.repo = null;
+  if (!t) { fieldErr("token", ""); return; }
+
+  const seq = ++checkSeq;
+  S.token = t;
+  fieldErr("token", "");
+  $("#tokenBusy").style.display = "block";
+  try {
+    const u = await gh("GET", "/user");
+    if (seq !== checkSeq) return;
+    S.user = u;
+    $("#identity").innerHTML =
+      '<div class="ident">' +
+      '<img alt="" src="' + esc(u.avatar_url) + '">' +
+      '<div><div class="who">Hi, @' + esc(u.login) + "</div>" +
+      '<div class="sm">Token accepted. Looking for your fork…</div></div></div>';
+    await findRepos(seq);
+  } catch (e) {
+    if (seq !== checkSeq) return;
+    fieldErr("token", e.message);
+  } finally {
+    if (seq === checkSeq) $("#tokenBusy").style.display = "none";
+  }
+}
+
+async function findRepos(seq) {
+  const box = $("#repoBox");
+  $("#repoSect").style.display = "block";
+  box.innerHTML = '<p class="hint"><span class="spin-inline"></span>Scanning your repositories…</p>';
+  let repos;
+  try {
+    repos = await gh("GET", "/user/repos?per_page=100&sort=updated");
+  } catch (e) {
+    if (seq !== checkSeq) return;
+    box.innerHTML = '<div class="note caution"><span class="ic">◆</span><span>' + esc(e.message) + "</span></div>";
+    return;
+  }
+  if (seq !== checkSeq) return;
+
+  const hits = repos.filter((r) => r.name.toLowerCase() === "mailtriage");
+  S.repos = hits;
+  const sm = $(".ident .sm");
+
+  if (!hits.length) {
+    if (sm) sm.textContent = "No fork found on this account yet.";
+    box.innerHTML =
+      '<div class="note caution"><span class="ic">◆</span><span>' +
+      "You don't have a <code>mailtriage</code> repository yet. Fork it first — it takes one click — then come back and press rescan." +
+      "</span></div>" +
+      '<div class="links" style="margin-top:12px">' +
+      '<a class="btn btn-primary" target="_blank" rel="noopener" href="https://github.com/' + UPSTREAM + '/fork">Fork mailtriage on GitHub <span class="arr">→</span></a>' +
+      '<button class="btn btn-ghost" id="rescan">Rescan</button></div>';
+    $("#rescan").addEventListener("click", () => findRepos(seq));
+    return;
+  }
+
+  if (sm) sm.textContent = hits.length === 1 ? "Fork found." : "Found " + hits.length + " matching repositories.";
+  box.innerHTML =
+    (hits.length > 1 ? '<p class="hint">More than one repository is called mailtriage. Pick the one to set up.</p>' : "") +
+    '<div class="repos">' +
+    hits.map((r, i) =>
+      '<button type="button" class="repo" data-i="' + i + '">' +
+      '<span class="nm">' + esc(r.full_name) + "</span>" +
+      '<span class="br">' + esc(r.default_branch) + "</span></button>"
+    ).join("") +
+    "</div>";
+
+  $$(".repo", box).forEach((b) => b.addEventListener("click", () => pickRepo(+b.dataset.i)));
+  if (hits.length === 1) pickRepo(0);
+}
+
+function pickRepo(i) {
+  S.repo = S.repos[i];
+  $$(".repo").forEach((b) => b.classList.toggle("sel", +b.dataset.i === i));
+  $("#go2").disabled = false;
+  $("#dashEntry").style.display = "flex";
+  prefillFromConfig(S.repo.full_name);
+}
+
+// Reopen-as-settings: if this repo already has a config.yaml, load its
+// values into the form so the wizard edits existing settings instead of
+// silently overwriting them with placeholders. Secrets (accounts, keys)
+// can't be read back -- GitHub never returns a secret's value -- so those
+// fields always start blank.
+async function prefillFromConfig(fullName) {
+  try {
+    const cur = await gh("GET", "/repos/" + fullName + "/contents/config.yaml");
+    if (fullName !== S.repo.full_name) return; // repo changed while this was in flight
+    if (S.step !== 1) return; // user already moved past connect -- don't clobber typed input
+    const text = b64decode(cur.content);
+    S.profilesRaw = profilesBlock(text);
+    applyConfig(parseConfig(text));
+  } catch (e) {
+    // no config.yaml yet, or unreadable -- defaults stand
+  }
+}
+
+// Fill the form from a parsed config.yaml -- shared by the prefill above and
+// the dashboard's "Import config.yaml". Only keys the parser understood are
+// touched; everything else keeps whatever the form already holds.
+function applyConfig(cfg) {
+  if (cfg.interests != null) $("#interests").value = cfg.interests;
+  if (cfg.avoid != null) $("#avoid").value = cfg.avoid;
+  // email_to/email_from are never prefilled -- they live in secrets now,
+  // config.yaml only ever has "" for them, and GitHub never returns a
+  // secret's value anyway.
+  if (cfg.reading_count != null) { $("#count").value = cfg.reading_count; $("#countOut").textContent = cfg.reading_count; }
+  if (cfg.provider && PROV_FIELD[cfg.provider]) {
+    const r = $('input[name=provider][value="' + cfg.provider + '"]');
+    if (r) { r.checked = true; updateAuthFields(); }
+  }
+  if (DELIVERY_FIELDS[cfg.delivery]) {
+    const r = $('input[name=delivery][value="' + cfg.delivery + '"]');
+    if (r) { r.checked = true; updateDeliveryFields(); }
+    if (cfg.delivery === "email") $("#resendPrefillNote").style.display = "flex";
+  }
+  if (cfg.telegram_chat_id != null && cfg.telegram_chat_id !== "") $("#tgChatId").value = cfg.telegram_chat_id;
+  if (cfg.digest_format === "text") $("#digestText").checked = true;
+  if (Array.isArray(cfg.run_at) && cfg.run_at.length) setRunAtRows(cfg.run_at);
+  if (cfg.timezone && $('#timezone option[value="' + cfg.timezone + '"]')) $("#timezone").value = cfg.timezone;
+  if (cfg.weekly_review) {
+    const m = /^(mon|tue|wed|thu|fri|sat|sun) (\d{2}:\d{2})$/i.exec(cfg.weekly_review);
+    if (m) {
+      $("#weeklyOn").checked = true;
+      $("#weeklyDay").value = m[1].toLowerCase();
+      $("#weeklyTime").value = m[2];
+      $("#weeklyRow").style.display = "flex";
+    }
+  }
+  if (typeof cfg.draft_replies === "boolean") $("#draftReplies").checked = cfg.draft_replies;
+  if (cfg.draft_variants === 1 || cfg.draft_variants === 2) $("#draftVariants").checked = cfg.draft_variants === 2;
+  if (cfg.draft_style) applyDraftStyle(cfg.draft_style);
+  if (cfg.rules) {
+    if (Array.isArray(cfg.rules.always_ignore)) $("#rulesIgnore").value = cfg.rules.always_ignore.join("\n");
+    if (Array.isArray(cfg.rules.always_surface)) $("#rulesSurface").value = cfg.rules.always_surface.join("\n");
+    if (Array.isArray(cfg.rules.always_action)) $("#rulesAction").value = cfg.rules.always_action.join("\n");
+  }
+  if (typeof cfg.carry_over === "boolean") $("#carryOver").checked = cfg.carry_over;
+  if (cfg.label != null && cfg.label !== "") $("#label").value = cfg.label;
+  if (typeof cfg.nag_after_days === "number") $("#nagAfterDays").value = cfg.nag_after_days;
+  if (typeof cfg.calendar === "boolean") $("#calendarOn").checked = cfg.calendar;
+  if (typeof cfg.weekly_narrative === "boolean") $("#weeklyNarrative").checked = cfg.weekly_narrative;
+  if (cfg.language && $('#language option[value="' + cfg.language + '"]')) $("#language").value = cfg.language;
+  if (typeof cfg.thread_context === "boolean") $("#threadContext").checked = cfg.thread_context;
+  if (typeof cfg.sender_memory === "boolean") $("#senderMemory").checked = cfg.sender_memory;
+  if (typeof cfg.show_unsubscribe === "boolean") $("#showUnsubscribe").checked = cfg.show_unsubscribe;
+  if (cfg.noise) {
+    if (typeof cfg.noise.label === "boolean") $("#noiseLabel").checked = cfg.noise.label;
+    if (typeof cfg.noise.archive === "boolean") $("#noiseArchive").checked = cfg.noise.archive;
+  }
+  if (cfg.accounts && typeof cfg.accounts === "object") S.acctOverrides = cfg.accounts;
+  updateWindowNote();
+}
+
+tokenEl.addEventListener("blur", checkToken);
+tokenEl.addEventListener("paste", () => setTimeout(checkToken, 30));
+tokenEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); checkToken(); } });
+
+$("#go2").addEventListener("click", () => { if (S.repo) show(2); });
+$("#back1").addEventListener("click", () => show(1));
+$("#back2").addEventListener("click", () => show(2));
+
+/* ------------------------------------------------------------ step 2: provider picker */
+// Field id + repo-secret name for each engine provider (mailtriage.triage.PROVIDERS
+// keys, mirrored here -- update both sides together, and keep this order in
+// sync with PROVIDERS' auto-detect precedence).
+const PROV_FIELD = {
+  "claude-subscription": "oauth",
+  "claude-api": "anthropic",
+  "chatgpt-subscription": "codexAuth",
+  "openai-api": "openai",
+  "gemini-api": "gemini",
+  "google-subscription": "geminiOauth"
+};
+const PROV_SECRET = {
+  "claude-subscription": "CLAUDE_CODE_OAUTH_TOKEN",
+  "claude-api": "ANTHROPIC_API_KEY",
+  "chatgpt-subscription": "CODEX_AUTH_JSON",
+  "openai-api": "OPENAI_API_KEY",
+  "gemini-api": "GEMINI_API_KEY",
+  "google-subscription": "GEMINI_OAUTH_JSON"
+};
+const selectedProvider = () => $('input[name=provider]:checked').value;
+function updateAuthFields() {
+  const sel = selectedProvider();
+  Object.keys(PROV_FIELD).forEach((p) => {
+    $("#f-" + PROV_FIELD[p]).style.display = p === sel ? "block" : "none";
+  });
+}
+$$('input[name=provider]').forEach((r) => r.addEventListener("change", updateAuthFields));
+
+/* ------------------------------------------------------------ step 2: delivery picker */
+// Per delivery: the block of fields to show, and (field id, repo-secret
+// name) for its one credential. mailtriage.config.DELIVERIES keys, mirrored
+// here -- update both sides together. gmail reuses the MAIL_PW_* secret.
+const DELIVERY_FIELDS = {
+  gmail: "gmailAdvanced",
+  mailbox: "mailboxFields",
+  email: "resendFields",
+  telegram: "telegramFields",
+  slack: "slackFields",
+  discord: "discordFields",
+  ntfy: "ntfyFields"
+};
+const DELIVERY_SECRET = {
+  email: ["resend", "RESEND_API_KEY"],
+  telegram: ["tgToken", "TELEGRAM_BOT_TOKEN"],
+  slack: ["slackHook", "SLACK_WEBHOOK_URL"],
+  discord: ["discordHook", "DISCORD_WEBHOOK_URL"],
+  ntfy: ["ntfyTopic", "NTFY_TOPIC_URL"]
+};
+const selectedDelivery = () => $('input[name=delivery]:checked').value;
+function updateDeliveryFields() {
+  const sel = selectedDelivery();
+  Object.keys(DELIVERY_FIELDS).forEach((d) => { $("#" + DELIVERY_FIELDS[d]).style.display = d === sel ? "block" : "none"; });
+  $("#f-digestText").style.display = sel === "gmail" || sel === "mailbox" || sel === "email" ? "block" : "none";
+}
+$$('input[name=delivery]').forEach((r) => r.addEventListener("change", updateDeliveryFields));
+
+/* ------------------------------------------------------------ step 2: digest size */
+$("#count").addEventListener("input", (e) => { $("#countOut").textContent = e.target.value; });
+
+/* ------------------------------------------------------------ step 2: schedule */
+(function populateTimezones() {
+  const sel = $("#timezone");
+  const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const zones = typeof Intl.supportedValuesOf === "function"
+    ? Intl.supportedValuesOf("timeZone")
+    : Array.from(new Set([
+        detected, "UTC", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+        "America/Sao_Paulo", "Europe/London", "Europe/Berlin", "Europe/Moscow", "Africa/Cairo",
+        "Asia/Dubai", "Asia/Kolkata", "Asia/Bangkok", "Asia/Shanghai", "Asia/Tokyo",
+        "Australia/Sydney", "Pacific/Auckland"
+      ]));
+  sel.innerHTML = zones.map((z) => '<option value="' + esc(z) + '">' + esc(z) + "</option>").join("");
+  sel.value = zones.includes(detected) ? detected : "UTC";
+})();
+
+let timeSeq = 0;
+function timeRowHtml(value) {
+  timeSeq++;
+  return '<div class="timerow" data-seq="' + timeSeq + '">' +
+    '<input type="time" class="run-at-time" value="' + esc(value) + '">' +
+    '<button type="button" class="btn btn-ghost rm" aria-label="Remove this time">✕</button>' +
+    "</div>";
+}
+function addTimeRow(value) {
+  if ($$(".timerow").length >= 6) return;
+  $("#runAt").insertAdjacentHTML("beforeend", timeRowHtml(value || "08:00"));
+}
+function setRunAtRows(times) {
+  $("#runAt").innerHTML = "";
+  (times.length ? times : ["08:00"]).slice(0, 6).forEach((t) => addTimeRow(t));
+  updateWindowNote();
+}
+$("#addTime").addEventListener("click", () => { addTimeRow(); updateWindowNote(); });
+$("#runAt").addEventListener("click", (e) => {
+  const rm = e.target.closest(".rm");
+  if (!rm) return;
+  if ($$(".timerow").length <= 1) return; // min 1 -- nothing to remove
+  rm.closest(".timerow").remove();
+  updateWindowNote();
+});
+$("#runAt").addEventListener("input", (e) => {
+  if (e.target.classList.contains("run-at-time")) updateWindowNote();
+});
+setRunAtRows(["08:00", "18:00"]); // seed default
+
+$("#weeklyOn").addEventListener("change", (e) => { $("#weeklyRow").style.display = e.target.checked ? "flex" : "none"; });
+
+function collectRunAt() {
+  const raw = $$(".run-at-time").map((i) => i.value).filter(Boolean);
+  const deduped = Array.from(new Set(raw)).sort();
+  return deduped.length ? deduped : ["08:00"];
+}
+
+function windowHours() {
+  return Math.ceil(maxGapHours(collectRunAt())) + 1;
+}
+function updateWindowNote() {
+  const gap = maxGapHours(collectRunAt());
+  const w = windowHours();
+  $("#win").value = w;
+  $("#winNote").textContent =
+    "Looks back " + w + "h, so nothing between runs is missed (largest gap between your times is " +
+    (Math.round(gap * 10) / 10) + "h).";
+}
+
+/* ------------------------------------------------------------ step 2: gmail accounts */
+let acctSeq = 0;
+function acctRowHtml() {
+  acctSeq++;
+  const n = acctSeq;
+  return '<div class="acct" data-seq="' + n + '">' +
+    '<div class="acct-row">' +
+    '<input type="text" class="acct-email mono" placeholder="alice@gmail.com  or  you@fastmail.com|imap.fastmail.com" autocomplete="off" spellcheck="false">' +
+    '<div class="reveal"><input type="password" class="acct-pw mono" placeholder="xxxx xxxx xxxx xxxx" autocomplete="off" spellcheck="false"><button type="button" data-reveal-row>Show</button></div>' +
+    '<button type="button" class="btn btn-ghost rm" aria-label="Remove this account">✕</button>' +
+    "</div>" +
+    '<div class="msg acct-msg"></div>' +
+    '<details class="ovr">' +
+    "<summary>Customize this account</summary>" +
+    '<div class="ovr-body">' +
+    '<div class="f"><label>Extra interests for this account</label><p class="hint">Added to the global interests above.</p>' +
+    '<textarea class="ovr-interests mono" rows="2"></textarea></div>' +
+    '<div class="f"><label>Extra noise for this account</label><p class="hint">Added to the global avoid above.</p>' +
+    '<textarea class="ovr-avoid mono" rows="2"></textarea></div>' +
+    '<div class="f"><span class="lgnd">Tone override</span><div class="seg">' +
+    '<label><input type="radio" name="ovrTone-' + n + '" value="" checked><span>Inherit</span></label>' +
+    '<label><input type="radio" name="ovrTone-' + n + '" value="friendly"><span>Friendly</span></label>' +
+    '<label><input type="radio" name="ovrTone-' + n + '" value="formal"><span>Formal</span></label>' +
+    '<label><input type="radio" name="ovrTone-' + n + '" value="casual"><span>Casual</span></label>' +
+    "</div></div>" +
+    '<div class="f"><label>Sign-off override</label><input type="text" class="ovr-signoff" placeholder="inherit" autocomplete="off"></div>' +
+    '<div class="f"><label>Language override</label><input type="text" class="ovr-language" placeholder="inherit" autocomplete="off"></div>' +
+    '<div class="f"><label>Max sentences override</label><input type="number" class="ovr-maxsentences" min="1" max="20" placeholder="inherit" style="max-width:100px"></div>' +
+    "</div></details>" +
+    "</div>";
+}
+function addAcctRow() { $("#accounts").insertAdjacentHTML("beforeend", acctRowHtml()); }
+function removeAcctRow(el) {
+  if ($$(".acct").length <= 1) {
+    $(".acct-email", el).value = "";
+    $(".acct-pw", el).value = "";
+    acctError(el, "");
+    return;
+  }
+  el.remove();
+}
+function acctError(el, msg) {
+  el.classList.toggle("bad", !!msg);
+  const d = $(".acct-msg", el);
+  d.textContent = msg || "";
+  d.style.display = msg ? "block" : "none";
+}
+$("#addAcct").addEventListener("click", addAcctRow);
+$("#accounts").addEventListener("click", (e) => {
+  const reveal = e.target.closest("[data-reveal-row]");
+  if (reveal) {
+    const i = reveal.previousElementSibling;
+    const hidden = i.type === "password";
+    i.type = hidden ? "text" : "password";
+    reveal.textContent = hidden ? "Hide" : "Show";
+    return;
+  }
+  const rm = e.target.closest(".rm");
+  if (rm) removeAcctRow(rm.closest(".acct"));
+});
+// Reopen-as-settings: config.yaml's accounts: block is keyed by address, but
+// the wizard never knows an account's address until the user (re-)types it
+// here -- MAIL_ACCOUNTS is a secret and can't be read back. So instead of
+// trying to prefill rows that don't exist yet, S.acctOverrides holds the
+// parsed accounts: mapping and this fills a row's override fields in as
+// soon as its email matches one of those keys, so custom values reappear on
+// relaunch without ever needing to guess which row is which.
+S.acctOverrides = {};
+function applyAccountOverrideToRow(el, ov) {
+  if (!ov) return;
+  if (ov.interests) $(".ovr-interests", el).value = ov.interests;
+  if (ov.avoid) $(".ovr-avoid", el).value = ov.avoid;
+  const ds = ov.draft_style || {};
+  if (ds.tone) { const r = el.querySelector('input[name^="ovrTone-"][value="' + ds.tone + '"]'); if (r) r.checked = true; }
+  if (ds.sign_off != null) $(".ovr-signoff", el).value = ds.sign_off;
+  if (ds.language) $(".ovr-language", el).value = ds.language;
+  if (ds.max_sentences != null) $(".ovr-maxsentences", el).value = ds.max_sentences;
+  if (ov.interests || ov.avoid || Object.keys(ds).length) $("details.ovr", el).open = true;
+}
+$("#accounts").addEventListener("blur", (e) => {
+  if (!e.target.classList || !e.target.classList.contains("acct-email")) return;
+  const addr = acctAddr(e.target.value).toLowerCase();
+  const ov = S.acctOverrides[addr];
+  if (ov) applyAccountOverrideToRow(e.target.closest(".acct"), ov);
+}, true);
+addAcctRow(); // seed with one empty row
+
+function collectAccounts() {
+  return $$(".acct").map((el) => {
+    const interests = $(".ovr-interests", el).value.trim();
+    const avoid = $(".ovr-avoid", el).value.trim();
+    const toneEl = el.querySelector('input[name^="ovrTone-"]:checked');
+    const tone = toneEl ? toneEl.value : "";
+    const signOff = $(".ovr-signoff", el).value.trim();
+    const language = $(".ovr-language", el).value.trim();
+    const maxSentences = $(".ovr-maxsentences", el).value.trim();
+    const style = {};
+    if (tone) style.tone = tone;
+    if (signOff) style.sign_off = signOff;
+    if (language) style.language = language;
+    if (maxSentences) style.max_sentences = +maxSentences;
+    const override = {};
+    if (interests) override.interests = interests;
+    if (avoid) override.avoid = avoid;
+    if (Object.keys(style).length) override.draft_style = style;
+    return {
+      email: $(".acct-email", el).value.trim(),
+      pw: $(".acct-pw", el).value.replace(/\s+/g, ""),
+      override
+    };
+  });
+}
+
+// Must match pw_env_var in src/mailtriage/imap_pull.py exactly: MAIL_PW_ + the
+// first 16 hex chars of BLAKE2b-128 over the trimmed, lower-cased address, so
+// the secret name (which shows up in the fork's public Actions log) never
+// reveals the address. crypto_generichash is unkeyed BLAKE2b -- identical to
+// Python's hashlib.blake2b at the same digest size. tests/test_contracts.py
+// pins the line below and this vector against the engine:
+// vector: alice@gmail.com -> MAIL_PW_F24FE3C393F64986
+// A MAIL_ACCOUNTS entry may carry its server: "addr|imap.host[|smtp.host]".
+// The secret name is hashed from the address alone -- mirrors
+// imap_pull.split_account, and keeps every existing Gmail secret name valid.
+const acctAddr = (entry) => String(entry).split("|")[0].trim();
+const mailPwSlug = (email) => "MAIL_PW_" + sodium.to_hex(sodium.crypto_generichash(16, sodium.from_string(email.trim().toLowerCase()))).slice(0, 16).toUpperCase();
+
+/* ------------------------------------------------------------ step 2: draft style + rules */
+function applyDraftStyle(style) {
+  if (style.tone) { const r = $('input[name=tone][value="' + style.tone + '"]'); if (r) r.checked = true; }
+  if (style.sign_off != null) $("#signOff").value = style.sign_off;
+  if (style.language) $("#draftLanguage").value = style.language;
+  if (style.max_sentences != null) $("#maxSentences").value = style.max_sentences;
+  if (typeof style.learn_voice === "boolean") $("#learnVoice").checked = style.learn_voice;
+}
+function collectDraftStyle() {
+  return {
+    tone: $('input[name=tone]:checked').value,
+    sign_off: $("#signOff").value.trim(),
+    language: $("#draftLanguage").value.trim() || "auto",
+    max_sentences: +$("#maxSentences").value,
+    learn_voice: $("#learnVoice").checked
+  };
+}
+function collectRuleList(id) {
+  return $("#" + id).value.split("\n").map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
+/* ------------------------------------------------------------ step 2: collect + validate */
+function collect() {
+  const delivery = selectedDelivery();
+  return {
+    interests: $("#interests").value,
+    avoid: $("#avoid").value,
+    reading_count: +$("#count").value,
+    run_at: collectRunAt(),
+    window_hours: windowHours(),
+    timezone: $("#timezone").value,
+    weekly_review: $("#weeklyOn").checked ? $("#weeklyDay").value + " " + $("#weeklyTime").value : "",
+    delivery: delivery,
+    email_to: (delivery === "gmail" ? $("#emailToGmail").value : delivery === "mailbox" ? $("#emailToMailbox").value : delivery === "email" ? $("#emailTo").value : "").trim(),
+    email_from: delivery === "email" ? $("#emailFrom").value.trim() : "",
+    telegram_chat_id: $("#tgChatId").value.trim(),
+    digest_format: $("#digestText").checked ? "text" : "html",
+    profiles_raw: S.profilesRaw || "",
+    provider: selectedProvider(),
+    draft_replies: $("#draftReplies").checked,
+    draft_variants: $("#draftVariants").checked ? 2 : 1,
+    draft_style: collectDraftStyle(),
+    rules: {
+      always_ignore: collectRuleList("rulesIgnore"),
+      always_surface: collectRuleList("rulesSurface"),
+      always_action: collectRuleList("rulesAction")
+    },
+    carry_over: $("#carryOver").checked,
+    label: $("#label").value.trim(),
+    nag_after_days: Math.max(1, +$("#nagAfterDays").value || 3),
+    calendar: $("#calendarOn").checked,
+    weekly_narrative: $("#weeklyNarrative").checked,
+    language: $("#language").value,
+    thread_context: $("#threadContext").checked,
+    sender_memory: $("#senderMemory").checked,
+    show_unsubscribe: $("#showUnsubscribe").checked,
+    // archive requires label -- mirror config.py's rule instead of writing a file the engine rejects
+    noise: { label: $("#noiseLabel").checked, archive: $("#noiseLabel").checked && $("#noiseArchive").checked }
+  };
+}
+
+function scrollToField(el) {
+  el.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" });
+  const input = $("input,textarea", el);
+  if (input) input.focus({ preventScroll: true });
+}
+
+function validate() {
+  clearErrs($("#p2"));
+  $$(".acct").forEach((r) => acctError(r, ""));
+  const v = collect();
+  let first = null;
+  const fail = (id, msg) => { fieldErr(id, msg); if (!first) first = $("#f-" + id); };
+
+  if (v.interests.trim().length < 30)
+    fail("interests", "Tell the model more than this — what needs a reply, what a human is waiting on. A sentence or two of real detail is the difference between a triage you trust and one you ignore.");
+
+  const provFid = PROV_FIELD[selectedProvider()];
+  if (!$("#" + provFid).value.trim()) fail(provFid, "Needed — this is the credential that runs the triage.");
+
+  if (v.delivery === "email") {
+    if (!$("#resend").value.trim()) fail("resend", "Needed to send the email.");
+    if (!/^\S+@\S+\.\S+$/.test(v.email_to)) fail("emailTo", "Enter the address the digest should arrive at.");
+    if (!/^\S+@\S+\.\S+$/.test(v.email_from)) fail("emailFrom", "Enter the address it should be sent from.");
+  } else if ((v.delivery === "gmail" || v.delivery === "mailbox") && v.email_to && !/^\S+@\S+\.\S+$/.test(v.email_to)) {
+    const gm = v.delivery === "gmail";
+    $(gm ? "#gmailAdvanced" : "#mailboxFields").open = true;
+    fail(gm ? "emailToGmail" : "emailToMailbox", "This doesn't look like an email address.");
+  } else if (DELIVERY_SECRET[v.delivery]) {
+    const [fid, name] = DELIVERY_SECRET[v.delivery];
+    const val = $("#" + fid).value.trim();
+    if (!val) fail(fid, "Needed — this is where the digest gets delivered (" + name + ").");
+    else if (v.delivery !== "telegram" && !/^https:\/\/\S+\/\S+$/.test(val)) fail(fid, "Paste the full https:// URL.");
+    if (v.delivery === "telegram" && !/^-?\d+$/.test(v.telegram_chat_id)) fail("tgChatId", "Enter the numeric chat id from getUpdates.");
+  }
+
+  if ($$(".run-at-time").some((i) => !i.value)) fail("runAt", "Every digest time needs a value.");
+  if (!v.label) fail("label", "Needed — this is the Gmail label carried-over mail gets.");
+  const ics = $("#calendarIcs").value.trim();
+  if (ics && !/^https?:\/\/\S+$/.test(ics)) fail("calendarIcs", "This should be the full https:// address of the ICS feed.");
+
+  let firstAcctBad = null;
+  const seen = new Set();
+  $$(".acct").forEach((row) => {
+    const entry = $(".acct-email", row).value.trim();
+    const email = acctAddr(entry);
+    const parts = entry.split("|").map((x) => x.trim());
+    const pw = $(".acct-pw", row).value.replace(/\s+/g, "");
+    let msg = "";
+    if (!email) msg = "Enter the email address.";
+    else if (!/^\S+@\S+\.\S+$/.test(email)) msg = "This doesn't look like an email address.";
+    else if (parts.length > 3) msg = "At most address|imap.host|smtp.host.";
+    else if (parts.slice(1).some((h) => h && !/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(h))) msg = "A server is a host name, optionally :port — e.g. imap.fastmail.com or mail.work.com:993.";
+    else if (seen.has(email.toLowerCase())) msg = "Already listed above.";
+    else if (!pw) msg = "Enter the app password your mail provider gave you for this account.";
+    else if (/gmail\.com$/i.test(email) && !/^[A-Za-z0-9]{16}$/.test(pw)) msg = "Gmail app passwords are 16 characters (shown as 4 groups of 4) — check for a missing or extra character.";
+    if (msg) { acctError(row, msg); if (!firstAcctBad) firstAcctBad = row; }
+    else seen.add(email.toLowerCase());
+  });
+
+  if (first) { scrollToField(first); return null; }
+  if (firstAcctBad) { scrollToField(firstAcctBad); return null; }
+  return v;
+}
+
+$("#go3").addEventListener("click", async () => {
+  await sodium.ready; // mailPwSlug hashes with libsodium; the wasm is loaded by now, but never assume
+  const v = validate();
+  if (!v) return;
+  S.cfg = v;
+
+  S.secrets = {};
+  const prov = selectedProvider();
+  const provRaw = $("#" + PROV_FIELD[prov]).value;
+  // Codex's and Gemini CLI's secrets are JSON file contents -- trim only.
+  // Every other credential is a single pasted token/key; terminal line-wrap
+  // can insert spaces mid-paste, so strip ALL whitespace, not just the ends.
+  const isJsonSecret = prov === "chatgpt-subscription" || prov === "google-subscription";
+  S.secrets[PROV_SECRET[prov]] = isJsonSecret ? provRaw.trim() : provRaw.replace(/\s+/g, "");
+  // Addresses are sensitive on a public fork -- secrets, not config.yaml.
+  // Only PUT a secret whose field is non-empty: an empty field means "leave
+  // whatever's already in the repo alone", not "erase it". Exactly ONE
+  // delivery secret is written -- the chosen delivery's (validate() forced
+  // it non-empty); the others are never touched. For delivery: gmail,
+  // EMAIL_TO is the one optional field and no delivery secret exists at all.
+  if (DELIVERY_SECRET[v.delivery]) {
+    const [fid, name] = DELIVERY_SECRET[v.delivery];
+    const val = $("#" + fid).value.trim();
+    if (val) S.secrets[name] = val;
+  }
+  if (v.email_to) S.secrets.EMAIL_TO = v.email_to;
+  if (v.email_from) S.secrets.EMAIL_FROM = v.email_from;
+  // The calendar feed URL is the credential -- sealed like every other secret.
+  const ics = $("#calendarIcs").value.trim();
+  if (ics) S.secrets.CALENDAR_ICS_URL = ics;
+  const accounts = collectAccounts();
+  S.secrets.MAIL_ACCOUNTS = accounts.map((a) => a.email).join(",");
+  v.accounts = {};
+  accounts.forEach((a) => {
+    S.secrets[mailPwSlug(acctAddr(a.email))] = a.pw;
+    if (Object.keys(a.override).length) v.accounts[acctAddr(a.email).toLowerCase()] = a.override;
+  });
+
+  prepLaunch();
+  show(3);
+});
+
+/* ------------------------------------------------------------ step 3 */
+let ROWS = [];
+function prepLaunch() {
+  const names = Object.keys(S.secrets);
+  $("#launchLede").innerHTML =
+    "Everything below runs against <strong>" + esc(S.repo.full_name) + "</strong> from this tab. " +
+    "Your " + names.length + " secret" + (names.length > 1 ? "s are" : " is") +
+    " encrypted here, in the browser, before they leave it.";
+
+  ROWS = [
+    { id: "key",   t: "Fetch your repository's public key" },
+    { id: "seal",  t: "Encrypt " + names.length + " secret" + (names.length > 1 ? "s" : "") + " in this browser" },
+    { id: "put",   t: "Store them as GitHub Actions secrets" },
+    { id: "cfg",   t: "Commit config.yaml" },
+    { id: "fire",  t: "Trigger the first digest" },
+    { id: "watch", t: "Watch it run" }
+  ];
+  $("#runs").innerHTML = ROWS.map((r) =>
+    '<li data-s="wait" id="r-' + r.id + '"><span class="dot"></span>' +
+    '<span class="body"><span class="t">' + esc(r.t) + '</span><span class="d"></span></span></li>'
+  ).join("");
+}
+
+function row(id, state, detail) {
+  const li = $("#r-" + id);
+  if (!li) return;
+  if (state) li.dataset.s = state;
+  if (detail !== undefined) $(".d", li).innerHTML = detail;
+}
+
+async function launch() {
+  const btn = $("#fire");
+  btn.disabled = true;
+  $("#back2").disabled = true;
+  const repo = "/repos/" + S.repo.full_name;
+  let step = "key";
+
+  try {
+    /* 1 — public key */
+    row("key", "run");
+    const pk = await gh("GET", repo + "/actions/secrets/public-key");
+    row("key", "done", "key_id " + esc(pk.key_id));
+
+    /* 2 — seal, locally */
+    step = "seal";
+    row("seal", "run");
+    await sodium.ready;
+    const pkBytes = sodium.from_base64(pk.key, sodium.base64_variants.ORIGINAL);
+    const sealed = {};
+    for (const name of Object.keys(S.secrets)) {
+      sealed[name] = sodium.to_base64(
+        sodium.crypto_box_seal(sodium.from_string(S.secrets[name]), pkBytes),
+        sodium.base64_variants.ORIGINAL
+      );
+    }
+    row("seal", "done", "Sealed with libsodium crypto_box_seal. The plaintext never left this tab.");
+
+    /* 3 — store */
+    step = "put";
+    row("put", "run");
+    const names = Object.keys(sealed);
+    for (let i = 0; i < names.length; i++) {
+      row("put", "run", "Writing " + esc(names[i]) + " (" + (i + 1) + " of " + names.length + ")…");
+      await gh("PUT", repo + "/actions/secrets/" + names[i], {
+        encrypted_value: sealed[names[i]],
+        key_id: pk.key_id
+      });
+    }
+    row("put", "done", names.map(esc).join(" · "));
+
+    /* 4 — config.yaml */
+    step = "cfg";
+    row("cfg", "run");
+    const yaml = buildYaml(S.cfg);
+    let sha = null;
+    try {
+      const cur = await gh("GET", repo + "/contents/config.yaml?ref=" + encodeURIComponent(S.repo.default_branch));
+      sha = cur && cur.sha;
+    } catch (e) {
+      if (!/404|Not found/i.test(e.message)) throw e; // absent is fine; anything else is not
+    }
+    const body = {
+      message: "mailtriage: configure via setup wizard",
+      content: b64encode(yaml),
+      branch: S.repo.default_branch
+    };
+    if (sha) body.sha = sha;
+    const put = await gh("PUT", repo + "/contents/config.yaml", body);
+    row("cfg", "done",
+      (sha ? "Updated" : "Created") + " on " + esc(S.repo.default_branch) +
+      (put && put.commit ? ' · <a target="_blank" rel="noopener" href="' + esc(put.commit.html_url) + '">commit</a>' : ""));
+
+    /* 5 — dispatch */
+    step = "fire";
+    row("fire", "run");
+    const t0 = Date.now();
+    await gh("POST", repo + "/actions/workflows/" + WORKFLOW + "/dispatches", { ref: S.repo.default_branch });
+    row("fire", "done", "Dispatched on " + esc(S.repo.default_branch) + ".");
+
+    /* 6 — poll */
+    step = "watch";
+    row("watch", "run", "Waiting for GitHub to pick up the run…");
+    const run = await watchRun(repo, t0);
+    if (run && run.conclusion === "success") {
+      row("watch", "done", 'Finished successfully · <a target="_blank" rel="noopener" href="' + esc(run.html_url) + '">view the run</a>');
+      succeed(run);
+    } else if (run) {
+      row("watch", "fail",
+        "The run finished as <strong>" + esc(run.conclusion || "incomplete") + "</strong>. " +
+        'Open <a target="_blank" rel="noopener" href="' + esc(run.html_url) + '">the log on GitHub</a> — the failing step names the cause, ' +
+        "and it is almost always a key pasted with a character missing, an unverified Resend from-domain, or an app password Google has since revoked.");
+      btn.disabled = false; btn.textContent = "Try again";
+      $("#back2").disabled = false;
+    } else {
+      row("watch", "done",
+        "Still running after a few minutes — that's fine, it finishes on its own. " +
+        '<a target="_blank" rel="noopener" href="https://github.com/' + esc(S.repo.full_name) + '/actions">Follow it on GitHub</a>.');
+      succeed(null);
+    }
+  } catch (e) {
+    row(step, "fail", esc(e.message));
+    btn.disabled = false;
+    btn.textContent = "Try again";
+    $("#back2").disabled = false;
+  }
+}
+
+async function watchRun(repo, t0) {
+  const deadline = Date.now() + 5 * 60 * 1000;
+  const label = { queued: "Queued on GitHub's runners…", in_progress: "Running — pulling mail, then asking the model…", requested: "Queued…", waiting: "Waiting…", pending: "Queued…" };
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3000));
+    let d;
+    try {
+      d = await gh("GET", repo + "/actions/runs?per_page=1");
+    } catch (e) {
+      continue; // a transient blip shouldn't abandon a run that is already going
+    }
+    const run = d && d.workflow_runs && d.workflow_runs[0];
+    // Ignore a run that predates our dispatch; ours hasn't been created yet.
+    if (!run || new Date(run.created_at).getTime() < t0 - 120000) continue;
+    if (run.status === "completed") return run;
+    row("watch", "run",
+      (label[run.status] || run.status) +
+      ' · <a target="_blank" rel="noopener" href="' + esc(run.html_url) + '">watch on GitHub</a>');
+  }
+  return null;
+}
+
+function succeed(run) {
+  $("#launchView").style.display = "none";
+  $("#doneView").style.display = "block";
+  $$("#stepper li").forEach((li) => { li.classList.remove("on"); li.classList.add("done"); });
+  const CHAT_DEST = { telegram: "your Telegram chat", slack: "your Slack channel", discord: "your Discord channel", ntfy: "the ntfy app" };
+  const dest = CHAT_DEST[S.cfg.delivery] || (S.cfg.email_to ? "<strong>" + esc(S.cfg.email_to) + "</strong>" : "your own inbox");
+  $("#doneMsg").innerHTML =
+    "Check " + dest + (CHAT_DEST[S.cfg.delivery] ? ". " : ", including the spam folder for the first one. ") +
+    "It repeats at " + esc(S.cfg.run_at.join(", ")) + " (" + esc(S.cfg.timezone) + ").";
+  const base = "https://github.com/" + S.repo.full_name;
+  $("#doneLinks").innerHTML =
+    '<button class="btn btn-primary" id="openDash3">Open the dashboard <span class="arr">→</span></button>' +
+    (run ? '<a class="btn btn-ghost" target="_blank" rel="noopener" href="' + esc(run.html_url) + '">See the run log</a>' : "") +
+    '<a class="btn btn-ghost" target="_blank" rel="noopener" href="' + base + '/edit/' + encodeURIComponent(S.repo.default_branch) + '/config.yaml">Edit config.yaml later</a>' +
+    '<a class="btn btn-ghost" target="_blank" rel="noopener" href="' + base + '/actions">All runs</a>';
+  $("#openDash3").addEventListener("click", openDash);
+  window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" });
+}
+
+$("#fire").addEventListener("click", launch);
+
+/* ------------------------------------------------------------ sample digest preview */
+// Both "What the digest looks like" panels point at the sibling file
+// docs/sample-digest.html (rendered by scripts/render_sample.py through the
+// real email template). The iframe gets its src only when opened, so a page
+// load never fetches it.
+$$("details[data-preview]").forEach((d) => d.addEventListener("toggle", () => {
+  const f = $("iframe", d);
+  if (d.open && !f.src) f.src = f.dataset.src;
+}));
+
+/* ------------------------------------------------------------ dashboard */
+// Read-only view of the fork through the same REST API the launch flow
+// writes with, plus the four dispatch buttons. Everything here is fetched
+// fresh on open/refresh; nothing is cached across visits.
+const fmtTime = (iso) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+function fmtDuration(run) {
+  const ms = new Date(run.updated_at) - new Date(run.run_started_at || run.created_at);
+  if (!(ms > 0)) return "—";
+  const s = Math.round(ms / 1000);
+  return s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60) + "s";
+}
+
+// Wall-clock (y, m, d, hh, mm) in IANA zone `tz` -> UTC instant. Guess the
+// UTC value, measure how far the zone's wall clock is from it, correct; twice
+// to settle a DST edge. Intl only -- no tz library.
+function zonedToUtc(tz, y, m, d, hh, mm) {
+  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric" });
+  const wall = (t) => {
+    const p = {};
+    fmt.formatToParts(t).forEach((x) => { p[x.type] = x.value; });
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute);
+  };
+  const want = Date.UTC(y, m, d, hh, mm);
+  let t = want;
+  for (let i = 0; i < 2; i++) t += want - wall(t);
+  return t;
+}
+// Next slot after `now` -- the "next slot" half of schedule.due(): the first
+// run_at time in cfg.timezone after now (today or tomorrow), or the weekly
+// slot if that lands sooner. No catch-up logic; that's the engine's job.
+function nextSlot(cfg, now) {
+  const tz = cfg.timezone || "UTC";
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "numeric", day: "numeric", weekday: "short" })
+    .formatToParts(now).forEach((x) => { parts[x.type] = x.value; });
+  const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  const todayIdx = days.indexOf(parts.weekday.toLowerCase().slice(0, 3));
+  const at = (offset, hhmm) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return zonedToUtc(tz, +parts.year, +parts.month - 1, +parts.day + offset, h, m);
+  };
+  const cands = [];
+  (Array.isArray(cfg.run_at) ? cfg.run_at : []).forEach((s) => {
+    if (!/^\d{2}:\d{2}$/.test(s)) return;
+    for (let off = 0; off <= 1; off++) cands.push({ t: at(off, s), kind: "digest" });
+  });
+  const wk = /^(mon|tue|wed|thu|fri|sat|sun) (\d{2}:\d{2})$/i.exec(cfg.weekly_review || "");
+  if (wk) {
+    const off = (days.indexOf(wk[1].toLowerCase()) - todayIdx + 7) % 7;
+    for (let k = 0; k < 2; k++) cands.push({ t: at(off + 7 * k, wk[2]), kind: "weekly" });
+  }
+  const future = cands.filter((c) => c.t > now.getTime()).sort((a, b) => a.t - b.t);
+  return future[0] || null;
+}
+
+function openDash() {
+  if (!S.repo) return;
+  show(4);
+  loadDash();
+}
+$("#openDash1").addEventListener("click", (e) => { e.preventDefault(); openDash(); });
+$("#dashBack").addEventListener("click", () => show(2));
+$("#dashRefresh").addEventListener("click", loadDash);
+
+const stat = (k, v, s, cls) =>
+  '<div class="stat ' + (cls || "") + '"><div class="k">' + esc(k) + '</div><div class="v">' + v + '</div>' + (s ? '<div class="s">' + s + "</div>" : "") + "</div>";
+const note = (kind, html) => '<div class="note ' + kind + '"><span class="ic">◆</span><span>' + html + "</span></div>";
+
+let dashSeq = 0;
+async function loadDash() {
+  const seq = ++dashSeq;
+  const repo = "/repos/" + S.repo.full_name;
+  const base = "https://github.com/" + S.repo.full_name;
+  $("#dashLede").innerHTML = "<strong>" + esc(S.repo.full_name) + "</strong> · <a target=\"_blank\" rel=\"noopener\" href=\"" + esc(base) + "/actions\">Actions on GitHub</a>";
+  $("#dashState").innerHTML = "";
+  $("#dashStats").innerHTML = '<p class="hint"><span class="spin-inline"></span>Reading your fork…</p>';
+  $("#dashRuns").innerHTML = "";
+  $("#dashUpgrade").innerHTML = "";
+
+  // Independent reads, in parallel; each one degrades to its own message.
+  const safe = (p) => p.then((v) => ({ ok: true, v }), (e) => ({ ok: false, e }));
+  const [wf, commits, secrets, cfgFile, cmp] = await Promise.all([
+    safe(gh("GET", repo + "/actions/workflows/" + WORKFLOW)),
+    safe(gh("GET", repo + "/commits?per_page=1&sha=" + encodeURIComponent(S.repo.default_branch))),
+    safe(gh("GET", repo + "/actions/secrets?per_page=100")),
+    safe(gh("GET", repo + "/contents/config.yaml?ref=" + encodeURIComponent(S.repo.default_branch))),
+    safe(gh("GET", "/repos/" + UPSTREAM + "/compare/main..." + encodeURIComponent(S.repo.owner.login) + ":" + encodeURIComponent(S.repo.default_branch)))
+  ]);
+  if (seq !== dashSeq) return;
+
+  /* workflow state */
+  if (wf.ok && /^disabled/.test(wf.v.state)) {
+    $("#dashState").innerHTML = note("caution",
+      "<strong>The schedule is switched off</strong> (" + esc(wf.v.state.replace(/_/g, " ")) + ")" +
+      (wf.v.state === "disabled_inactivity" ? " — GitHub pauses scheduled workflows after 60 days without a commit. " : ". ") +
+      "Nothing will run until it's enabled again. " +
+      '<button class="btn btn-accent" id="dashEnable" style="margin-top:8px;padding:8px 14px;font-size:13px">Enable</button>');
+    $("#dashEnable").addEventListener("click", async () => {
+      const b = $("#dashEnable");
+      b.disabled = true;
+      try {
+        await gh("PUT", repo + "/actions/workflows/" + WORKFLOW + "/enable");
+        $("#dashState").innerHTML = note("safe", "<strong>Enabled.</strong> The hourly schedule is back on.");
+      } catch (e) {
+        b.disabled = false;
+        $("#dashState").insertAdjacentHTML("beforeend", note("caution", esc(e.message)));
+      }
+    });
+  } else if (!wf.ok) {
+    $("#dashState").innerHTML = note("caution", "Couldn't read the workflow: " + esc(wf.e.message));
+  }
+
+  /* config + secrets */
+  let cfg = null, cfgText = "";
+  if (cfgFile.ok) {
+    cfgText = b64decode(cfgFile.v.content);
+    cfg = parseConfig(cfgText);
+    S.profilesRaw = profilesBlock(cfgText);
+  }
+  S.dashCfgText = cfgText;
+  const names = secrets.ok ? secrets.v.secrets.map((s) => s.name) : [];
+  const has = (n) => names.includes(n);
+
+  const cards = [];
+  if (cfg) {
+    const nx = nextSlot(cfg, new Date());
+    cards.push(nx
+      ? stat("Next " + nx.kind, esc(fmtTime(nx.t)), "in your local time · " + esc(cfg.timezone || "UTC") + " in config.yaml. GitHub fires within the hour after.")
+      : stat("Next digest", "No slot found", "config.yaml's run_at has no valid \"HH:MM\" entries.", "bad"));
+  } else {
+    cards.push(stat("Next digest", "No config.yaml yet", "Run the setup to write one.", "warn"));
+  }
+
+  if (commits.ok && commits.v[0]) {
+    const last = new Date(commits.v[0].commit.committer.date);
+    const left = 60 - Math.floor((Date.now() - last) / 86400000);
+    cards.push(stat("60-day timer", left > 0 ? left + " day" + (left === 1 ? "" : "s") + " left" : "Expired",
+      "GitHub pauses the schedule after 60 days without a commit. Last commit " + esc(fmtTime(last)) + " · saving settings here or merging a sync PR resets it.",
+      left <= 7 ? "warn" : ""));
+  }
+
+  if (secrets.ok) {
+    const ai = Object.keys(PROV_SECRET).filter((p) => has(PROV_SECRET[p]));
+    cards.push(stat("AI secret", ai.length ? ai.map((p) => esc(PROV_SECRET[p])).join(", ") : "None set",
+      ai.length > 1 ? "More than one is set — config.yaml's provider decides which runs." : (cfg && cfg.provider ? "provider: " + esc(cfg.provider) : ""),
+      ai.length === 1 ? "" : (ai.length ? "warn" : "bad")));
+    const pw = names.filter((n) => /^MAIL_PW_/.test(n)).length;
+    // Override keys in config.yaml are addresses -- each must have its
+    // MAIL_PW_ secret, hashed the same way the wizard writes them.
+    const ovr = cfg && cfg.accounts && typeof cfg.accounts === "object" ? Object.keys(cfg.accounts) : [];
+    const missing = ovr.filter((a) => !has(mailPwSlug(a)));
+    cards.push(stat("Mail accounts", (has("MAIL_ACCOUNTS") ? "MAIL_ACCOUNTS set" : "MAIL_ACCOUNTS missing") + " · " + pw + " app password" + (pw === 1 ? "" : "s"),
+      missing.length ? "No MAIL_PW_ secret for " + missing.map(esc).join(", ") + " (listed under accounts: in config.yaml)." :
+        (ovr.length ? ovr.length + " per-account override" + (ovr.length === 1 ? "" : "s") + " in config.yaml, all with a password secret." : "The address list itself is a secret and can't be read back."),
+      !has("MAIL_ACCOUNTS") || !pw || missing.length ? "bad" : ""));
+    const delivery = cfg ? cfg.delivery : "";
+    if (delivery === "email") {
+      cards.push(stat("Delivery", "Resend · " + (has("RESEND_API_KEY") ? "key set" : "RESEND_API_KEY missing"),
+        (has("EMAIL_TO") ? "EMAIL_TO" : "<s>EMAIL_TO</s>") + " · " + (has("EMAIL_FROM") ? "EMAIL_FROM" : "<s>EMAIL_FROM</s>"),
+        has("RESEND_API_KEY") && has("EMAIL_TO") && has("EMAIL_FROM") ? "" : "bad"));
+    } else {
+      cards.push(stat("Delivery", (delivery === "mailbox" ? "Your mailbox · " : "Gmail · ") + (pw ? "via your app password" : "needs an app password"),
+        has("EMAIL_TO") ? "To the EMAIL_TO secret." : "To your first Gmail account.", pw ? "" : "bad"));
+    }
+  } else {
+    cards.push(stat("Secrets", "Couldn't list", esc(secrets.e.message), "bad"));
+  }
+  $("#dashStats").innerHTML = cards.join("");
+
+  /* upgrade */
+  if (cmp.ok) {
+    const b = cmp.v.behind_by;
+    $("#dashUpgrade").innerHTML = stat("Upstream", b ? b + " commit" + (b === 1 ? "" : "s") + " behind" : "Up to date",
+      b ? "Sync opens a pull request on your fork; review and merge it. Your config.yaml is kept." : "Nothing new in " + esc(UPSTREAM) + ".",
+      b ? "warn" : "");
+  } else {
+    $("#dashUpgrade").innerHTML = stat("Upstream", "Couldn't compare", esc(cmp.e.message), "warn");
+  }
+
+  await loadRuns(seq);
+}
+
+const OUTCOME = {
+  success: ["ok", "success"], failure: ["bad", "failure"], cancelled: ["", "cancelled"], skipped: ["", "skipped"],
+  timed_out: ["bad", "timed out"], action_required: ["warn", "waiting for approval"], startup_failure: ["bad", "startup failure"]
+};
+async function loadRuns(seq) {
+  const repo = "/repos/" + S.repo.full_name;
+  let d;
+  try {
+    d = await gh("GET", repo + "/actions/workflows/" + WORKFLOW + "/runs?per_page=10");
+  } catch (e) {
+    if (seq === dashSeq) $("#dashRuns").innerHTML = "<tr><td>" + esc(e.message) + "</td></tr>";
+    return;
+  }
+  if (seq !== dashSeq) return;
+  const runs = d.workflow_runs || [];
+  if (!runs.length) {
+    $("#dashRuns").innerHTML = "<tr><td>No runs yet.</td></tr>";
+    return;
+  }
+  // The workflow fires hourly and usually exits at the "Is it time?" gate;
+  // read each finished run's steps so a no-op hour isn't shown as a digest.
+  const jobs = await Promise.all(runs.map((r) =>
+    r.status === "completed" && r.conclusion === "success"
+      ? gh("GET", repo + "/actions/runs/" + r.id + "/jobs").catch(() => null)
+      : Promise.resolve(null)));
+  if (seq !== dashSeq) return;
+  const rows = runs.map((r, i) => {
+    let cls, txt;
+    if (r.status !== "completed") { cls = "run"; txt = r.status.replace(/_/g, " "); }
+    else { [cls, txt] = OUTCOME[r.conclusion] || ["", r.conclusion || "incomplete"]; }
+    const j = jobs[i] && jobs[i].jobs && jobs[i].jobs[0];
+    const send = j && (j.steps || []).find((s) => s.name === "Send digest");
+    if (send && send.conclusion === "skipped") { cls = ""; txt = "not a slot"; }
+    return "<tr>" +
+      '<td class="n"><a target="_blank" rel="noopener" href="' + esc(r.html_url) + '">' + esc(fmtTime(r.created_at)) + "</a></td>" +
+      "<td>" + (r.event === "schedule" ? "schedule" : "manual") + "</td>" +
+      '<td><span class="pill ' + cls + '">' + esc(txt) + "</span></td>" +
+      '<td class="n hide-sm">' + esc(fmtDuration(r)) + "</td></tr>";
+  });
+  $("#dashRuns").innerHTML = "<thead><tr><th>Started</th><th>Trigger</th><th>Outcome</th><th class=\"hide-sm\">Took</th></tr></thead><tbody>" + rows.join("") + "</tbody>";
+}
+
+// Dispatch digest.yml with a mode, or upstream-sync.yml with none. A 422
+// means the fork's digest.yml predates the `mode` input: retry input-less
+// (which that workflow treats as a plain digest) and say so.
+async function dispatch(workflow, mode, statusEl) {
+  const repo = "/repos/" + S.repo.full_name;
+  const path = repo + "/actions/workflows/" + workflow + "/dispatches";
+  let noteText = "";
+  try {
+    if (mode) {
+      try {
+        await gh("POST", path, { ref: S.repo.default_branch, inputs: { mode: mode } });
+      } catch (e) {
+        if (e.status !== 422) throw e;
+        await gh("POST", path, { ref: S.repo.default_branch });
+        noteText = mode === "digest"
+          ? " (This fork's workflow has no mode input yet, so it was started the old way — a plain digest. Sync with upstream to get the newer workflow.)"
+          : " (This fork's workflow has no mode input yet, so a plain digest was started instead of " + mode + ". Sync with upstream to get the newer workflow.)";
+      }
+    } else {
+      await gh("POST", path, { ref: S.repo.default_branch });
+    }
+  } catch (e) {
+    statusEl.className = "status bad";
+    statusEl.textContent = e.message;
+    return false;
+  }
+  statusEl.className = "status";
+  statusEl.textContent = "Dispatched on " + S.repo.default_branch + "." + noteText + " Watching the runs list…";
+  return true;
+}
+
+// After a dispatch: refresh the runs table every 10 s for two minutes.
+let pollSeq = 0;
+async function pollRuns() {
+  const my = ++pollSeq;
+  const until = Date.now() + 120000;
+  while (Date.now() < until && my === pollSeq && S.step === 4) {
+    await new Promise((r) => setTimeout(r, 10000));
+    if (my !== pollSeq || S.step !== 4) return;
+    await loadRuns(dashSeq);
+  }
+}
+
+$$("#p4 [data-mode]").forEach((b) => b.addEventListener("click", async () => {
+  const mode = b.dataset.mode;
+  if (!MODES.includes(mode)) return;
+  $$("#p4 [data-mode]").forEach((x) => { x.disabled = true; });
+  const ok = await dispatch(WORKFLOW, mode, $("#dashRunStatus"));
+  $$("#p4 [data-mode]").forEach((x) => { x.disabled = false; });
+  if (ok) pollRuns();
+}));
+$("#dashSync").addEventListener("click", async () => {
+  const b = $("#dashSync");
+  b.disabled = true;
+  const st = $("#dashSyncStatus");
+  const ok = await dispatch(SYNC_WORKFLOW, null, st);
+  b.disabled = false;
+  if (ok) {
+    st.innerHTML = "Dispatched on " + esc(S.repo.default_branch) + ". If upstream has moved, a pull request appears on " +
+      '<a target="_blank" rel="noopener" href="https://github.com/' + esc(S.repo.full_name) + '/pulls">your fork</a> in a minute — merge it there. ' +
+      "(Needs Settings → Actions → General → “Allow GitHub Actions to create and approve pull requests”.)";
+  }
+});
+
+/* config export / import -- plain conveniences */
+$("#dashExport").addEventListener("click", () => {
+  const text = S.dashCfgText || buildYaml(collect());
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/yaml" }));
+  a.download = "config.yaml";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+$("#dashImport").addEventListener("click", () => $("#dashImportFile").click());
+$("#dashImportFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const st = $("#dashImportStatus");
+  try {
+    const text = await f.text();
+    const cfg = parseConfig(text);
+    if (!Object.keys(cfg).length) throw new Error("That file has no top-level keys this page recognizes.");
+    S.profilesRaw = profilesBlock(text);
+    applyConfig(cfg);
+    st.className = "status";
+    st.textContent = "Loaded " + f.name + " into the settings form — review it, then launch to write it to your fork.";
+    show(2);
+  } catch (err) {
+    st.className = "status bad";
+    st.textContent = "Couldn't read " + f.name + ": " + err.message;
+  }
+  e.target.value = "";
+});
+
+/* ------------------------------------------------------------ remember prefs (never secrets/token/accounts) */
+// window_hours ("win") is derived from run_at, not saved directly.
+const KEEP = ["interests", "avoid", "timezone", "signOff", "draftLanguage", "maxSentences", "rulesIgnore", "rulesSurface", "rulesAction"];
+try {
+  const saved = JSON.parse(localStorage.getItem("mailtriage.prefs") || "{}");
+  KEEP.forEach((k) => { if (saved[k] != null && $("#" + k)) $("#" + k).value = saved[k]; });
+  if (saved.provider) { const r = $('input[name=provider][value="' + saved.provider + '"]'); if (r) { r.checked = true; r.dispatchEvent(new Event("change")); } }
+  if (saved.delivery) { const r = $('input[name=delivery][value="' + saved.delivery + '"]'); if (r) { r.checked = true; r.dispatchEvent(new Event("change")); } }
+  if (saved.tone) { const r = $('input[name=tone][value="' + saved.tone + '"]'); if (r) r.checked = true; }
+  if (saved.count) { $("#count").value = saved.count; }
+  if (Array.isArray(saved.runAt) && saved.runAt.length) setRunAtRows(saved.runAt);
+  addEventListener("beforeunload", () => {
+    const o = {};
+    KEEP.forEach((k) => { if ($("#" + k)) o[k] = $("#" + k).value; });
+    o.provider = selectedProvider();
+    o.delivery = selectedDelivery();
+    o.tone = $('input[name=tone]:checked').value;
+    o.count = $("#count").value;
+    o.runAt = collectRunAt();
+    localStorage.setItem("mailtriage.prefs", JSON.stringify(o));
+  });
+} catch (e) { /* private mode, file:// restrictions — harmless either way */ }
+
+$("#countOut").textContent = $("#count").value;
+updateAuthFields();
+updateDeliveryFields();
+updateWindowNote();
+show(1);
+</script>
+</body>
+</html>

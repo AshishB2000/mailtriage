@@ -187,7 +187,7 @@ how you train yourself to stop opening it.
 ### The easy way: the setup wizard
 
 1. Click **Fork** (top right of this page).
-2. Open [`docs/index.html`](docs/index.html) (the landing page at [`docs/home.html`](docs/home.html) links straight to it) from your fork — either locally
+2. Open [`docs/index.html`](docs/index.html) — the landing page — and click **Get started**, or go straight to the wizard at [`docs/setup.html`](docs/setup.html), from your fork — either locally
    (clone and open the file, or download it and double-click it, no server
    needed) or via GitHub Pages if you've enabled it on your fork.
 3. Paste a [GitHub personal access token](https://github.com/settings/tokens/new?scopes=repo&description=mailtriage+setup),
@@ -1060,7 +1060,8 @@ src/mailtriage/
   cli.py             argparse; the only module that prints and exits
 tests/               pytest suite
 config.yaml          your triage settings (committed, holds no secrets)
-docs/index.html      the zero-backend setup wizard (+ vendored sodium.js)
+docs/index.html      the landing page
+docs/setup.html      the zero-backend setup wizard (+ vendored sodium.js)
 docs/SETUP.md        one-time credential setup (2-Step Verification + app passwords)
 CHANGELOG.md          what changed, by release
 .github/workflows/digest.yml   the schedule
