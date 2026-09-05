@@ -470,6 +470,13 @@ run's stderr warning does).
 
 ---
 
+Pick a `weekly_review` time that sits **outside** every `run_at` slot's
+catch-up window (`catch_up_minutes`, 120 by default). A weekly slot inside
+one loses to the digest for those hours: the gate reports a single mode per
+hour and the digest wins, so a weekly at `09:00` alongside a `08:00` digest
+does not run until the digest slot's window closes. The shipped pairing —
+digests at `08:00` and `18:00`, review at `mon 11:00` — is clear of both.
+
 ### Why was my digest empty?
 
 Every run prints the shape of the window it pulled, counts only:
