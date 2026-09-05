@@ -244,6 +244,13 @@ are flat-rate, the default costs nothing extra.
   workflow_dispatch) and `--dry-run` are unstamped and unguarded -- the
   Send step in digest.yml must keep passing GITHUB_EVENT_NAME for this to
   work at all. The guard is best-effort: a dead account never vetoes a send.
+- **An empty digest explains itself.** `imap_pull.window_shape` splits the
+  pulled window into bulk (`List-Unsubscribe`) / automated (noreply-ish
+  sender) / from people, and `cli.run` prints it on every run and again
+  when nothing is kept. "Kept none" alone cannot separate a working run
+  over a promotional window from a broken one over a real inbox -- that
+  ambiguity cost several live runs to diagnose. Counts only, like every
+  other diagnostic here.
 - **Empty digest sends nothing and exits 0.** "Nothing today" mails train users
   to unsubscribe.
 - **A failed account warns and the run continues** — one bad login never blanks

@@ -470,6 +470,32 @@ run's stderr warning does).
 
 ---
 
+### Why was my digest empty?
+
+Every run prints the shape of the window it pulled, counts only:
+
+```
+mailtriage: 23 candidate(s) in the last 15h across 1 account(s) — 18 bulk, 3 automated, 2 from people.
+```
+
+- **bulk** — the message carries a `List-Unsubscribe` header, so the sender
+  declared itself a mailing: a newsletter, a list, a promotion.
+- **automated** — no unsubscribe header, but a `noreply`/`notifications`
+  sender: receipts, alerts, CI mail.
+- **from people** — neither. Mail somebody could plausibly be waiting on.
+
+An empty digest out of a window that was entirely bulk and automated is the
+product working. An empty digest when people wrote to you is worth looking
+at — widen `interests` in `config.yaml`, or dispatch the workflow with
+`mode=bench`, which scores the triage prompt against a fixture whose right
+answer is known and prints a per-message verdict table.
+
+Bulk is a lower bound: a `List-Unsubscribe` header whose only entry uses an
+unsupported scheme isn't counted, so the reassuring number is never
+inflated.
+
+---
+
 ## Your schedule
 
 Pick your own digest times instead of a fixed cadence. In `config.yaml`:
@@ -947,7 +973,7 @@ something failed.
 | `mailtriage: nothing recent — sending nothing.` | No mail in the window at all | Nothing to fix — normal on a quiet window |
 | `mailtriage: this slot's digest was already delivered — sending nothing.` | An earlier hourly run inside this slot's `catch_up_minutes` window already sent it; the engine found the slot-stamped subject in your mailbox | Nothing to fix — this is the no-double-send guard doing its job. See [Your schedule](#your-schedule) |
 | `doctor: FAIL ...` | `mailtriage --doctor` found a broken piece of the setup | The rest of the line says what to change; the table below covers the same messages |
-| `mailtriage: the model kept none of the candidates — sending nothing.` | The model triaged everything as noise | Working as intended, not a failure |
+| `mailtriage: the model kept none of the candidates — sending nothing.` | The model triaged everything as noise | Usually working as intended. The line after it says which: if the window was **all bulk or automated**, an empty digest is the right answer. If **people wrote to you and nothing was kept**, widen `interests`, or dispatch `mode=bench` to score the prompt against a fixture with a known answer |
 
 ---
 
