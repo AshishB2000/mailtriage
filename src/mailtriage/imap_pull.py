@@ -53,7 +53,7 @@ def pw_env_var(addr: str) -> str:
     MAIL_PW_ + the first 16 hex chars of BLAKE2b-128 over the trimmed,
     lower-cased address -- a hash, so the name (which the public Actions log
     prints) never reveals the address. Mirrored character-for-character by
-    `mailPwSlug` in docs/index.html, where libsodium's crypto_generichash is
+    `mailPwSlug` in docs/setup.html, where libsodium's crypto_generichash is
     the same unkeyed BLAKE2b; tests/test_contracts.py pins both sides to one
     vector.
     """

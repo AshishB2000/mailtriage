@@ -1,7 +1,7 @@
 """Machine-checks for the cross-file contracts that break forks silently.
 
 Three files must agree without ever importing each other: the wizard
-(docs/index.html) writes secrets and config.yaml, the workflow
+(docs/setup.html) writes secrets and config.yaml, the workflow
 (.github/workflows/digest.yml) exports the secrets, and the engine reads both.
 A one-character divergence produces no error anywhere — just a fork that
 quietly stops working. These tests are the only thing standing between a
@@ -24,13 +24,13 @@ from mailtriage.schedule import max_gap_hours
 from mailtriage.triage import PROVIDERS
 
 ROOT = Path(__file__).resolve().parent.parent
-WIZARD = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
+WIZARD = (ROOT / "docs" / "setup.html").read_text(encoding="utf-8")
 
 
 # --- the MAIL_PW_ name mirror --------------------------------------------
 
 # The exact JS transform the wizard uses. If this line changes in
-# docs/index.html, it MUST still equal pw_env_var's behavior — update both
+# docs/setup.html, it MUST still equal pw_env_var's behavior — update both
 # sides and this pin together. libsodium's crypto_generichash is unkeyed
 # BLAKE2b, so at digest size 16 it equals hashlib.blake2b(digest_size=16).
 JS_TRANSFORM = (
@@ -38,14 +38,14 @@ JS_TRANSFORM = (
     "sodium.from_string(email.trim().toLowerCase()))).slice(0, 16).toUpperCase()"
 )
 # One hard-coded vector, checked against BOTH sides: pw_env_var must produce
-# it, and docs/index.html must carry it verbatim as a `// vector:` comment
+# it, and docs/setup.html must carry it verbatim as a `// vector:` comment
 # next to mailPwSlug. Drift on either side fails here instead of in a fork.
 VECTOR_ADDR, VECTOR_NAME = "alice@gmail.com", "MAIL_PW_F24FE3C393F64986"
 
 
 def test_wizard_slug_transform_is_the_pinned_mirror():
     assert JS_TRANSFORM in WIZARD, (
-        "docs/index.html no longer contains the exact mailPwSlug transform. "
+        "docs/setup.html no longer contains the exact mailPwSlug transform. "
         "It must stay character-for-character equivalent to imap_pull.pw_env_var, "
         "or every secret the wizard writes gets a name the engine never reads."
     )
@@ -53,7 +53,7 @@ def test_wizard_slug_transform_is_the_pinned_mirror():
 
 def test_wizard_vector_comment_matches_the_engine():
     m = re.search(r"^// vector: (\S+) -> (\S+)$", WIZARD, re.MULTILINE)
-    assert m, "docs/index.html is missing the `// vector: <addr> -> <name>` comment next to mailPwSlug"
+    assert m, "docs/setup.html is missing the `// vector: <addr> -> <name>` comment next to mailPwSlug"
     assert (m.group(1), m.group(2)) == (VECTOR_ADDR, VECTOR_NAME)
     assert pw_env_var(m.group(1)) == m.group(2)
 
@@ -68,7 +68,7 @@ def test_python_side_of_the_mirror_is_pinned():
 # --- the max_gap_hours (window_hours auto-compute) mirror ---------------
 
 # The exact JS expression the wizard's maxGapHours() returns from. If this
-# line changes in docs/index.html, it MUST still be equivalent to
+# line changes in docs/setup.html, it MUST still be equivalent to
 # mailtriage.schedule.max_gap_hours -- the wizard uses it to auto-compute
 # window_hours from run_at, and a divergent gap calculation would either
 # under-cover the schedule (silently dropped mail) or over-report it.
@@ -80,7 +80,7 @@ JS_GAP_EXPR = (
 
 def test_wizard_gap_expression_is_the_pinned_mirror():
     assert JS_GAP_EXPR in WIZARD, (
-        "docs/index.html no longer contains the exact maxGapHours return expression. "
+        "docs/setup.html no longer contains the exact maxGapHours return expression. "
         "It must stay equivalent to mailtriage.schedule.max_gap_hours, or the wizard's "
         "auto-computed window_hours can drift from what the engine actually needs."
     )
@@ -104,7 +104,7 @@ def test_wizard_writes_carry_over_and_label_forward_compat():
     # see them. Pin them here so the wizard doesn't regress once that branch
     # lands.
     for name in ("carry_over", "label", "run_at", "timezone", "weekly_review", "draft_style", "rules", "accounts"):
-        assert name in WIZARD, f"'{name}' missing from docs/index.html"
+        assert name in WIZARD, f"'{name}' missing from docs/setup.html"
 
 
 # --- config.yaml field names --------------------------------------------
@@ -114,7 +114,7 @@ def test_every_config_field_appears_in_wizard_and_shipped_yaml():
     shipped = (ROOT / "config.yaml").read_text(encoding="utf-8")
     for f in dataclasses.fields(Config):
         assert f.name in WIZARD, (
-            f"Config field '{f.name}' is missing from docs/index.html — the wizard "
+            f"Config field '{f.name}' is missing from docs/setup.html — the wizard "
             "writes config.yaml, and a field it doesn't know about can never be set "
             "through the settings page."
         )
@@ -131,7 +131,7 @@ def test_workflow_lives_at_the_literal_path_the_wizard_dispatches():
     assert (ROOT / ".github" / "workflows" / "digest.yml").is_file()
     assert 'const WORKFLOW = "digest.yml";' in WIZARD, (
         "The wizard dispatches the workflow by literal filename. Renaming "
-        "digest.yml requires changing WORKFLOW in docs/index.html in the same commit."
+        "digest.yml requires changing WORKFLOW in docs/setup.html in the same commit."
     )
 
 
@@ -167,7 +167,7 @@ def test_all_engine_providers_appear_in_wizard():
     # fails this test instead of silently forking the two.
     for name in PROVIDERS:
         assert name in WIZARD, (
-            f"engine provider '{name}' (triage.PROVIDERS) missing from docs/index.html — "
+            f"engine provider '{name}' (triage.PROVIDERS) missing from docs/setup.html — "
             "the wizard's picker must write this exact string as `provider:`."
         )
 
@@ -306,7 +306,7 @@ def test_no_personal_email_address_anywhere_in_tracked_files():
     # Built from parts so this file's own source text doesn't contain the
     # contiguous string it's searching for (grep for it would then always "hit").
     needle = "ashishbeerelli" + "1"
-    globs = ["config.yaml", "README.md", "docs/index.html", "src/**/*.py", "tests/**/*.py"]
+    globs = ["config.yaml", "README.md", "docs/setup.html", "src/**/*.py", "tests/**/*.py"]
     hits = []
     for pattern in globs:
         for path in ROOT.glob(pattern):
@@ -320,7 +320,7 @@ def test_no_personal_email_address_anywhere_in_tracked_files():
 
 def _wizard_const_list(name: str) -> list[str]:
     m = re.search(rf"^const {name} = \[([^\]]*)\];", WIZARD, re.MULTILINE)
-    assert m, f"docs/index.html is missing `const {name} = [...]`"
+    assert m, f"docs/setup.html is missing `const {name} = [...]`"
     return re.findall(r'"([^"]+)"', m.group(1))
 
 

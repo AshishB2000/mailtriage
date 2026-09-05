@@ -1,13 +1,13 @@
 ---
 name: update-wizard
-description: Use before editing docs/index.html (the setup wizard) — adding fields, changing secrets handling, touching the launch flow, or restyling the page.
+description: Use before editing docs/setup.html (the setup wizard) — adding fields, changing secrets handling, touching the launch flow, or restyling the page.
 ---
 
 # Updating the setup wizard
 
 ## Overview
 
-`docs/index.html` is one self-contained page that writes secrets and config
+`docs/setup.html` is one self-contained page that writes secrets and config
 into a stranger's fork. Its bugs don't error — they break forks *silently*.
 Know the invariants before editing; verify all of them after.
 
@@ -32,11 +32,11 @@ Know the invariants before editing; verify all of them after.
 ## After ANY edit, run all of this
 
 ```bash
-.venv/bin/python -c "from html.parser import HTMLParser; HTMLParser().feed(open('docs/index.html').read()); print('html ok')"
+.venv/bin/python -c "from html.parser import HTMLParser; HTMLParser().feed(open('docs/setup.html').read()); print('html ok')"
 .venv/bin/python -m pytest tests/test_contracts.py -q   # machine-checks the mirrors
-grep -c 'sk-ant' docs/index.html                        # only placeholder lines
-grep -n 'KEEP' docs/index.html                          # eyeball: no secret ids in the list
-grep -n 'src="http' docs/index.html                     # must be empty (no CDN)
+grep -c 'sk-ant' docs/setup.html                        # only placeholder lines
+grep -n 'KEEP' docs/setup.html                          # eyeball: no secret ids in the list
+grep -n 'src="http' docs/setup.html                     # must be empty (no CDN)
 ```
 
 Then open the page from `file://` and click through step 1 rendering.

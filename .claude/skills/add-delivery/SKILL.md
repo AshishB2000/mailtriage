@@ -39,7 +39,7 @@ is the reference: it was added through this exact checklist.
 5. **Docs** — `config.yaml` comment block (when to pick this mode, which
    secrets it needs) + README "Delivery options".
 6. **Wizard** — only if the mode adds user-facing secrets/fields to
-   `docs/index.html`. **REQUIRED SUB-SKILL: update-wizard** before touching it.
+   `docs/setup.html`. **REQUIRED SUB-SKILL: update-wizard** before touching it.
 7. **THE GATE**, then ship via **create-pr**.
 
 ## Traps (each bit us once)

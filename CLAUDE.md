@@ -48,7 +48,8 @@ src/mailtriage/
                 telegram.py slack.py discord.py ntfy.py (chat/push channels)
   selfcheck.py  pre-flight assertions, run before any API spend
   cli.py        argparse; the only module that prints and exits
-docs/index.html the zero-backend setup wizard (+ vendored sodium.js)
+docs/index.html the landing page
+docs/setup.html the zero-backend setup wizard (+ vendored sodium.js)
 ```
 
 **Library code raises `MailError`, it never exits.** Only `cli.main()` catches,
@@ -167,7 +168,7 @@ written. `"auto"` (config.yaml default for hand-edited files) walks
 digest_size=16).hexdigest()[:16].upper()` — a hash, never the address, because
 secret *names* print in a public fork's Actions log. This transform exists in
 TWO places that must match character-for-character: `imap_pull.pw_env_var`
-(Python `hashlib`) and `mailPwSlug` (JS, docs/index.html, via the vendored
+(Python `hashlib`) and `mailPwSlug` (JS, docs/setup.html, via the vendored
 libsodium's `crypto_generichash(16, …)` — the same unkeyed BLAKE2b).
 `tests/test_contracts.py` pins both sides to one vector,
 `alice@gmail.com → MAIL_PW_F24FE3C393F64986`, and checks the wizard carries it
@@ -176,7 +177,7 @@ non-alphanumerics → `_`) is **deprecated**: `imap_pull.app_password` still
 reads it as a fallback so old forks keep working; nothing writes it.
 
 **The wizard reads as well as writes.** Its Dashboard screen
-(docs/index.html, `loadDash`) is a read-only view of the fork through the
+(docs/setup.html, `loadDash`) is a read-only view of the fork through the
 same REST API: `GET .../actions/workflows/digest.yml` (state, for the
 60-day disable + `PUT .../enable`), `.../workflows/digest.yml/runs?per_page=10`
 plus `.../runs/{id}/jobs` (a run whose "Send digest" step was skipped is
@@ -270,7 +271,7 @@ are flat-rate, the default costs nothing extra.
   syntax error), and `commands.label_from_keyword` maps it back — a snooze
   wakes by that round trip, so change both together.
 - **The wizard carries `profiles:` through verbatim** (`profilesBlock` in
-  docs/index.html slices the raw text; `buildYaml` writes it back). It has
+  docs/setup.html slices the raw text; `buildYaml` writes it back). It has
   no UI for profiles on purpose, and re-serializing a parse of the block
   would drop any YAML shape the subset parser doesn't know.
 - **docs/sodium.js is vendored, not CDN** — the wizard must work from `file://`.
@@ -335,7 +336,7 @@ are flat-rate, the default costs nothing extra.
   `boss@corp.com` is exactly the kind of instruction a long inbox dump can
   bury.
 - **`window_hours` is auto-derived in the wizard, not hand-typed.** The
-  wizard computes it from `run_at` (`maxGapHours` in docs/index.html,
+  wizard computes it from `run_at` (`maxGapHours` in docs/setup.html,
   mirroring `schedule.max_gap_hours` — pinned by
   `tests/test_contracts.py`) every time it writes the file. Hand-editing
   `run_at` in a committed `config.yaml` without also updating
@@ -377,7 +378,7 @@ are flat-rate, the default costs nothing extra.
 
 Stdlib first — runtime deps are exactly `anthropic` + `PyYAML`, pinned. No
 classes where functions work. Modules split by pipeline stage, flat tree.
-`docs/index.html` is one self-contained file on purpose.
+`docs/setup.html` is one self-contained file on purpose.
 
 The triage prompt (`build_system`) is the product. Everything else is plumbing.
 "Return fewer, never pad" is stated three ways on purpose — do not condense it.
