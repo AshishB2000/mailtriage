@@ -37,30 +37,6 @@
   --r:12px;
   --e:cubic-bezier(.22,.68,.28,1);
 }
-@media (prefers-color-scheme:dark){
-  :root{
-    --paper:#0f0e0d;
-    --surface:#1a1917;
-    --sunk:#131211;
-    --ink:#ece7de;
-    --ink-2:#b3aca0;
-    --muted:#8c857a;
-    --faint:#6b655c;
-    --rule:rgba(236,231,222,.15);
-    --hair:rgba(236,231,222,.075);
-    --accent:#e07a5f;
-    --accent-2:#eb8f77;
-    --wash:rgba(224,122,95,.13);
-    --ok:#5cbd8c;
-    --ok-wash:rgba(92,189,140,.13);
-    --warn:#d2a13f;
-    --bad:#e2695a;
-    --bad-wash:rgba(226,105,90,.13);
-    --shadow:0 1px 1px rgba(0,0,0,.4), 0 12px 30px -20px rgba(0,0,0,.8);
-    --shadow-lg:0 1px 2px rgba(0,0,0,.5), 0 34px 70px -36px rgba(0,0,0,.9);
-    --grain:.035;
-  }
-}
 
 /* ============================================================ base */
 *,*::before,*::after{box-sizing:border-box}
@@ -417,12 +393,189 @@ footer a{color:var(--muted)}
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
   .runs li[data-s=run] .dot{border-color:var(--accent)}
 }
+/* ==========================================================================
+   Design refresh — ported from the Claude Design project (Home, Setup 1-3).
+   The palette is remapped onto the variable names the sheet above already
+   uses, so every component recolours from one place; the rules after it
+   restyle only the shapes the design changes. No markup ids or JS hooks move.
+   ========================================================================== */
+:root{
+  --hue:20;
+  --paper:#fefcfc;
+  --surface:rgba(255,255,255,.72);
+  --sunk:rgba(42,60,75,.05);
+  --ink:#2a3038;
+  --ink-2:#55606c;
+  --muted:#7d8894;
+  --faint:#a8b2bc;
+  --rule:rgba(42,48,56,.12);
+  --hair:rgba(42,48,56,.06);
+  --accent:oklch(0.67 0.08 var(--hue));
+  --accent-2:oklch(0.6 0.08 var(--hue));
+  --deep:oklch(0.42 0.06 var(--hue));
+  --wash:oklch(0.72 0.07 var(--hue) / .12);
+  --ring:oklch(0.72 0.07 var(--hue) / .25);
+  --ok:oklch(0.55 0.12 155);
+  --ok-wash:oklch(0.55 0.12 155 / .1);
+  --warn:#8d6410;
+  --bad:#b3402f;
+  --bad-wash:rgba(179,64,47,.09);
+  --cardline:rgba(255,255,255,.85);
+  --shadow:0 1px 2px rgba(20,18,30,.05),0 24px 60px -28px rgba(60,50,120,.28);
+  --shadow-lg:0 1px 2px rgba(20,18,30,.06),0 34px 76px -30px rgba(60,50,120,.34);
+  --navbg:rgba(254,251,251,.72);
+  --serif:'Bricolage Grotesque',ui-sans-serif,system-ui,'Segoe UI',sans-serif;
+  --sans:'Figtree',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@supports not (color: oklch(0.5 0.1 20)){
+  :root{--accent:#c2705a;--accent-2:#ab5a45;--deep:#6b3a2c;--wash:rgba(194,112,90,.12);
+        --ring:rgba(194,112,90,.25);--ok:#2f7a52;--ok-wash:rgba(47,122,82,.1)}
+}
+@keyframes blob1{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(12vw,14vh) scale(1.18)}66%{transform:translate(-6vw,26vh) scale(.92)}}
+@keyframes blob2{0%,100%{transform:translate(0,0) scale(1)}40%{transform:translate(-14vw,18vh) scale(1.12)}75%{transform:translate(6vw,-8vh) scale(.95)}}
+@keyframes blob3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(10vw,-16vh) scale(1.22)}}
+@keyframes bob{0%,100%{transform:translateY(0) rotate(0)}30%{transform:translateY(-5px) rotate(-6deg)}55%{transform:translateY(0) rotate(0)}70%{transform:translateY(-2px) rotate(4deg)}}
+@keyframes drift{0%,100%{transform:translateY(0) rotate(-10deg)}50%{transform:translateY(-34px) rotate(8deg)}}
+
+html{-webkit-text-size-adjust:100%}
+body{background:linear-gradient(180deg,#fefcfc 0%,#faf5f4 55%,#f6efee 100%) fixed;
+     font-family:var(--sans);font-size:16px;line-height:1.55;color:var(--ink);
+     -webkit-font-smoothing:antialiased}
+body::before{display:none}            /* the paper grain belongs to the old skin */
+h1,h2,h3{font-family:var(--serif);font-weight:700;letter-spacing:-.025em}
+
+/* background wash + drifting envelopes */
+.glow{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.blob{position:absolute;border-radius:50%}
+.blob-1{top:-18vh;left:-12vw;width:58vw;height:58vw;min-width:480px;min-height:480px;background:radial-gradient(circle at 40% 40%,oklch(0.82 0.06 var(--hue) / .5),transparent 65%);filter:blur(70px);animation:blob1 26s ease-in-out infinite}
+.blob-2{top:4vh;right:-16vw;width:52vw;height:52vw;min-width:420px;min-height:420px;background:radial-gradient(circle at 55% 45%,oklch(0.86 0.05 60 / .45),transparent 65%);filter:blur(80px);animation:blob2 32s ease-in-out infinite}
+.blob-3{bottom:-24vh;left:22vw;width:48vw;height:48vw;min-width:380px;min-height:380px;background:radial-gradient(circle at 50% 50%,oklch(0.85 0.04 340 / .38),transparent 65%);filter:blur(90px);animation:blob3 38s ease-in-out infinite}
+.env{position:absolute;color:var(--accent)}
+
+/* sticky top bar (note: .nav is already the step footer, so this is .topbar) */
+.topbar{position:sticky;top:0;z-index:10;backdrop-filter:blur(18px) saturate(1.4);
+        -webkit-backdrop-filter:blur(18px) saturate(1.4);background:var(--navbg);
+        border-bottom:1px solid var(--hair)}
+.topbar .in{max-width:1080px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:20px}
+.topbar .brand{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none}
+.topbar .mark{width:32px;height:32px;display:grid;place-items:center;filter:drop-shadow(0 6px 12px var(--ring));animation:bob 3.6s ease-in-out infinite;transform-origin:50% 100%;transition:transform .2s}
+.topbar .brand:hover .mark{transform:scale(1.12) rotate(-8deg)}
+.topbar .bname{font-family:var(--serif);font-weight:700;font-size:17px}
+.topbar .sp{flex:1}
+.topbar .step-chip{font-size:12.5px;font-weight:600;color:var(--accent);background:var(--wash);border-radius:999px;padding:5px 13px;white-space:nowrap}
+.topbar .gh{font-size:13.5px;font-weight:600;color:var(--ink-2);border:1px solid var(--rule);border-radius:10px;padding:7px 14px;text-decoration:none;transition:all .2s}
+.topbar .gh:hover{background:var(--hair);color:var(--ink)}
+
+/* two-column shell: sticky step rail + the panels */
+.wrap{max-width:1080px;padding:0 24px 64px}
+.shell{display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start;padding-top:44px}
+.rail{flex:1 1 240px;max-width:320px;position:sticky;top:84px;animation:rise .5s var(--e) both}
+.cols{flex:2 1 460px;min-width:0;animation:rise .55s var(--e) .06s both}
+@media (max-width:860px){.rail{position:static;max-width:none;flex-basis:100%}.shell{gap:24px;padding-top:26px}}
+
+header.mast{text-align:left;padding:0;margin:0}
+.mast .kicker{justify-content:flex-start;font-size:11px;letter-spacing:.16em;color:var(--faint);margin:0 0 6px}
+.mast .kicker::before,.mast .kicker::after{display:none}
+.mast h1{font-family:var(--serif);font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1.1;margin:0}
+.mast h1 .dot{color:var(--accent)}
+.mast .rule{display:none}
+.mast .tag{font-style:normal;font-size:14px;color:var(--ink-2);margin:8px 0 0;text-align:left}
+.mast .sub{font-size:12.5px;color:var(--muted);margin:8px 0 0;max-width:none;text-align:left}
+
+/* the stepper becomes the rail */
+.stepper{display:grid;gap:6px;margin:22px 0 0}
+.stepper li{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:12px 14px;border-radius:14px;transition:background .2s}
+.stepper li::after{display:none}
+.stepper li:hover{background:var(--hair)}
+.stepper .node{width:24px;height:24px;flex:0 0 auto;border-radius:50%;border:1px solid var(--rule);color:var(--faint);
+               display:grid;place-items:center;font-size:12px;font-weight:700;margin:0;background:transparent}
+.stepper .lbl{font-size:14px;font-weight:600;color:var(--muted);margin:0;letter-spacing:0;text-transform:none}
+.stepper .desc{display:block;font-size:12.5px;color:var(--faint);margin-top:2px;line-height:1.5}
+.stepper li.on{background:var(--wash)}
+.stepper li.on .node{background:var(--accent);border-color:transparent;color:#fff;transform:none}
+.stepper li.on .lbl{color:var(--ink);font-weight:700}
+.stepper li.on .desc{color:var(--ink-2)}
+.stepper li.done .node{background:var(--ok-wash);border-color:transparent;color:var(--ok)}
+
+.railnote{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;line-height:1.55;color:var(--ink-2);
+          background:var(--ok-wash);border-radius:12px;padding:12px 14px;margin-top:22px}
+.railnote strong{color:var(--ok)}
+
+/* cards become glass */
+.card{background:var(--surface);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
+      border:1px solid var(--cardline);border-radius:22px;box-shadow:var(--shadow);padding:clamp(24px,5vw,36px)}
+.card + .card{margin-top:20px}
+.card > h2{font-family:var(--serif);font-size:27px;font-weight:700;letter-spacing:-.015em}
+.card > h2 + .lede{color:var(--muted);font-size:14.5px;max-width:56ch}
+.sect > h3{font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);font-weight:700}
+
+/* fields */
+input[type=text],input[type=password],input[type=number],input[type=email],textarea,select{
+  font-family:var(--sans);background:var(--sunk);border:1px solid transparent;border-radius:12px;
+  padding:12px 14px;color:var(--ink);transition:all .2s}
+input:focus,textarea:focus,select:focus{background:#fff;border-color:var(--accent);box-shadow:0 0 0 4px var(--ring);outline:none}
+.f > label,.lgnd{font-size:13.5px;font-weight:600;color:var(--ink)}
+.f .hint{font-size:12.5px;color:var(--muted)}
+.reveal button{font-family:var(--sans);font-size:12px;font-weight:600;border-radius:8px;color:var(--muted)}
+.reveal button:hover{color:var(--ink);background:var(--hair)}
+
+/* buttons */
+.btn{font-family:var(--sans);font-size:15px;font-weight:600;border-radius:12px;padding:13px 22px;transition:all .2s}
+.btn-accent{background:var(--accent);color:#fff;box-shadow:0 12px 28px -14px var(--ring)}
+.btn-accent:hover{background:var(--accent-2);transform:translateY(-1px);box-shadow:0 14px 30px -14px var(--ring)}
+/* Setup's primary is the lighter accent; --deep is the home page's CTA tone. */
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 12px 28px -14px var(--ring)}
+.btn-primary:hover{background:var(--accent-2);transform:translateY(-1px)}
+.btn-ghost{background:transparent;color:var(--ink-2);border:1px solid var(--rule)}
+.btn-ghost:hover{background:var(--hair);color:var(--ink)}
+.chip{border-radius:999px;font-family:var(--sans)}
+
+/* notes */
+.note{display:flex;gap:11px;align-items:flex-start;font-size:12.8px;line-height:1.55;color:var(--ink-2);
+      background:var(--sunk);border:0;border-radius:12px;padding:12px 14px}
+.note.safe{background:var(--ok-wash)}
+.note.safe strong{color:var(--ok)}
+.note.caution{background:var(--wash)}
+.note .ic{opacity:.55;margin-top:1px}
+
+/* provider cards */
+.prov{border:1px solid var(--rule);border-radius:14px;background:rgba(255,255,255,.5);transition:all .2s}
+.prov:hover{background:#fff;border-color:var(--accent)}
+.prov .pname{font-family:var(--sans);font-weight:600}
+
+footer{color:var(--faint);font-size:12.5px;line-height:1.7;text-align:center;padding-top:8px}
+footer a{color:var(--muted)}
+
+@media (prefers-reduced-motion:reduce){
+  .blob,.topbar .mark,.env{animation:none!important}
+}
+
 </style>
 </head>
 <body>
 
+<div class="glow" aria-hidden="true">
+  <div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div>
+  <span class="env" style="top:14vh;left:5vw;opacity:.2;animation:drift 9s ease-in-out infinite"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3.5 7.5 12 13l8.5-5.5"></path></svg></span>
+  <span class="env" style="top:70vh;left:88vw;opacity:.15;animation:drift 12s ease-in-out 2s infinite"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3.5 7.5 12 13l8.5-5.5"></path></svg></span>
+</div>
+
+<nav class="topbar">
+  <div class="in">
+    <a class="brand" href="home.html">
+      <span class="mark"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="mlg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent-2)"></stop><stop offset="1" stop-color="var(--accent)"></stop></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#mlg)"></rect><rect x="8" y="9" width="16" height="3.2" rx="1.6" fill="#fff"></rect><rect x="8" y="14.8" width="11" height="2.4" rx="1.2" fill="#fff" opacity=".85"></rect><circle cx="22.8" cy="16" r="1.7" fill="#fff"></circle><rect x="8" y="20" width="13.5" height="2.4" rx="1.2" fill="#fff" opacity=".55"></rect></svg></span>
+      <span class="bname">mailtriage</span>
+    </a>
+    <div class="sp"></div>
+    <span class="step-chip" id="stepChip">Setup · step 1 of 3</span>
+    <a class="gh" href="https://github.com/AshishB2000/mailtriage" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</nav>
+
 <div class="wrap">
 
+  <div class="shell">
+  <aside class="rail">
   <header class="mast">
     <div class="kicker">Setup</div>
     <h1>mailtriage<span class="dot">.</span></h1>
@@ -432,10 +585,13 @@ footer a{color:var(--muted)}
   </header>
 
   <ol class="stepper" id="stepper">
-    <li data-i="1"><div class="node"><span>1</span></div><div class="lbl">Connect</div></li>
-    <li data-i="2"><div class="node"><span>2</span></div><div class="lbl">Configure</div></li>
-    <li data-i="3"><div class="node"><span>3</span></div><div class="lbl">Launch</div></li>
+    <li data-i="1"><div class="node"><span>1</span></div><div><span class="lbl">Connect</span><span class="desc">A token so this page can write to your fork.</span></div></li>
+    <li data-i="2"><div class="node"><span>2</span></div><div><span class="lbl">Configure</span><span class="desc">Your brief, keys, accounts and rhythm.</span></div></li>
+    <li data-i="3"><div class="node"><span>3</span></div><div><span class="lbl">Launch</span><span class="desc">Encrypt, commit, and trigger the first run.</span></div></li>
   </ol>
+  <div class="railnote"><span aria-hidden="true">◆</span><span><strong>No server.</strong> Everything on this page happens in this browser tab, directly against the GitHub API.</span></div>
+  </aside>
+  <main class="cols">
 
   <!-- ================================================= STEP 1 -->
   <section class="card panel" id="p1" aria-labelledby="h1t">
@@ -1055,6 +1211,9 @@ footer a{color:var(--muted)}
     </div>
   </section>
 
+  </main>
+  </div>
+
   <footer>
     mailtriage · MIT licensed · <a href="https://github.com/AshishB2000/mailtriage" target="_blank" rel="noopener">source</a><br>
     No server, no analytics, no account. Everything above happened in this tab.
@@ -1110,6 +1269,9 @@ function show(n) {
     li.classList.toggle("on", i === n);
     li.classList.toggle("done", i < n);
   });
+  // The top bar echoes the rail, so the step stays legible without scrolling up.
+  const chip = $("#stepChip");
+  if (chip) chip.textContent = n <= 3 ? "Setup \u00b7 step " + n + " of 3" : "Dashboard";
   window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" });
 }
 

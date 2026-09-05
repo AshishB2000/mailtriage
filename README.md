@@ -187,7 +187,7 @@ how you train yourself to stop opening it.
 ### The easy way: the setup wizard
 
 1. Click **Fork** (top right of this page).
-2. Open [`docs/index.html`](docs/index.html) from your fork — either locally
+2. Open [`docs/index.html`](docs/index.html) (the landing page at [`docs/home.html`](docs/home.html) links straight to it) from your fork — either locally
    (clone and open the file, or download it and double-click it, no server
    needed) or via GitHub Pages if you've enabled it on your fork.
 3. Paste a [GitHub personal access token](https://github.com/settings/tokens/new?scopes=repo&description=mailtriage+setup),

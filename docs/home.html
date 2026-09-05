@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mailtriage — your inbox, triaged twice a day</title>
+<meta name="description" content="AI triages your Gmail and drafts the replies, before you open it. Runs on your own GitHub Actions with your own keys. No server, no database, no account.">
+<meta name="color-scheme" content="light">
+<script>document.documentElement.className+=" js";</script>
+<!-- Progressive enhancement only: if fonts.googleapis.com is unreachable (offline,
+     or opened from file://), the fallback stacks below carry the whole design. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --hue:20;
+  --bg:linear-gradient(180deg,#fefcfc 0%,#faf5f4 55%,#f6efee 100%);
+  --navbg:rgba(254,251,251,.72);
+  --card:rgba(255,255,255,.78);
+  --cardline:rgba(255,255,255,.9);
+  --cardshadow:0 1px 2px rgba(60,40,40,.05),0 30px 70px -30px rgba(120,70,70,.3);
+  --ink:#2a3038; --ink2:#55606c; --muted:#7d8894; --faint:#a8b2bc;
+  --ghost:rgba(192,142,142,.16);
+  --line:rgba(42,48,56,.12); --hair:rgba(42,48,56,.06); --field:rgba(42,60,75,.05);
+  --accent:oklch(0.67 0.08 var(--hue));
+  --accent2:oklch(0.6 0.08 var(--hue));
+  --deep:oklch(0.42 0.06 var(--hue));
+  --wash:oklch(0.72 0.07 var(--hue) / .12);
+  --ring:oklch(0.72 0.07 var(--hue) / .25);
+  --ok:oklch(0.55 0.12 155);
+  --okwash:oklch(0.55 0.12 155 / .1);
+  --display:'Bricolage Grotesque',ui-sans-serif,system-ui,'Segoe UI',sans-serif;
+  --sans:'Figtree',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+/* oklch is ~2022+; these fallbacks keep the palette right on older engines. */
+@supports not (color: oklch(0.5 0.1 20)){
+  :root{--accent:#c2705a;--accent2:#ab5a45;--deep:#6b3a2c;--wash:rgba(194,112,90,.12);--ring:rgba(194,112,90,.25);--ok:#2f7a52;--okwash:rgba(47,122,82,.1)}
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--bg) fixed;min-height:100vh;color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}
+a:hover{color:var(--accent2)}
+h1,h2,h3{font-family:var(--display);letter-spacing:-0.03em;text-wrap:balance}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes floaty{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-10px) rotate(-1.5deg)}}
+@keyframes blob1{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(12vw,14vh) scale(1.18)}66%{transform:translate(-6vw,26vh) scale(.92)}}
+@keyframes blob2{0%,100%{transform:translate(0,0) scale(1)}40%{transform:translate(-14vw,18vh) scale(1.12)}75%{transform:translate(6vw,-8vh) scale(.95)}}
+@keyframes blob3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(10vw,-16vh) scale(1.22)}}
+@keyframes bob{0%,100%{transform:translateY(0) rotate(0)}30%{transform:translateY(-5px) rotate(-6deg)}55%{transform:translateY(0) rotate(0)}70%{transform:translateY(-2px) rotate(4deg)}}
+@keyframes drift{0%,100%{transform:translateY(0) rotate(-10deg)}50%{transform:translateY(-34px) rotate(8deg)}}
+@keyframes shimmer{0%{transform:translateX(-140%) skewX(-18deg)}100%{transform:translateX(240%) skewX(-18deg)}}
+@keyframes slidein{0%{opacity:0;transform:translateX(26px) scale(.96)}100%{opacity:1;transform:none}}
+@keyframes sortout{0%{opacity:1;transform:none;max-height:44px}100%{opacity:0;transform:translateX(-24px) scale(.94);max-height:0}}
+@keyframes scan{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+@keyframes countin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 oklch(0.55 0.12 155 / .45)}70%{box-shadow:0 0 0 8px oklch(0.55 0.12 155 / 0)}}
+
+.js [data-reveal]{opacity:0;transform:translateY(28px);transition:opacity .8s cubic-bezier(.22,.68,.28,1),transform .8s cubic-bezier(.22,.68,.28,1)}
+.js [data-reveal].in{opacity:1;transform:none}
+
+/* The design leans hard on motion; honour a reader who has asked for less. */
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .js [data-reveal]{opacity:1;transform:none}
+}
+
+/* --------------------------------------------------------- background */
+.glow{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.blob{position:absolute;border-radius:50%}
+.blob-1{top:-18vh;left:-12vw;width:58vw;height:58vw;min-width:480px;min-height:480px;background:radial-gradient(circle at 40% 40%,oklch(0.82 0.06 var(--hue) / .5),transparent 65%);filter:blur(70px);animation:blob1 26s ease-in-out infinite}
+.blob-2{top:4vh;right:-16vw;width:52vw;height:52vw;min-width:420px;min-height:420px;background:radial-gradient(circle at 55% 45%,oklch(0.86 0.05 60 / .45),transparent 65%);filter:blur(80px);animation:blob2 32s ease-in-out infinite}
+.blob-3{bottom:-24vh;left:22vw;width:48vw;height:48vw;min-width:380px;min-height:380px;background:radial-gradient(circle at 50% 50%,oklch(0.85 0.04 340 / .38),transparent 65%);filter:blur(90px);animation:blob3 38s ease-in-out infinite}
+.env{position:absolute;color:var(--accent)}
+
+.progress{position:fixed;top:0;left:0;height:3px;width:100%;z-index:20;pointer-events:none}
+.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:0 3px 3px 0;box-shadow:0 0 12px var(--ring)}
+
+/* --------------------------------------------------------------- nav */
+.page{position:relative;z-index:1}
+nav{position:sticky;top:0;z-index:10;backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);background:var(--navbg);border-bottom:1px solid var(--hair)}
+.navin{max-width:1200px;margin:0 auto;padding:12px 28px;display:flex;align-items:center;gap:26px}
+.brand{display:flex;align-items:center;gap:10px;color:var(--ink)}
+.brand:hover{color:var(--ink)}
+.mark{width:32px;height:32px;display:grid;place-items:center;filter:drop-shadow(0 6px 12px var(--ring));animation:bob 3.6s ease-in-out infinite;transform-origin:50% 100%;transition:transform .2s}
+.brand:hover .mark{transform:scale(1.12) rotate(-8deg)}
+.brandname{font-family:var(--display);font-weight:700;font-size:17px}
+.spacer{flex:1}
+.navlink{font-size:14px;font-weight:500;color:var(--ink2)}
+.navlink:hover{color:var(--ink)}
+.navghost{font-size:13.5px;font-weight:600;color:var(--ink2);border:1px solid var(--line);border-radius:999px;padding:7px 16px;transition:all .2s}
+.navghost:hover{background:var(--hair);color:var(--ink)}
+.navcta{font-size:13.5px;font-weight:600;color:#fff;background:var(--deep);border-radius:999px;padding:8px 18px;transition:all .2s}
+.navcta:hover{background:var(--accent2);color:#fff}
+@media (max-width:720px){.hide-sm{display:none}.navin{padding:12px 18px;gap:14px}}
+
+/* ------------------------------------------------------------- hero */
+header.hero{max-width:1200px;margin:0 auto;padding:clamp(56px,9vw,110px) 28px 0;position:relative}
+.eyebrow{margin:0;font-size:12px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);animation:rise .5s cubic-bezier(.22,.68,.28,1) both}
+h1.big{margin:22px 0 0;font-size:clamp(52px,9.5vw,124px);font-weight:800;letter-spacing:-0.035em;line-height:.96;max-width:12ch;animation:rise .55s cubic-bezier(.22,.68,.28,1) .05s both}
+h1.big em{font-style:normal;color:var(--accent)}
+.herogrid{display:flex;flex-wrap:wrap;gap:56px;align-items:flex-end;margin-top:clamp(28px,4vw,44px)}
+.herocopy{flex:1 1 420px;min-width:280px;animation:rise .6s cubic-bezier(.22,.68,.28,1) .12s both}
+.lede{margin:0;font-size:clamp(17px,1.6vw,20px);color:var(--ink2);max-width:46ch;text-wrap:pretty;line-height:1.6}
+.lede strong{color:var(--ink)}
+.cta{display:flex;gap:12px;margin-top:30px;flex-wrap:wrap;align-items:center}
+.btn-primary{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:10px;font-size:16px;font-weight:600;padding:16px 28px;border-radius:999px;background:var(--deep);color:#fff;box-shadow:0 18px 38px -16px var(--ring);transition:all .2s}
+.btn-primary:hover{background:var(--accent2);color:#fff;transform:translateY(-2px)}
+.btn-primary .sheen{position:absolute;inset:0;overflow:hidden;border-radius:999px;pointer-events:none}
+.btn-primary .sheen i{position:absolute;top:0;bottom:0;width:36%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent);animation:shimmer 3.4s ease-in-out 1.2s infinite}
+.btn-primary span{position:relative}
+.btn-outline{display:inline-flex;align-items:center;font-size:16px;font-weight:600;padding:16px 26px;border-radius:999px;border:1.5px solid var(--line);color:var(--ink);transition:all .2s}
+.btn-outline:hover{background:var(--hair);color:var(--ink)}
+
+/* --------------------------------------------------------- demo card */
+.herocard{flex:1 1 400px;min-width:300px;max-width:520px;position:relative;animation:rise .7s cubic-bezier(.22,.68,.28,1) .2s both}
+.herocard .tilt{position:absolute;inset:24px -14px -14px 18px;background:var(--wash);border-radius:24px;transform:rotate(2deg)}
+.sheet{position:relative;overflow:hidden;background:var(--card);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);border:1px solid var(--cardline);border-radius:24px;box-shadow:var(--cardshadow);padding:26px 28px;animation:floaty 7s ease-in-out infinite}
+.spot{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .3s}
+.scanline{position:absolute;top:0;left:0;right:0;height:1px;overflow:hidden;pointer-events:none}
+.scanline i{display:block;width:50%;height:100%;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:scan 4s ease-in-out infinite}
+.sheethead{display:flex;align-items:baseline;gap:10px;padding-bottom:14px;border-bottom:1px solid var(--hair)}
+.sheetname{font-family:var(--display);font-weight:700;font-size:15px}
+.sheetcount{font-size:12.5px;color:var(--muted)}
+.sheettime{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint)}
+.livedot{width:7px;height:7px;border-radius:50%;background:var(--ok);animation:pulse 2.2s ease-out infinite}
+.incoming{margin-top:14px;display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:12px;background:var(--field);border:1px dashed var(--line);animation:slidein .45s cubic-bezier(.22,.68,.28,1) both,sortout .4s ease-in 1.9s both;overflow:hidden}
+.incoming .subj{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.incoming .tag{flex:0 0 auto;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px}
+.sheetlbl{margin:16px 0 0;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.sheetlbl.dim{color:var(--muted);margin-top:18px}
+.rows{margin-top:10px;display:grid;gap:13px}
+.row{display:flex;gap:12px;align-items:flex-start}
+.bullet{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:6px}
+.rowt{margin:0;font-size:14.5px;font-weight:600}
+.rowm{margin:2px 0 0;font-size:12px;color:var(--muted)}
+.readrows{margin-top:10px;display:grid;gap:11px}
+.readrows p{margin:0;font-size:14px;font-weight:600;color:var(--ink2)}
+.sheetfoot{display:flex;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid var(--hair);flex-wrap:wrap}
+.pill{font-size:11px;font-weight:700;border-radius:999px;padding:4px 11px}
+.pill-accent{color:var(--accent);background:var(--wash);animation:countin .4s ease-out both}
+.pill-muted{color:var(--muted);background:var(--field)}
+
+/* ------------------------------------------------------------ ticker */
+.ticker{margin-top:clamp(64px,8vw,100px);border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);padding:16px 0;overflow:hidden;white-space:nowrap}
+.ticker .track{display:inline-flex;animation:tick 30s linear infinite}
+.ticker .run{display:inline-flex;gap:44px;padding-right:44px;font-family:var(--display);font-size:15px;font-weight:600;color:var(--muted)}
+.ticker .star{color:var(--accent)}
+
+/* ---------------------------------------------------------- sections */
+section{max-width:1200px;margin:0 auto;padding:clamp(72px,10vw,130px) 28px 0}
+.sechead{display:flex;align-items:baseline;gap:20px;flex-wrap:wrap}
+.sechead h2{margin:0;font-size:clamp(36px,5vw,58px);font-weight:800}
+.sechead p{margin:0;font-size:15px;color:var(--muted)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-top:44px;border-top:1.5px solid var(--line)}
+.step{padding:28px 26px 34px;border-radius:16px;transition:background .3s,transform .3s}
+.step+.step{border-left:1px solid var(--hair)}
+.step:hover{background:var(--card);transform:translateY(-4px)}
+.stepn{margin:0;font-family:var(--display);font-size:76px;font-weight:800;line-height:1;color:var(--ghost);transition:color .3s}
+.step:hover .stepn{color:var(--wash)}
+.step h3{margin:10px 0 0;font-size:21px;font-weight:700;letter-spacing:-0.01em}
+.step p{margin:8px 0 0;font-size:14px;color:var(--ink2);line-height:1.6}
+
+.split{display:flex;gap:clamp(28px,5vw,72px);flex-wrap:wrap}
+.splitl{flex:0 1 340px;min-width:260px}
+.splitl h2{margin:0;font-size:clamp(36px,5vw,58px);font-weight:800;line-height:1.02;position:sticky;top:96px}
+.splitl h2 span{color:var(--accent)}
+.splitr{flex:1 1 460px;min-width:300px}
+.claim{padding:26px 0;border-top:1px solid var(--hair);display:flex;gap:24px;align-items:baseline}
+.claim:first-child{border-top:1.5px solid var(--line)}
+.claim .glyph{flex:0 0 auto;font-family:var(--display);font-size:15px;font-weight:700;color:var(--accent)}
+.claim h3{margin:0;font-size:23px;font-weight:700;letter-spacing:-0.01em}
+.claim p{margin:8px 0 0;font-size:15px;color:var(--ink2);line-height:1.65;max-width:56ch}
+
+.cta-panel{position:relative;overflow:hidden;background:var(--deep);border-radius:28px;padding:clamp(40px,7vw,80px) clamp(28px,6vw,72px);text-align:center}
+.cta-panel .glowin{position:absolute;inset:0;pointer-events:none;background:radial-gradient(600px 320px at 20% 0%,rgba(255,255,255,.14),transparent 60%),radial-gradient(500px 300px at 85% 100%,rgba(255,255,255,.08),transparent 60%)}
+.cta-panel h2{position:relative;margin:0;font-size:clamp(32px,4.6vw,54px);font-weight:800;color:#fff}
+.cta-panel p{position:relative;margin:14px auto 0;font-size:16px;color:rgba(255,255,255,.75);max-width:56ch;line-height:1.65}
+.btn-invert{position:relative;display:inline-flex;align-items:center;gap:10px;margin-top:30px;font-size:16px;font-weight:600;padding:16px 30px;border-radius:999px;background:#fff;color:var(--deep);transition:all .2s}
+.btn-invert:hover{transform:translateY(-2px);color:var(--deep)}
+
+footer{max-width:1200px;margin:0 auto;padding:56px 28px 72px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--faint)}
+footer .fname{font-family:var(--display);font-weight:700;font-size:15px;color:var(--muted)}
+footer a{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div class="glow" aria-hidden="true">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+  <span class="env" style="top:14vh;left:6vw;opacity:.22;animation:drift 9s ease-in-out 0s infinite"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3.5 7.5 12 13l8.5-5.5"></path></svg></span>
+  <span class="env" style="top:62vh;left:4vw;opacity:.16;animation:drift 11s ease-in-out 2s infinite"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3.5 7.5 12 13l8.5-5.5"></path></svg></span>
+  <span class="env" style="top:22vh;left:88vw;opacity:.2;animation:drift 10s ease-in-out 1s infinite"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3.5 7.5 12 13l8.5-5.5"></path></svg></span>
+  <span class="env" style="top:74vh;left:82vw;opacity:.14;animation:drift 13s ease-in-out 3s infinite"><svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3.5 7.5 12 13l8.5-5.5"></path></svg></span>
+  <span class="env" style="top:88vh;left:40vw;opacity:.14;animation:drift 12s ease-in-out 4s infinite"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3.5 7.5 12 13l8.5-5.5"></path></svg></span>
+</div>
+
+<div class="progress" aria-hidden="true"><i id="prog"></i></div>
+
+<div class="page">
+  <nav>
+    <div class="navin">
+      <a class="brand" href="home.html">
+        <span class="mark"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="mlg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent2)"></stop><stop offset="1" stop-color="var(--accent)"></stop></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#mlg)"></rect><rect x="8" y="9" width="16" height="3.2" rx="1.6" fill="#fff"></rect><rect x="8" y="14.8" width="11" height="2.4" rx="1.2" fill="#fff" opacity=".85"></rect><circle cx="22.8" cy="16" r="1.7" fill="#fff"></circle><rect x="8" y="20" width="13.5" height="2.4" rx="1.2" fill="#fff" opacity=".55"></rect></svg></span>
+        <span class="brandname">mailtriage</span>
+      </a>
+      <div class="spacer"></div>
+      <a class="navlink hide-sm" href="#how">How it works</a>
+      <a class="navlink hide-sm" href="#privacy">Privacy</a>
+      <a class="navghost hide-sm" href="https://github.com/AshishB2000/mailtriage" target="_blank" rel="noopener">GitHub</a>
+      <a class="navcta" href="index.html">Get started</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <p class="eyebrow">Open source · runs on your GitHub · no server</p>
+    <h1 class="big">Your inbox,<br><em>triaged</em> twice a day.</h1>
+    <div class="herogrid">
+      <div class="herocopy">
+        <p class="lede">mailtriage reads the INBOX of your Gmail accounts, sorts what actually arrived into <strong>needs action</strong> and <strong>worth reading</strong> — and drops the rest — then sends you a single short email. It drafts the replies too. Newsletters, receipts, promotions: noise it never shows you.</p>
+        <div class="cta">
+          <a class="btn-primary" href="index.html"><span class="sheen"><i></i></span><span>Set it up — about 5 minutes</span><span>→</span></a>
+          <a class="btn-outline" href="https://github.com/AshishB2000/mailtriage" target="_blank" rel="noopener">View the source</a>
+        </div>
+      </div>
+      <div class="herocard">
+        <div class="tilt" aria-hidden="true"></div>
+        <div class="sheet" id="sheet">
+          <div class="spot" id="spot" aria-hidden="true"></div>
+          <div class="scanline" aria-hidden="true"><i></i></div>
+          <div class="sheethead">
+            <span class="sheetname">mailtriage</span>
+            <span class="sheetcount"><span id="actCount">2</span> to act · <span id="readCount">3</span> to read</span>
+            <span class="spacer"></span>
+            <span class="sheettime"><span class="livedot"></span>08:00</span>
+          </div>
+          <div id="incoming" aria-hidden="true"></div>
+          <p class="sheetlbl">Needs action</p>
+          <div class="rows">
+            <div class="row"><span class="bullet"></span><div><p class="rowt">Q3 budget sign-off — due Friday</p><p class="rowm">Priya Shah · alice.work@gmail.com</p></div></div>
+            <div class="row"><span class="bullet"></span><div><p class="rowt">Flight change confirmation required</p><p class="rowm">United Airlines · alice@gmail.com</p></div></div>
+          </div>
+          <p class="sheetlbl dim">Worth reading</p>
+          <div class="readrows">
+            <p>Simon Willison on running local models on 8GB</p>
+            <p>Team retro notes from Tuesday</p>
+          </div>
+          <div class="sheetfoot">
+            <span class="pill pill-accent" id="noisePill">31 dropped as noise</span>
+            <span class="pill pill-muted">2 inboxes</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="ticker" aria-hidden="true">
+    <div class="track">
+      <span class="run"><span>No server</span><span class="star">✳</span><span>No database</span><span class="star">✳</span><span>Read-only IMAP</span><span class="star">✳</span><span>Your fork, your keys</span><span class="star">✳</span><span>A few cents a month</span><span class="star">✳</span><span>MIT licensed</span><span class="star">✳</span></span>
+      <span class="run"><span>No server</span><span class="star">✳</span><span>No database</span><span class="star">✳</span><span>Read-only IMAP</span><span class="star">✳</span><span>Your fork, your keys</span><span class="star">✳</span><span>A few cents a month</span><span class="star">✳</span><span>MIT licensed</span><span class="star">✳</span></span>
+    </div>
+  </div>
+
+  <section id="how" data-reveal>
+    <div class="sechead">
+      <h2>How it works</h2>
+      <p>On a schedule you own, in your timezone.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><p class="stepn">01</p><h3>Pull</h3><p>Connects to each mailbox over read-only IMAP. It never marks a message read.</p></div>
+      <div class="step"><p class="stepn">02</p><h3>Window</h3><p>Keeps only what arrived since the last run — the window is the dedupe.</p></div>
+      <div class="step"><p class="stepn">03</p><h3>Triage</h3><p>One model call, with your brief and your rules, decides what you actually see.</p></div>
+      <div class="step"><p class="stepn">04</p><h3>Send</h3><p>One short email with the replies already drafted — or nothing, if nothing mattered.</p></div>
+    </div>
+  </section>
+
+  <section id="privacy" data-reveal>
+    <div class="split">
+      <div class="splitl"><h2>Private by construction<span>.</span></h2></div>
+      <div class="splitr">
+        <div class="claim">
+          <span class="glyph">◇</span>
+          <div>
+            <h3>No server, anywhere</h3>
+            <p>It runs on your GitHub Actions with your own AI credentials. Fork the repo and it becomes entirely yours — no analytics, no telemetry, no hosted anything, and no account with anyone.</p>
+          </div>
+        </div>
+        <div class="claim">
+          <span class="glyph">◈</span>
+          <div>
+            <h3>Read-only where it counts</h3>
+            <p>The INBOX connection is opened read-only, so mailtriage can never mark a message read. It appends drafts and applies labels; it never sends, and never deletes.</p>
+          </div>
+        </div>
+        <div class="claim">
+          <span class="glyph">◆</span>
+          <div>
+            <h3>Fewer, never padded</h3>
+            <p>The item count is a ceiling, not a target. On a quiet window the email is short — and if nothing cleared the bar, no email sends at all.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section data-reveal>
+    <div class="cta-panel">
+      <div class="glowin" aria-hidden="true"></div>
+      <h2>Five minutes, and it's yours.</h2>
+      <p>Bring the AI you already pay for — Claude, ChatGPT or Gemini — or a free Google account, and the GitHub Actions minutes you already have. The setup wizard writes everything into your own fork from one browser tab.</p>
+      <a class="btn-invert" href="index.html">Start the setup <span>→</span></a>
+    </div>
+  </section>
+
+  <footer>
+    <span class="fname">mailtriage</span>
+    <span>MIT licensed</span>
+    <a href="https://github.com/AshishB2000/mailtriage" target="_blank" rel="noopener">source</a>
+    <span class="spacer"></span>
+    <span>No server, no analytics, no account.</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Scroll progress
+  var prog = document.getElementById("prog");
+  function onScroll() {
+    var d = document.documentElement;
+    var p = d.scrollTop / Math.max(1, d.scrollHeight - d.clientHeight);
+    prog.style.width = (p * 100).toFixed(2) + "%";
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+
+  // Reveal on scroll
+  var reveals = document.querySelectorAll("[data-reveal]");
+  if (!("IntersectionObserver" in window) || reduced) {
+    Array.prototype.forEach.call(reveals, function (el) { el.classList.add("in"); });
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.12 });
+    Array.prototype.forEach.call(reveals, function (el) { io.observe(el); });
+  }
+
+  // Pointer spotlight on the demo card
+  var sheet = document.getElementById("sheet"), spot = document.getElementById("spot");
+  sheet.addEventListener("mousemove", function (e) {
+    var r = sheet.getBoundingClientRect();
+    spot.style.opacity = "1";
+    spot.style.background = "radial-gradient(260px circle at " + (e.clientX - r.left) + "px " + (e.clientY - r.top) +
+      "px, oklch(0.8 0.07 var(--hue) / .28), transparent 70%)";
+  });
+  sheet.addEventListener("mouseleave", function () { spot.style.opacity = "0"; });
+
+  // The card triages a message every few seconds, and the counters move with it.
+  var feed = [
+    { s: "Weekly deals — 40% off everything", tag: "noise", c: "var(--muted)", bg: "var(--field)" },
+    { s: "Invoice #4821 needs approval", tag: "action", c: "var(--accent)", bg: "var(--wash)" },
+    { s: "Your order has shipped", tag: "noise", c: "var(--muted)", bg: "var(--field)" },
+    { s: "Notes from the design review", tag: "read", c: "var(--ok)", bg: "var(--okwash)" },
+    { s: "LinkedIn: 5 people viewed your profile", tag: "noise", c: "var(--muted)", bg: "var(--field)" }
+  ];
+  var ENVELOPE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect>' +
+    '<path d="M3.5 7.5 12 13l8.5-5.5"></path></svg>';
+  var i = -1, counts = { noise: 31, action: 2, read: 3 };
+  var box = document.getElementById("incoming");
+  var ids = { noise: "noisePill", action: "actCount", read: "readCount" };
+
+  function step() {
+    i = (i + 1) % feed.length;
+    var f = feed[i];
+    counts[f.tag] += 1;
+    box.innerHTML = '<div class="incoming"><span style="flex:0 0 auto;color:var(--accent);display:grid">' + ENVELOPE +
+      '</span><span class="subj"></span><span class="tag" style="color:' + f.c + ';background:' + f.bg + '"></span></div>';
+    box.querySelector(".subj").textContent = f.s;   // textContent: feed strings are data, never markup
+    box.querySelector(".tag").textContent = f.tag;
+    var pill = document.getElementById("noisePill");
+    pill.textContent = counts.noise + " dropped as noise";
+    pill.style.animation = "none"; void pill.offsetWidth; pill.style.animation = "";
+    document.getElementById(ids.action).textContent = counts.action;
+    document.getElementById(ids.read).textContent = counts.read;
+  }
+  if (!reduced) { setInterval(step, 3200); step(); }
+})();
+</script>
+</body>
+</html>
