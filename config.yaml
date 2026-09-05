@@ -39,12 +39,12 @@ run_at: ["08:00", "18:00"]
 # IANA time zone name (e.g. "America/New_York", "Europe/London") that run_at
 # and weekly_review are interpreted in. See
 # https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for the list.
-timezone: "UTC"
+timezone: "America/New_York"
 
 # Blank = off. Otherwise "<mon|tue|wed|thu|fri|sat|sun> HH:MM" for a weekly
 # roundup on top of the daily run_at slots. Not implemented yet -- the slot
 # is recognized but currently just skips, same as an off-hour.
-weekly_review: ""
+weekly_review: "mon 11:00"
 
 # How many minutes after a run_at (or weekly_review) slot the hourly workflow
 # still counts as that slot. GitHub's scheduler skips hours under load; 120
